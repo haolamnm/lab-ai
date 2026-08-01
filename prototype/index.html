@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -21,7 +21,7 @@
   button,input,select { font-family:inherit; font-size:13px; color:var(--ink); }
   button { cursor:pointer; }
 
-  /* ---------- Thanh trên ---------- */
+  /* ---------- Top bar ---------- */
   #topbar {
     flex:none; background:var(--surface); border-bottom:1px solid var(--line);
     padding:9px 16px; display:flex; align-items:center; gap:14px;
@@ -52,7 +52,7 @@
     border:1px solid var(--line); border-radius:7px; padding:5px 8px; background:var(--surface);
   }
 
-  /* ô tìm địa điểm */
+  /* location search box */
   .pick { position:relative; margin-bottom:8px; }
   .pick-in {
     display:flex; align-items:center; gap:8px; border:1px solid var(--line);
@@ -109,7 +109,7 @@
   #runBtn:disabled { background:#c9cdd6; }
   #runNote { font-size:11px; color:var(--soft); text-align:center; margin-top:7px; }
 
-  /* ---------- Khu chính ---------- */
+  /* ---------- Main area ---------- */
   #main { flex:1; display:flex; flex-direction:column; min-width:0; }
   #grid {
     flex:1; overflow:auto; padding:14px; display:flex; flex-wrap:wrap;
@@ -175,12 +175,12 @@
 
 <div id="topbar">
   <div class="brand">VN Route <span>Lab</span></div>
-  <button class="ghost on" id="syncBtn">🔒 Đồng bộ khung nhìn</button>
+  <button class="ghost on" id="syncBtn">🔒 Synced view</button>
   <div class="legend">
-    <span><i style="background:#b8bfc9"></i>chưa chạm</span>
-    <span><i style="background:#fff;border:2px solid #f59f00"></i>hàng đợi biên</span>
-    <span><i style="background:#4c6ef5"></i>đã mở</span>
-    <span><i style="background:#7048e8"></i>đường chọn</span>
+    <span><i style="background:#b8bfc9"></i>untouched</span>
+    <span><i style="background:#fff;border:2px solid #f59f00"></i>frontier</span>
+    <span><i style="background:#4c6ef5"></i>expanded</span>
+    <span><i style="background:#7048e8"></i>chosen route</span>
   </div>
 </div>
 
@@ -190,82 +190,82 @@
     <div id="sideScroll">
 
       <div class="sec">
-        <h3>Hành trình</h3>
+        <h3>Trip</h3>
         <div id="startPick"></div>
         <div id="stopList"></div>
         <div id="stopPickWrap" style="display:none"></div>
-        <button class="addlink" id="addStopBtn">＋ Thêm điểm dừng</button>
+        <button class="addlink" id="addStopBtn">＋ Add stop</button>
         <div id="goalPick" style="margin-top:8px"></div>
         <label class="check" style="margin-top:9px">
           <input type="checkbox" id="optOrder" checked>
-          <span>Tự tối ưu thứ tự ghé</span>
+          <span>Auto-optimize visit order</span>
         </label>
       </div>
 
       <div class="sec">
-        <h3>Điều kiện giao thông</h3>
-        <div class="row"><label for="timeSel">Khung giờ</label>
+        <h3>Traffic conditions</h3>
+        <div class="row"><label for="timeSel">Time period</label>
           <select id="timeSel">
-            <option value="peak">Cao điểm</option>
-            <option value="offpeak">Thấp điểm</option>
-            <option value="night">Ban đêm</option>
+            <option value="peak">Peak</option>
+            <option value="offpeak">Off-peak</option>
+            <option value="night">Night</option>
           </select>
         </div>
-        <div class="row"><label for="vehSel">Phương tiện</label>
+        <div class="row"><label for="vehSel">Vehicle</label>
           <select id="vehSel">
-            <option value="bike">Xe máy</option>
-            <option value="car">Ô tô</option>
-            <option value="truck">Xe tải</option>
+            <option value="bike">Motorbike</option>
+            <option value="car">Car</option>
+            <option value="truck">Truck</option>
           </select>
         </div>
       </div>
 
       <div class="sec">
-        <h3>Tiêu chí tối ưu</h3>
+        <h3>Optimization criterion</h3>
         <div class="seg" id="criteria">
-          <button data-c="balanced" class="on">Cân bằng</button>
-          <button data-c="distance">Ngắn nhất</button>
-          <button data-c="time">Nhanh nhất</button>
-          <button data-c="avoid">Né kẹt xe</button>
+          <button data-c="balanced" class="on">Balanced</button>
+          <button data-c="distance">Shortest</button>
+          <button data-c="time">Fastest</button>
+          <button data-c="avoid">Avoid congestion</button>
         </div>
       </div>
 
       <div class="sec">
-        <h3>Trọng số hàm chi phí</h3>
-        <div class="slider" data-w="alpha"><div class="lab"><span>α · Quãng đường</span><b>1.00</b></div><input type="range" min="0" max="3" step="0.05" value="1"></div>
-        <div class="slider" data-w="beta"><div class="lab"><span>β · Thời gian</span><b>0.50</b></div><input type="range" min="0" max="3" step="0.05" value="0.5"></div>
-        <div class="slider" data-w="gamma"><div class="lab"><span>γ · Kẹt xe</span><b>0.80</b></div><input type="range" min="0" max="3" step="0.05" value="0.8"></div>
-        <div class="slider" data-w="delta"><div class="lab"><span>δ · Rủi ro</span><b>1.50</b></div><input type="range" min="0" max="3" step="0.05" value="1.5"></div>
+        <h3>Cost function weights</h3>
+        <div class="slider" data-w="alpha"><div class="lab"><span>α · Distance</span><b>1.00</b></div><input type="range" min="0" max="3" step="0.05" value="1"></div>
+        <div class="slider" data-w="beta"><div class="lab"><span>β · Time</span><b>0.50</b></div><input type="range" min="0" max="3" step="0.05" value="0.5"></div>
+        <div class="slider" data-w="gamma"><div class="lab"><span>γ · Congestion</span><b>0.80</b></div><input type="range" min="0" max="3" step="0.05" value="0.8"></div>
+        <div class="slider" data-w="delta"><div class="lab"><span>δ · Risk</span><b>1.50</b></div><input type="range" min="0" max="3" step="0.05" value="1.5"></div>
       </div>
 
       <div class="sec">
-        <h3>Hiển thị</h3>
-        <label class="check"><input type="checkbox" id="showCong" checked><span>Lớp mức kẹt xe</span></label>
-        <label class="check"><input type="checkbox" id="showLabels"><span>Nhãn tên địa điểm</span></label>
-        <label class="check"><input type="checkbox" id="showFade" checked><span>Dấu chân nhạt dần theo thời gian</span></label>
+        <h3>Display</h3>
+        <label class="check"><input type="checkbox" id="showCong" checked><span>Congestion layer</span></label>
+        <label class="check"><input type="checkbox" id="showLabels"><span>Location name labels</span></label>
+        <label class="check"><input type="checkbox" id="showFade" checked><span>Exploration footprint fades over time</span></label>
       </div>
 
     </div>
     <div id="runWrap">
-      <button id="runBtn" disabled>▶ CHẠY THUẬT TOÁN</button>
-      <div id="runNote">Thêm ít nhất một màn hình để chạy</div>
+      <button id="runBtn" disabled>▶ RUN ALGORITHM</button>
+      <div id="runNote">Add at least one pane to run</div>
     </div>
   </aside>
 
-  <!-- ================= KHU CHÍNH ================= -->
+  <!-- ================= MAIN AREA ================= -->
   <div id="main">
     <div id="grid">
       <div id="empty">
-        <h2>Chưa có màn hình nào</h2>
-        <p>Mỗi màn hình chạy một thuật toán trên cùng một hành trình. Thêm vài màn hình rồi bấm CHẠY để so sánh cách chúng tìm đường.</p>
-        <button id="emptyAdd">＋ Thêm màn hình đầu tiên</button>
+        <h2>No panes yet</h2>
+        <p>Each pane runs one algorithm on the same trip. Add a few panes, then click RUN to compare how they find routes.</p>
+        <button id="emptyAdd">＋ Add first pane</button>
       </div>
     </div>
     <div id="timeline" class="off">
       <button id="stepBack">◀◀</button>
       <button id="playBtn">▶</button>
       <button id="stepFwd">▶▶</button>
-      <span class="step">Bước <b id="stepNow">0</b> / <span id="stepMax">0</span></span>
+      <span class="step">Step <b id="stepNow">0</b> / <span id="stepMax">0</span></span>
       <input type="range" id="slider" min="0" max="0" value="0">
       <select id="speedSel">
         <option value="2">0.5x</option><option value="1" selected>1x</option>
@@ -277,7 +277,7 @@
 
 <script>
 /* ============================================================
-   1. DỮ LIỆU  —  bản thật lấy từ GET /api/graph
+   1. DATA  —  the real version comes from GET /api/graph
    ============================================================ */
 const NODES = [
   { id:'n1',  name:'Chợ Bến Thành',       lat:10.7725, lng:106.6980 },
@@ -301,7 +301,7 @@ const NODES = [
   { id:'n19', name:'Cầu Chữ Y',           lat:10.7480, lng:106.6870 },
   { id:'n20', name:'Crescent Mall Q7',    lat:10.7290, lng:106.7180 },
 ];
-// [từ, đến, km, mức kẹt xe 1-5, rủi ro 0-1]
+// [from, to, km, congestion 1-5, risk 0-1]
 const EDGES = [
   ['n1','n3',0.7,4,0.1], ['n1','n4',1.0,3,0.1], ['n1','n19',3.2,3,0.3], ['n1','n15',4.4,4,0.2],
   ['n2','n3',0.5,2,0.0], ['n2','n4',1.0,2,0.0], ['n2','n5',1.1,3,0.1],
@@ -321,16 +321,16 @@ EDGES.forEach(([a,b,km,cong,risk]) => {
   ADJ[a].push({ to:b, km, cong, risk }); ADJ[b].push({ to:a, km, cong, risk });
 });
 const CONG_COLOR = { 1:'#2fbf71', 2:'#9ccc3c', 3:'#f5c518', 4:'#f28c28', 5:'#e03131' };
-const BASE_SPEED = { 1:35, 2:28, 3:20, 4:13, 5:8 };   // km/h, ô tô giờ cao điểm
+const BASE_SPEED = { 1:35, 2:28, 3:20, 4:13, 5:8 };   // km/h, car at peak period
 
 /* ============================================================
-   2. HÀM CHI PHÍ
+   2. COST FUNCTION
    ============================================================ */
 const TIME_MULT = { peak:1, offpeak:1.35, night:1.7 };
 const VEHICLE  = {
-  bike:  { speed:1.15, risk:1.0, label:'Xe máy' },   // luồn lách tốt hơn khi kẹt
-  car:   { speed:1.00, risk:1.0, label:'Ô tô'   },
-  truck: { speed:0.78, risk:2.2, label:'Xe tải' },   // chậm hơn, phạt nặng đường rủi ro
+  bike:  { speed:1.15, risk:1.0, label:'Motorbike' },   // weaves through traffic better when congested
+  car:   { speed:1.00, risk:1.0, label:'Car'   },
+  truck: { speed:0.78, risk:2.2, label:'Truck' },   // slower, penalized heavily on risky roads
 };
 const CRITERIA = {
   balanced: { alpha:1,   beta:0.5, gamma:0.8, delta:1.5 },
@@ -359,13 +359,14 @@ function haversine(a, b) {
 }
 
 /* ============================================================
-   3. THUẬT TOÁN  —  bản thật nằm ở backend FastAPI
+   3. ALGORITHMS  —  the real version lives in the FastAPI backend
    ============================================================ */
 const ALGOS = { bfs:'BFS', dfs:'DFS', ucs:'UCS', astar:'A*', greedy:'Greedy Best-First' };
 
-// Chi phí thấp nhất mỗi km trong mạng lưới. Nhân với khoảng cách chim bay cho ra
-// cận dưới của chi phí thật, nên heuristic vẫn admissible mà chặt hơn nhiều so với
-// dùng thẳng số km — nếu không A* sẽ thoái hoá gần thành UCS.
+// The lowest cost per km in the road network. Multiplying it by the straight-line
+// distance gives a lower bound on the real cost, so the heuristic stays admissible
+// while being much tighter than using raw km — otherwise A* would degrade to
+// something close to UCS.
 const minCostPerKm = () =>
   Math.min(...EDGES.map(([,,km,cong,risk]) => edgeCost({ km, cong, risk }) / km));
 
@@ -401,7 +402,7 @@ function search(algo, start, goal) {
       if (closed.has(e.to)) continue;
       const tentative = (gScore[cur] ?? 0) + (algo === 'bfs' || algo === 'dfs' ? 1 : edgeCost(e));
       if (algo === 'dfs') {
-        // DFS phải bám cây duyệt của chính nó, không nhận cha "tốt hơn" từ nhánh khác
+        // DFS must stick to its own search tree — it doesn't accept a "better" parent from another branch
         if (!(e.to in gScore)) { gScore[e.to] = tentative; parent[e.to] = cur; }
       } else if (!(e.to in gScore) || tentative < gScore[e.to]) {
         gScore[e.to] = tentative; parent[e.to] = cur;
@@ -423,7 +424,7 @@ function legStats(path) {
   return { km, min, cost };
 }
 
-// Nhiều điểm dừng: sắp thứ tự ghé bằng láng giềng gần nhất theo chi phí UCS thật
+// Multiple stops: order the visits by real UCS-cost nearest neighbor
 function nearestNeighborOrder(start, stops, goal) {
   const costTo = (a,b) => { const r = search('ucs',a,b); return r.found ? legStats(r.path).cost : Infinity; };
   const left = [...stops], order = [];
@@ -436,7 +437,7 @@ function nearestNeighborOrder(start, stops, goal) {
   return order;
 }
 
-// Chạy cả hành trình (có thể nhiều chặng) cho một thuật toán, nối trace lại thành một dòng thời gian
+// Run the whole trip (possibly multiple legs) for one algorithm, joining the traces into a single timeline
 function planRoute(algo) {
   const stops = query.optimizeOrder && query.stops.length > 1
     ? nearestNeighborOrder(query.start, query.stops, query.goal)
@@ -455,7 +456,7 @@ function planRoute(algo) {
     const st = legStats(r.path);
     km += st.km; min += st.min; cost += st.cost;
     fullPath.push(...(fullPath.length ? r.path.slice(1) : r.path));
-    // Chặng nào xong thì đoạn đó hiện ra, không đợi cả hành trình
+    // Reveal each leg's segment as soon as it's done, without waiting for the whole trip
     reveal.push({ upto: trace.length - r.trace.length + gi + 1, path:[...fullPath] });
   }
 
@@ -470,10 +471,10 @@ function planRoute(algo) {
 }
 
 /* ============================================================
-   4. TÌM ĐỊA ĐIỂM  —  gõ tự do rồi ghim vào node gần nhất
+   4. LOCATION SEARCH  —  free-text typing, snapped to the nearest node
    ============================================================ */
-// Bỏ dấu để gõ "ben thanh" vẫn ra "Chợ Bến Thành". Phải hạ chữ thường trước khi
-// đổi đ→d, nếu không "Đ" hoa sẽ lọt lưới.
+// Strip diacritics so typing "ben thanh" still matches "Chợ Bến Thành". Must
+// lowercase before converting đ→d, otherwise an uppercase "Đ" slips through.
 const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/đ/g,'d');
 
 function nearestNode(lat, lng) {
@@ -486,7 +487,7 @@ function nearestNode(lat, lng) {
 }
 
 async function geocode(q) {
-  // Giới hạn trong khung TP.HCM để kết quả không nhảy ra tỉnh khác
+  // Bounded to the HCMC viewbox so results don't jump to another province
   const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&bounded=1'
             + '&viewbox=106.55,10.92,106.86,10.66&accept-language=vi&q=' + encodeURIComponent(q);
   try {
@@ -496,10 +497,10 @@ async function geocode(q) {
       title: x.name || x.display_name.split(',')[0],
       sub: x.display_name, lat:+x.lat, lng:+x.lon,
     }));
-  } catch { return []; }   // mất mạng thì im lặng, vẫn còn kết quả nội bộ
+  } catch { return []; }   // fail silently when offline — the local results are still there
 }
 
-/* Ô chọn địa điểm dùng chung cho điểm đi, điểm đến và điểm dừng */
+/* Location picker shared by the pickup, dropoff, and stop fields */
 function makePicker(host, { color, placeholder, value, onPick, onRemove }) {
   const wrap = document.createElement('div');
   wrap.className = 'pick';
@@ -529,8 +530,8 @@ function makePicker(host, { color, placeholder, value, onPick, onRemove }) {
   function draw() {
     list.innerHTML = items.map((it,i) => {
       const tag = it.exact
-        ? '<span class="tag">trong mạng lưới</span>'
-        : `<span class="tag far">ghim vào ${it.snapName} · ${it.dist}m</span>`;
+        ? '<span class="tag">in network</span>'
+        : `<span class="tag far">snapped to ${it.snapName} · ${it.dist}m</span>`;
       return `<div class="res" data-i="${i}"><div class="t">${it.title}${tag}</div>
               ${it.sub ? `<div class="s">${it.sub}</div>` : ''}</div>`;
     }).join('');
@@ -540,19 +541,19 @@ function makePicker(host, { color, placeholder, value, onPick, onRemove }) {
         e.preventDefault();
         const it = items[+el.dataset.i];
         setNode(it.nodeId, it.exact ? '' :
-          `Đã ghim vào <b>${it.snapName}</b>, cách ${it.dist}m`);
+          `Snapped to <b>${it.snapName}</b>, ${it.dist}m away`);
       };
     });
   }
 
   async function run(q) {
     const nq = norm(q);
-    // 1. khớp trong mạng lưới trước
+    // 1. match within the road network first
     items = NODES.filter(n => norm(n.name).includes(nq))
-                 .map(n => ({ title:n.name, sub:'Node trong graph', exact:true, nodeId:n.id }));
+                 .map(n => ({ title:n.name, sub:'Node in network', exact:true, nodeId:n.id }));
     draw();
     if (q.length < 3) return;
-    // 2. rồi mới hỏi ra ngoài, và ghim kết quả về node gần nhất
+    // 2. then query externally, snapping results to the nearest node
     const remote = await geocode(q);
     const extra = remote.map(r => {
       const { node, distanceM } = nearestNode(r.lat, r.lng);
@@ -575,7 +576,7 @@ function makePicker(host, { color, placeholder, value, onPick, onRemove }) {
    ============================================================ */
 const state = { panes:[], timeline:{ step:0, playing:false, speed:1, maxStep:0 }, syncView:true };
 let paneSeq = 0, syncing = false, playTimer = null;
-const MAX_PANES = 6;
+const MAX_PANES = 5;
 
 function createPane(algo) {
   const id = 'p' + (++paneSeq);
@@ -586,12 +587,12 @@ function createPane(algo) {
       <span class="grip">⋮⋮</span>
       <select class="algoSel">${Object.entries(ALGOS)
         .map(([k,v]) => `<option value="${k}"${k===algo?' selected':''}>${v}</option>`).join('')}</select>
-      <span class="badge">chưa chạy</span>
+      <span class="badge">not run</span>
       <span style="flex:1"></span>
-      <button class="close" title="Đóng">✕</button>
+      <button class="close" title="Close">✕</button>
     </div>
     <div class="map"></div>
-    <div class="pane-foot"><span>Chưa có kết quả</span></div>`;
+    <div class="pane-foot"><span>No results yet</span></div>`;
   document.getElementById('grid').insertBefore(el, document.getElementById('addPane'));
 
   const map = L.map(el.querySelector('.map'), { zoomControl:false, attributionControl:false })
@@ -599,13 +600,13 @@ function createPane(algo) {
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
     { maxZoom:19, subdomains:'abcd' }).addTo(map);
 
-  // Nền đường — màu theo mức kẹt xe, hiện cả khi chưa chạy
+  // Road base layer — colored by congestion, shown even before running
   const congLayer = L.layerGroup().addTo(map);
   EDGES.forEach(([a,b,,cong]) => L.polyline(
     [[NODE[a].lat,NODE[a].lng],[NODE[b].lat,NODE[b].lng]],
     { color:CONG_COLOR[cong], weight:3, opacity:.55 }).addTo(congLayer));
 
-  // Đường đi cuối — hai lớp, tách hẳn khỏi thang màu kẹt xe
+  // Final route — two layers, kept entirely separate from the congestion color scale
   const casing = L.polyline([], { color:'#fff',     weight:9, opacity:0 }).addTo(map);
   const core   = L.polyline([], { color:'#7048e8',  weight:5, opacity:0 }).addTo(map);
 
@@ -628,7 +629,7 @@ function createPane(algo) {
     state.panes.forEach(p => { if (p !== pane) p.map.setView(c, z, { animate:false }); });
     syncing = false;
   });
-  // Leaflet xám tile khi container đổi kích thước — bắt buộc gọi invalidateSize
+  // Leaflet grays out tiles when the container resizes — invalidateSize must be called
   new ResizeObserver(() => map.invalidateSize()).observe(el.querySelector('.map'));
 
   el.querySelector('.algoSel').onchange = e => {
@@ -661,13 +662,13 @@ function createPane(algo) {
   return pane;
 }
 
-// Bấm vào một node trên bản đồ để đặt làm điểm đi / đến / điểm dừng
+// Click a node on the map to set it as the pickup / dropoff / stop
 function openNodeMenu(n, map) {
   const div = document.createElement('div');
   div.innerHTML = `<div style="font-weight:600;margin-bottom:5px">${n.name}</div>
-    <button class="popbtn" data-a="start">Đặt làm điểm đi</button>
-    <button class="popbtn" data-a="goal">Đặt làm điểm đến</button>
-    <button class="popbtn" data-a="stop">Thêm làm điểm dừng</button>`;
+    <button class="popbtn" data-a="start">Set as pickup</button>
+    <button class="popbtn" data-a="goal">Set as dropoff</button>
+    <button class="popbtn" data-a="stop">Add as stop</button>`;
   div.querySelectorAll('button').forEach(b => b.onclick = () => {
     const a = b.dataset.a;
     if (a === 'start') query.start = n.id;
@@ -679,7 +680,7 @@ function openNodeMenu(n, map) {
 }
 
 /* ============================================================
-   6. CHẠY & VẼ
+   6. RUN & RENDER
    ============================================================ */
 function recomputeMax() {
   state.timeline.maxStep = Math.max(0, ...state.panes.map(p => p.result ? p.result.trace.length : 0));
@@ -709,8 +710,8 @@ function render() {
     const foot  = pane.el.querySelector('.pane-foot');
 
     if (!pane.result) {
-      badge.textContent = 'chưa chạy'; badge.className = 'badge';
-      foot.innerHTML = '<span>Chưa có kết quả</span>';
+      badge.textContent = 'not run'; badge.className = 'badge';
+      foot.innerHTML = '<span>No results yet</span>';
       NODES.forEach(n => pane.markers[n.id].setStyle({ radius:4, weight:0, fillColor:'#b8bfc9', fillOpacity:.9 }));
       paintEndpoints(pane);
       pane.casing.setStyle({ opacity:0 }); pane.core.setStyle({ opacity:0 });
@@ -737,7 +738,7 @@ function render() {
     });
     paintEndpoints(pane);
 
-    // Mỗi chặng xong thì đoạn đó hiện ra, không đợi cả hành trình
+    // Each leg's segment appears as soon as it finishes, without waiting for the whole trip
     let shown = null;
     for (const r of pane.result.reveal) if (s >= r.upto) shown = r;
     const ll = shown ? shown.path.map(id => [NODE[id].lat, NODE[id].lng]) : [];
@@ -745,15 +746,15 @@ function render() {
     pane.core.setLatLngs(ll).setStyle({ opacity: ll.length ? 1 : 0 });
 
     const done = s >= tr.length;
-    if (!pane.result.found && done) { badge.textContent = 'không tìm được đường'; badge.className = 'badge fail'; }
-    else if (done) { badge.textContent = `xong ở bước ${tr.length}`; badge.className = 'badge done'; }
-    else { badge.textContent = `đang chạy · ${s}`; badge.className = 'badge'; }
+    if (!pane.result.found && done) { badge.textContent = 'no route found'; badge.className = 'badge fail'; }
+    else if (done) { badge.textContent = `done at step ${tr.length}`; badge.className = 'badge done'; }
+    else { badge.textContent = `running · ${s}`; badge.className = 'badge'; }
 
     const mt = pane.result.metrics;
     foot.innerHTML =
-      `<span><b>${mt.distanceKm}</b> km</span><span><b>${mt.timeMin}</b> phút</span>` +
+      `<span><b>${mt.distanceKm}</b> km</span><span><b>${mt.timeMin}</b> min</span>` +
       `<span>cost <b>${mt.cost}</b></span><span><b>${s}</b>/${mt.nodesExpanded} node</span>` +
-      `<span style="margin-left:auto">${mt.optimal ? 'tối ưu' : 'xấp xỉ'}</span>`;
+      `<span style="margin-left:auto">${mt.optimal ? 'optimal' : 'approx'}</span>`;
   });
 }
 
@@ -779,7 +780,7 @@ function setPlaying(on) {
 }
 
 /* ============================================================
-   8. SIDEBAR — dựng phần hành trình
+   8. SIDEBAR — build the trip section
    ============================================================ */
 function buildJourney() {
   const sHost = document.getElementById('startPick');
@@ -788,19 +789,19 @@ function buildJourney() {
   sHost.innerHTML = ''; gHost.innerHTML = ''; lHost.innerHTML = '';
 
   makePicker(sHost, {
-    color:'#2fbf71', placeholder:'Điểm đi — gõ tên địa điểm', value:query.start,
+    color:'#2fbf71', placeholder:'Pickup — type a location name', value:query.start,
     onPick:id => { query.start = id; clearResults(); refreshChrome(); },
   });
   query.stops.forEach((sid, i) => {
     const chip = document.createElement('div');
     chip.className = 'chip';
     chip.innerHTML = `<span class="dot" style="background:#f59f00"></span>
-      <span>${NODE[sid].name}</span><button title="Bỏ">✕</button>`;
+      <span>${NODE[sid].name}</span><button title="Remove">✕</button>`;
     chip.querySelector('button').onclick = () => { query.stops.splice(i,1); buildJourney(); clearResults(); };
     lHost.appendChild(chip);
   });
   makePicker(gHost, {
-    color:'#e03131', placeholder:'Điểm đến — gõ tên địa điểm', value:query.goal,
+    color:'#e03131', placeholder:'Dropoff — type a location name', value:query.goal,
     onPick:id => { query.goal = id; clearResults(); refreshChrome(); },
   });
 }
@@ -812,22 +813,22 @@ function refreshChrome() {
   const run = document.getElementById('runBtn');
   run.disabled = state.panes.length === 0;
   document.getElementById('runNote').textContent = state.panes.length === 0
-    ? 'Thêm ít nhất một màn hình để chạy'
-    : `${state.panes.length} màn hình · ${query.stops.length} điểm dừng`;
+    ? 'Add at least one pane to run'
+    : `${state.panes.length} panes · ${query.stops.length} stops`;
 }
 
 /* ============================================================
-   9. NỐI DÂY
+   9. WIRING
    ============================================================ */
 const addBtn = document.createElement('button');
-addBtn.id = 'addPane'; addBtn.textContent = '＋  Thêm màn hình';
+addBtn.id = 'addPane'; addBtn.textContent = '＋  Add pane';
 document.getElementById('grid').appendChild(addBtn);
 
 function addPane() {
   const used = state.panes.map(p => p.algo);
   const next = Object.keys(ALGOS).find(a => !used.includes(a)) || 'astar';
   const pane = createPane(next);
-  // Màn hình tạo giữa chừng chạy ngay để bám vào dòng thời gian chung
+  // A pane created mid-run executes immediately so it stays aligned with the shared timeline
   if (state.timeline.maxStep) { pane.result = planRoute(pane.algo); recomputeMax(); }
   if (state.panes.length > 1) {
     const ref = state.panes[0].map;
@@ -842,7 +843,7 @@ document.getElementById('addStopBtn').onclick = () => {
   const wrap = document.getElementById('stopPickWrap');
   wrap.style.display = 'block'; wrap.innerHTML = '';
   const p = makePicker(wrap, {
-    color:'#f59f00', placeholder:'Điểm dừng — gõ tên địa điểm',
+    color:'#f59f00', placeholder:'Stop — type a location name',
     onPick:id => {
       if (!query.stops.includes(id)) query.stops.push(id);
       wrap.style.display = 'none'; wrap.innerHTML = '';
@@ -888,7 +889,7 @@ document.getElementById('showFade').onchange = render;
 document.getElementById('syncBtn').onclick = e => {
   state.syncView = !state.syncView;
   e.target.classList.toggle('on', state.syncView);
-  e.target.textContent = state.syncView ? '🔒 Đồng bộ khung nhìn' : '🔓 Khung nhìn tự do';
+  e.target.textContent = state.syncView ? '🔒 Synced view' : '🔓 Free view';
 };
 document.getElementById('runBtn').onclick   = runAll;
 document.getElementById('playBtn').onclick  = () => setPlaying(!state.timeline.playing);
@@ -900,7 +901,7 @@ document.getElementById('speedSel').onchange = e => {
   if (state.timeline.playing) setPlaying(true);
 };
 
-// Khởi động: lưới trống hoàn toàn, người dùng tự spawn màn hình
+// Startup: the grid starts completely empty, the user spawns panes themselves
 buildJourney();
 refreshChrome();
 render();
