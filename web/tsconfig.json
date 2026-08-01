@@ -5,6 +5,11 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
+    // Pinned so TypeScript cannot pick up @types packages from node_modules in
+    // parent directories. Without it, a machine that happens to have @types/node
+    // installed somewhere above the project typechecks clean while a fresh
+    // checkout fails — which is exactly how this slipped through to CI once.
+    "typeRoots": ["./node_modules/@types"],
     "strict": true,
     "noUnusedLocals": true,
     "noEmit": true,
