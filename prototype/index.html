@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VN Route Lab — Prototype UI</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --bg:#eef0f4; --surface:#fff; --line:#dfe3e9; --line-soft:#eceff3;
+    --ink:#1a1d23; --soft:#697180; --accent:#7048e8; --accent-bg:#f2ecff;
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; }
+  body {
+    font-family:"Be Vietnam Pro",system-ui,sans-serif; background:var(--bg); color:var(--ink);
+    display:flex; flex-direction:column; overflow:hidden; font-size:13px;
+  }
+  button,input,select { font-family:inherit; font-size:13px; color:var(--ink); }
+  button { cursor:pointer; }
+
+  /* ---------- Thanh trên ---------- */
+  #topbar {
+    flex:none; background:var(--surface); border-bottom:1px solid var(--line);
+    padding:9px 16px; display:flex; align-items:center; gap:14px;
+  }
+  .brand { font-weight:700; font-size:15px; letter-spacing:-.01em; }
+  .brand span { color:var(--accent); }
+  .legend { display:flex; gap:12px; font-size:11px; color:var(--soft); margin-left:auto; }
+  .legend i { width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:-1px; }
+  .ghost { border:1px solid var(--line); background:var(--surface); border-radius:7px; padding:5px 10px; }
+  .ghost.on { background:var(--accent-bg); border-color:var(--accent); color:var(--accent); font-weight:600; }
+
+  #body { flex:1; display:flex; min-height:0; }
+
+  /* ---------- Sidebar ---------- */
+  #sidebar {
+    flex:none; width:296px; background:var(--surface); border-right:1px solid var(--line);
+    display:flex; flex-direction:column; min-height:0;
+  }
+  #sideScroll { flex:1; overflow-y:auto; padding:14px; }
+  .sec { margin-bottom:20px; }
+  .sec > h3 {
+    font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--soft);
+    margin:0 0 9px; font-weight:600;
+  }
+  .row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .row label { flex:1; color:var(--soft); }
+  .row select, .row input[type=number] {
+    border:1px solid var(--line); border-radius:7px; padding:5px 8px; background:var(--surface);
+  }
+
+  /* ô tìm địa điểm */
+  .pick { position:relative; margin-bottom:8px; }
+  .pick-in {
+    display:flex; align-items:center; gap:8px; border:1px solid var(--line);
+    border-radius:9px; padding:7px 10px; background:var(--surface);
+  }
+  .pick-in:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-bg); }
+  .dot { width:9px;height:9px;border-radius:50%;flex:none; }
+  .pick-in input { border:none; outline:none; flex:1; min-width:0; background:none; }
+  .pick-in .x { border:none; background:none; color:#a7aeba; padding:0 2px; font-size:14px; }
+  .snap { font-size:11px; color:var(--soft); padding:3px 0 0 27px; }
+  .snap b { color:var(--ink); font-weight:600; }
+  .results {
+    position:absolute; z-index:1200; left:0; right:0; top:calc(100% + 4px);
+    background:var(--surface); border:1px solid var(--line); border-radius:9px;
+    box-shadow:0 8px 24px rgba(16,24,40,.13); max-height:250px; overflow-y:auto; display:none;
+  }
+  .results.open { display:block; }
+  .res { padding:8px 11px; cursor:pointer; border-bottom:1px solid var(--line-soft); }
+  .res:last-child { border-bottom:none; }
+  .res:hover, .res.sel { background:var(--accent-bg); }
+  .res .t { font-weight:500; }
+  .res .s { font-size:11px; color:var(--soft); margin-top:1px; }
+  .res .tag {
+    font-size:9.5px; padding:1px 6px; border-radius:20px; background:#e6f6ed; color:#1a7f42;
+    margin-left:6px; font-weight:600; vertical-align:1px;
+  }
+  .res .tag.far { background:#fff3e0; color:#b45309; }
+
+  .chip {
+    display:flex; align-items:center; gap:7px; padding:6px 9px; margin-bottom:6px;
+    background:#f6f7f9; border:1px solid var(--line-soft); border-radius:8px;
+  }
+  .chip span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .chip button { border:none;background:none;color:#a7aeba;font-size:13px; }
+  .addlink { border:none; background:none; color:var(--accent); font-weight:600; padding:2px 0; }
+
+  .seg { display:flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { flex:1; border:none; background:var(--surface); padding:6px 4px; font-size:11.5px; color:var(--soft); }
+  .seg button.on { background:var(--accent); color:#fff; font-weight:600; }
+
+  .slider { margin-bottom:10px; }
+  .slider .lab { display:flex; justify-content:space-between; margin-bottom:3px; font-size:11.5px; }
+  .slider .lab b { font-variant-numeric:tabular-nums; }
+  .slider input { width:100%; accent-color:var(--accent); }
+
+  .check { display:flex; align-items:center; gap:8px; margin-bottom:7px; cursor:pointer; }
+  .check input { accent-color:var(--accent); }
+
+  #runWrap { flex:none; padding:12px 14px; border-top:1px solid var(--line); }
+  #runBtn {
+    width:100%; background:var(--accent); color:#fff; border:none; border-radius:9px;
+    padding:11px; font-weight:600; font-size:14px;
+  }
+  #runBtn:disabled { background:#c9cdd6; }
+  #runNote { font-size:11px; color:var(--soft); text-align:center; margin-top:7px; }
+
+  /* ---------- Khu chính ---------- */
+  #main { flex:1; display:flex; flex-direction:column; min-width:0; }
+  #grid {
+    flex:1; overflow:auto; padding:14px; display:flex; flex-wrap:wrap;
+    gap:14px; align-content:flex-start;
+  }
+  #empty {
+    margin:auto; text-align:center; color:var(--soft); padding:40px;
+  }
+  #empty h2 { font-size:16px; color:var(--ink); margin:0 0 6px; font-weight:600; }
+  #empty p { margin:0 0 18px; max-width:330px; }
+  #empty button {
+    background:var(--accent); color:#fff; border:none; border-radius:9px;
+    padding:10px 20px; font-weight:600;
+  }
+  .pane {
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    display:flex; flex-direction:column; overflow:hidden; resize:both;
+    width:calc(50% - 7px); height:360px; min-width:270px; min-height:230px;
+    box-shadow:0 1px 2px rgba(16,24,40,.05);
+  }
+  .pane.dragging { opacity:.35; }
+  .pane.dropzone { outline:2px dashed var(--accent); outline-offset:-2px; }
+  .pane-head {
+    flex:none; display:flex; align-items:center; gap:7px; padding:7px 10px;
+    border-bottom:1px solid var(--line); cursor:grab;
+  }
+  .pane-head:active { cursor:grabbing; }
+  .grip { color:#c6ccd4; letter-spacing:-2px; font-size:13px; }
+  .pane-head select { border:1px solid var(--line); border-radius:6px; padding:3px 7px; font-weight:600; }
+  .badge { font-size:10.5px; padding:2px 7px; border-radius:20px; background:#eef1f5; color:var(--soft); font-weight:500; }
+  .badge.done { background:#e6f6ed; color:#1a7f42; }
+  .badge.fail { background:#fdeaea; color:#c92a2a; }
+  .close { border:none; background:none; color:#a7aeba; font-size:14px; padding:2px 5px; }
+  .close:hover { color:#e03131; }
+  .map { flex:1; background:#e8eaed; }
+  .pane-foot {
+    flex:none; padding:6px 11px; border-top:1px solid var(--line);
+    font-size:11.5px; color:var(--soft); display:flex; gap:11px; font-variant-numeric:tabular-nums;
+  }
+  .pane-foot b { color:var(--ink); font-weight:600; }
+  #addPane {
+    width:126px; height:360px; border:1.5px dashed #c8cfd8; border-radius:12px;
+    background:none; color:var(--soft); font-weight:500;
+  }
+  #addPane:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+  #addPane:disabled { opacity:.4; cursor:default; }
+
+  #timeline {
+    flex:none; background:var(--surface); border-top:1px solid var(--line);
+    padding:9px 16px; display:flex; align-items:center; gap:13px;
+  }
+  #timeline.off { opacity:.42; pointer-events:none; }
+  #timeline button { border:1px solid var(--line); background:var(--surface); border-radius:7px; padding:5px 11px; }
+  #slider { flex:1; accent-color:var(--accent); }
+  .step { font-variant-numeric:tabular-nums; color:var(--soft); min-width:104px; }
+  .step b { color:var(--ink); }
+  .leaflet-container { font-family:inherit; }
+  .leaflet-popup-content { margin:9px 11px; font-size:12.5px; }
+  .popbtn { display:block; width:100%; text-align:left; border:none; background:none; padding:4px 0; color:var(--accent); font-weight:500; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="brand">VN Route <span>Lab</span></div>
+  <button class="ghost on" id="syncBtn">🔒 Đồng bộ khung nhìn</button>
+  <div class="legend">
+    <span><i style="background:#b8bfc9"></i>chưa chạm</span>
+    <span><i style="background:#fff;border:2px solid #f59f00"></i>hàng đợi biên</span>
+    <span><i style="background:#4c6ef5"></i>đã mở</span>
+    <span><i style="background:#7048e8"></i>đường chọn</span>
+  </div>
+</div>
+
+<div id="body">
+  <!-- ================= SIDEBAR ================= -->
+  <aside id="sidebar">
+    <div id="sideScroll">
+
+      <div class="sec">
+        <h3>Hành trình</h3>
+        <div id="startPick"></div>
+        <div id="stopList"></div>
+        <div id="stopPickWrap" style="display:none"></div>
+        <button class="addlink" id="addStopBtn">＋ Thêm điểm dừng</button>
+        <div id="goalPick" style="margin-top:8px"></div>
+        <label class="check" style="margin-top:9px">
+          <input type="checkbox" id="optOrder" checked>
+          <span>Tự tối ưu thứ tự ghé</span>
+        </label>
+      </div>
+
+      <div class="sec">
+        <h3>Điều kiện giao thông</h3>
+        <div class="row"><label for="timeSel">Khung giờ</label>
+          <select id="timeSel">
+            <option value="peak">Cao điểm</option>
+            <option value="offpeak">Thấp điểm</option>
+            <option value="night">Ban đêm</option>
+          </select>
+        </div>
+        <div class="row"><label for="vehSel">Phương tiện</label>
+          <select id="vehSel">
+            <option value="bike">Xe máy</option>
+            <option value="car">Ô tô</option>
+            <option value="truck">Xe tải</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h3>Tiêu chí tối ưu</h3>
+        <div class="seg" id="criteria">
+          <button data-c="balanced" class="on">Cân bằng</button>
+          <button data-c="distance">Ngắn nhất</button>
+          <button data-c="time">Nhanh nhất</button>
+          <button data-c="avoid">Né kẹt xe</button>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h3>Trọng số hàm chi phí</h3>
+        <div class="slider" data-w="alpha"><div class="lab"><span>α · Quãng đường</span><b>1.00</b></div><input type="range" min="0" max="3" step="0.05" value="1"></div>
+        <div class="slider" data-w="beta"><div class="lab"><span>β · Thời gian</span><b>0.50</b></div><input type="range" min="0" max="3" step="0.05" value="0.5"></div>
+        <div class="slider" data-w="gamma"><div class="lab"><span>γ · Kẹt xe</span><b>0.80</b></div><input type="range" min="0" max="3" step="0.05" value="0.8"></div>
+        <div class="slider" data-w="delta"><div class="lab"><span>δ · Rủi ro</span><b>1.50</b></div><input type="range" min="0" max="3" step="0.05" value="1.5"></div>
+      </div>
+
+      <div class="sec">
+        <h3>Hiển thị</h3>
+        <label class="check"><input type="checkbox" id="showCong" checked><span>Lớp mức kẹt xe</span></label>
+        <label class="check"><input type="checkbox" id="showLabels"><span>Nhãn tên địa điểm</span></label>
+        <label class="check"><input type="checkbox" id="showFade" checked><span>Dấu chân nhạt dần theo thời gian</span></label>
+      </div>
+
+    </div>
+    <div id="runWrap">
+      <button id="runBtn" disabled>▶ CHẠY THUẬT TOÁN</button>
+      <div id="runNote">Thêm ít nhất một màn hình để chạy</div>
+    </div>
+  </aside>
+
+  <!-- ================= KHU CHÍNH ================= -->
+  <div id="main">
+    <div id="grid">
+      <div id="empty">
+        <h2>Chưa có màn hình nào</h2>
+        <p>Mỗi màn hình chạy một thuật toán trên cùng một hành trình. Thêm vài màn hình rồi bấm CHẠY để so sánh cách chúng tìm đường.</p>
+        <button id="emptyAdd">＋ Thêm màn hình đầu tiên</button>
+      </div>
+    </div>
+    <div id="timeline" class="off">
+      <button id="stepBack">◀◀</button>
+      <button id="playBtn">▶</button>
+      <button id="stepFwd">▶▶</button>
+      <span class="step">Bước <b id="stepNow">0</b> / <span id="stepMax">0</span></span>
+      <input type="range" id="slider" min="0" max="0" value="0">
+      <select id="speedSel">
+        <option value="2">0.5x</option><option value="1" selected>1x</option>
+        <option value="0.5">2x</option><option value="0.25">4x</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   1. DỮ LIỆU  —  bản thật lấy từ GET /api/graph
+   ============================================================ */
+const NODES = [
+  { id:'n1',  name:'Chợ Bến Thành',       lat:10.7725, lng:106.6980 },
+  { id:'n2',  name:'Nhà thờ Đức Bà',      lat:10.7797, lng:106.6990 },
+  { id:'n3',  name:'Dinh Độc Lập',        lat:10.7772, lng:106.6957 },
+  { id:'n4',  name:'Bến Bạch Đằng',       lat:10.7745, lng:106.7060 },
+  { id:'n5',  name:'Thảo Cầm Viên',       lat:10.7880, lng:106.7050 },
+  { id:'n6',  name:'Ngã tư Hàng Xanh',    lat:10.8010, lng:106.7100 },
+  { id:'n7',  name:'Landmark 81',         lat:10.7947, lng:106.7218 },
+  { id:'n8',  name:'Cầu Sài Gòn',         lat:10.7960, lng:106.7280 },
+  { id:'n9',  name:'Thảo Điền',           lat:10.8060, lng:106.7370 },
+  { id:'n10', name:'Chợ Thủ Đức',         lat:10.8500, lng:106.7550 },
+  { id:'n11', name:'Bến xe Miền Đông',    lat:10.8145, lng:106.7115 },
+  { id:'n12', name:'Chợ Bà Chiểu',        lat:10.8018, lng:106.6968 },
+  { id:'n13', name:'Sân bay Tân Sơn Nhất',lat:10.8188, lng:106.6520 },
+  { id:'n14', name:'Chợ Tân Bình',        lat:10.7936, lng:106.6473 },
+  { id:'n15', name:'ĐH Bách Khoa',        lat:10.7725, lng:106.6580 },
+  { id:'n16', name:'Bệnh viện Chợ Rẫy',   lat:10.7556, lng:106.6595 },
+  { id:'n17', name:'Chợ Bình Tây',        lat:10.7500, lng:106.6500 },
+  { id:'n18', name:'Công viên Đầm Sen',   lat:10.7680, lng:106.6350 },
+  { id:'n19', name:'Cầu Chữ Y',           lat:10.7480, lng:106.6870 },
+  { id:'n20', name:'Crescent Mall Q7',    lat:10.7290, lng:106.7180 },
+];
+// [từ, đến, km, mức kẹt xe 1-5, rủi ro 0-1]
+const EDGES = [
+  ['n1','n3',0.7,4,0.1], ['n1','n4',1.0,3,0.1], ['n1','n19',3.2,3,0.3], ['n1','n15',4.4,4,0.2],
+  ['n2','n3',0.5,2,0.0], ['n2','n4',1.0,2,0.0], ['n2','n5',1.1,3,0.1],
+  ['n3','n12',3.0,4,0.2], ['n4','n5',1.6,2,0.1], ['n4','n20',5.6,3,0.2],
+  ['n5','n6',1.6,5,0.4], ['n5','n7',2.1,3,0.1], ['n6','n7',1.5,5,0.5],
+  ['n6','n11',2.0,4,0.3], ['n6','n12',1.5,4,0.3], ['n7','n8',0.8,3,0.1],
+  ['n8','n9',1.4,2,0.1], ['n8','n11',2.4,3,0.2], ['n9','n10',5.5,2,0.1],
+  ['n10','n11',5.2,3,0.2], ['n11','n13',6.5,4,0.3], ['n12','n13',5.3,4,0.3],
+  ['n12','n14',5.6,3,0.2], ['n13','n14',3.0,3,0.2], ['n14','n15',2.7,3,0.2],
+  ['n14','n18',3.5,2,0.1], ['n15','n16',2.0,4,0.3], ['n15','n18',2.6,3,0.2],
+  ['n16','n17',1.8,5,0.5], ['n16','n19',2.2,4,0.4], ['n17','n18',2.4,3,0.2],
+  ['n17','n19',4.3,3,0.3], ['n19','n20',4.0,2,0.1], ['n20','n8',6.0,2,0.1],
+];
+const NODE = Object.fromEntries(NODES.map(n => [n.id, n]));
+const ADJ = {}; NODES.forEach(n => ADJ[n.id] = []);
+EDGES.forEach(([a,b,km,cong,risk]) => {
+  ADJ[a].push({ to:b, km, cong, risk }); ADJ[b].push({ to:a, km, cong, risk });
+});
+const CONG_COLOR = { 1:'#2fbf71', 2:'#9ccc3c', 3:'#f5c518', 4:'#f28c28', 5:'#e03131' };
+const BASE_SPEED = { 1:35, 2:28, 3:20, 4:13, 5:8 };   // km/h, ô tô giờ cao điểm
+
+/* ============================================================
+   2. HÀM CHI PHÍ
+   ============================================================ */
+const TIME_MULT = { peak:1, offpeak:1.35, night:1.7 };
+const VEHICLE  = {
+  bike:  { speed:1.15, risk:1.0, label:'Xe máy' },   // luồn lách tốt hơn khi kẹt
+  car:   { speed:1.00, risk:1.0, label:'Ô tô'   },
+  truck: { speed:0.78, risk:2.2, label:'Xe tải' },   // chậm hơn, phạt nặng đường rủi ro
+};
+const CRITERIA = {
+  balanced: { alpha:1,   beta:0.5, gamma:0.8, delta:1.5 },
+  distance: { alpha:1,   beta:0,   gamma:0,   delta:0   },
+  time:     { alpha:0,   beta:1,   gamma:0,   delta:0   },
+  avoid:    { alpha:0.3, beta:0.6, gamma:2.5, delta:1.0 },
+};
+
+const query = {
+  start:'n1', goal:'n10', stops:[], optimizeOrder:true,
+  timeOfDay:'peak', vehicle:'bike',
+  weights:{ ...CRITERIA.balanced },
+};
+
+const speedOf  = c => BASE_SPEED[c] * TIME_MULT[query.timeOfDay] * VEHICLE[query.vehicle].speed;
+const edgeTime = e => (e.km / speedOf(e.cong)) * 60;
+const edgeCost = e => {
+  const w = query.weights, v = VEHICLE[query.vehicle];
+  return w.alpha*e.km + w.beta*edgeTime(e) + w.gamma*e.cong + w.delta*e.risk*v.risk;
+};
+function haversine(a, b) {
+  const R = 6371, rad = d => d*Math.PI/180;
+  const dLat = rad(b.lat-a.lat), dLng = rad(b.lng-a.lng);
+  const h = Math.sin(dLat/2)**2 + Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+
+/* ============================================================
+   3. THUẬT TOÁN  —  bản thật nằm ở backend FastAPI
+   ============================================================ */
+const ALGOS = { bfs:'BFS', dfs:'DFS', ucs:'UCS', astar:'A*', greedy:'Greedy Best-First' };
+
+// Chi phí thấp nhất mỗi km trong mạng lưới. Nhân với khoảng cách chim bay cho ra
+// cận dưới của chi phí thật, nên heuristic vẫn admissible mà chặt hơn nhiều so với
+// dùng thẳng số km — nếu không A* sẽ thoái hoá gần thành UCS.
+const minCostPerKm = () =>
+  Math.min(...EDGES.map(([,,km,cong,risk]) => edgeCost({ km, cong, risk }) / km));
+
+function search(algo, start, goal) {
+  const t0 = performance.now();
+  const k = minCostPerKm();
+  const h = id => k * haversine(NODE[id], NODE[goal]);
+  const parent = { [start]:null }, gScore = { [start]:0 };
+  const closed = new Set(), trace = [];
+  let frontier = [start], found = false;
+  const priority = { ucs:i=>gScore[i], astar:i=>gScore[i]+h(i), greedy:i=>h(i) }[algo];
+
+  while (frontier.length) {
+    let cur;
+    if (algo === 'bfs')      cur = frontier.shift();
+    else if (algo === 'dfs') cur = frontier.pop();
+    else {
+      let bi = 0;
+      for (let i = 1; i < frontier.length; i++)
+        if (priority(frontier[i]) < priority(frontier[bi])) bi = i;
+      cur = frontier.splice(bi,1)[0];
+    }
+    if (closed.has(cur)) continue;
+    closed.add(cur);
+    trace.push({
+      expanded:cur, frontier:[...frontier],
+      g:+(gScore[cur] ?? 0).toFixed(2),
+      h:(algo === 'astar' || algo === 'greedy') ? +h(cur).toFixed(2) : null,
+      parent:parent[cur],
+    });
+    if (cur === goal) { found = true; break; }
+    for (const e of ADJ[cur]) {
+      if (closed.has(e.to)) continue;
+      const tentative = (gScore[cur] ?? 0) + (algo === 'bfs' || algo === 'dfs' ? 1 : edgeCost(e));
+      if (algo === 'dfs') {
+        // DFS phải bám cây duyệt của chính nó, không nhận cha "tốt hơn" từ nhánh khác
+        if (!(e.to in gScore)) { gScore[e.to] = tentative; parent[e.to] = cur; }
+      } else if (!(e.to in gScore) || tentative < gScore[e.to]) {
+        gScore[e.to] = tentative; parent[e.to] = cur;
+      }
+      if (!frontier.includes(e.to)) frontier.push(e.to);
+    }
+  }
+  const path = [];
+  if (found) { let c = goal; while (c) { path.unshift(c); c = parent[c]; } }
+  return { path, trace, found, processingMs:+(performance.now()-t0).toFixed(2) };
+}
+
+function legStats(path) {
+  let km = 0, min = 0, cost = 0;
+  for (let i = 0; i+1 < path.length; i++) {
+    const e = ADJ[path[i]].find(x => x.to === path[i+1]);
+    km += e.km; min += edgeTime(e); cost += edgeCost(e);
+  }
+  return { km, min, cost };
+}
+
+// Nhiều điểm dừng: sắp thứ tự ghé bằng láng giềng gần nhất theo chi phí UCS thật
+function nearestNeighborOrder(start, stops, goal) {
+  const costTo = (a,b) => { const r = search('ucs',a,b); return r.found ? legStats(r.path).cost : Infinity; };
+  const left = [...stops], order = [];
+  let cur = start;
+  while (left.length) {
+    let bi = 0;
+    for (let i = 1; i < left.length; i++) if (costTo(cur,left[i]) < costTo(cur,left[bi])) bi = i;
+    cur = left[bi]; order.push(cur); left.splice(bi,1);
+  }
+  return order;
+}
+
+// Chạy cả hành trình (có thể nhiều chặng) cho một thuật toán, nối trace lại thành một dòng thời gian
+function planRoute(algo) {
+  const stops = query.optimizeOrder && query.stops.length > 1
+    ? nearestNeighborOrder(query.start, query.stops, query.goal)
+    : [...query.stops];
+  const seq = [query.start, ...stops, query.goal].filter((v,i,a) => i === 0 || v !== a[i-1]);
+
+  const trace = [], reveal = [], fullPath = [];
+  let km = 0, min = 0, cost = 0, ms = 0, ok = true;
+
+  for (let i = 0; i+1 < seq.length; i++) {
+    const r = search(algo, seq[i], seq[i+1]);
+    ms += r.processingMs;
+    const gi = r.trace.findIndex(t => t.expanded === seq[i+1]);
+    trace.push(...r.trace);
+    if (!r.found) { ok = false; break; }
+    const st = legStats(r.path);
+    km += st.km; min += st.min; cost += st.cost;
+    fullPath.push(...(fullPath.length ? r.path.slice(1) : r.path));
+    // Chặng nào xong thì đoạn đó hiện ra, không đợi cả hành trình
+    reveal.push({ upto: trace.length - r.trace.length + gi + 1, path:[...fullPath] });
+  }
+
+  return {
+    algorithm:algo, order:seq, path:fullPath, trace, reveal, found:ok,
+    metrics:{
+      distanceKm:+km.toFixed(1), timeMin:Math.round(min), cost:+cost.toFixed(1),
+      nodesExpanded:trace.length, processingMs:+ms.toFixed(2),
+      optimal:['ucs','astar'].includes(algo) && query.stops.length === 0,
+    },
+  };
+}
+
+/* ============================================================
+   4. TÌM ĐỊA ĐIỂM  —  gõ tự do rồi ghim vào node gần nhất
+   ============================================================ */
+// Bỏ dấu để gõ "ben thanh" vẫn ra "Chợ Bến Thành". Phải hạ chữ thường trước khi
+// đổi đ→d, nếu không "Đ" hoa sẽ lọt lưới.
+const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/đ/g,'d');
+
+function nearestNode(lat, lng) {
+  let best = null, bestD = Infinity;
+  for (const n of NODES) {
+    const d = haversine({lat,lng}, n);
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  return { node:best, distanceM: Math.round(bestD*1000) };
+}
+
+async function geocode(q) {
+  // Giới hạn trong khung TP.HCM để kết quả không nhảy ra tỉnh khác
+  const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&bounded=1'
+            + '&viewbox=106.55,10.92,106.86,10.66&accept-language=vi&q=' + encodeURIComponent(q);
+  try {
+    const r = await fetch(url, { headers:{ 'Accept':'application/json' } });
+    if (!r.ok) return [];
+    return (await r.json()).map(x => ({
+      title: x.name || x.display_name.split(',')[0],
+      sub: x.display_name, lat:+x.lat, lng:+x.lon,
+    }));
+  } catch { return []; }   // mất mạng thì im lặng, vẫn còn kết quả nội bộ
+}
+
+/* Ô chọn địa điểm dùng chung cho điểm đi, điểm đến và điểm dừng */
+function makePicker(host, { color, placeholder, value, onPick, onRemove }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pick';
+  wrap.innerHTML = `
+    <div class="pick-in">
+      <span class="dot" style="background:${color}"></span>
+      <input placeholder="${placeholder}" autocomplete="off">
+      ${onRemove ? '<button class="x">✕</button>' : ''}
+    </div>
+    <div class="snap"></div>
+    <div class="results"></div>`;
+  host.appendChild(wrap);
+
+  const input = wrap.querySelector('input');
+  const list  = wrap.querySelector('.results');
+  const snap  = wrap.querySelector('.snap');
+  let items = [], timer = null;
+
+  function setNode(nodeId, note) {
+    input.value = NODE[nodeId].name;
+    snap.innerHTML = note || '';
+    list.classList.remove('open');
+    onPick(nodeId);
+  }
+  if (value) { input.value = NODE[value].name; }
+
+  function draw() {
+    list.innerHTML = items.map((it,i) => {
+      const tag = it.exact
+        ? '<span class="tag">trong mạng lưới</span>'
+        : `<span class="tag far">ghim vào ${it.snapName} · ${it.dist}m</span>`;
+      return `<div class="res" data-i="${i}"><div class="t">${it.title}${tag}</div>
+              ${it.sub ? `<div class="s">${it.sub}</div>` : ''}</div>`;
+    }).join('');
+    list.classList.toggle('open', items.length > 0);
+    list.querySelectorAll('.res').forEach(el => {
+      el.onmousedown = e => {
+        e.preventDefault();
+        const it = items[+el.dataset.i];
+        setNode(it.nodeId, it.exact ? '' :
+          `Đã ghim vào <b>${it.snapName}</b>, cách ${it.dist}m`);
+      };
+    });
+  }
+
+  async function run(q) {
+    const nq = norm(q);
+    // 1. khớp trong mạng lưới trước
+    items = NODES.filter(n => norm(n.name).includes(nq))
+                 .map(n => ({ title:n.name, sub:'Node trong graph', exact:true, nodeId:n.id }));
+    draw();
+    if (q.length < 3) return;
+    // 2. rồi mới hỏi ra ngoài, và ghim kết quả về node gần nhất
+    const remote = await geocode(q);
+    const extra = remote.map(r => {
+      const { node, distanceM } = nearestNode(r.lat, r.lng);
+      return { title:r.title, sub:r.sub, exact:false, nodeId:node.id, snapName:node.name, dist:distanceM };
+    }).filter(r => !items.some(i => i.nodeId === r.nodeId && i.exact && norm(i.title) === norm(r.title)));
+    items = [...items, ...extra];
+    draw();
+  }
+
+  input.oninput = () => { clearTimeout(timer); timer = setTimeout(() => run(input.value.trim()), 320); };
+  input.onfocus = () => { if (input.value.trim()) run(input.value.trim()); };
+  input.onblur  = () => setTimeout(() => list.classList.remove('open'), 120);
+  if (onRemove) wrap.querySelector('.x').onclick = onRemove;
+
+  return { setNode, el:wrap };
+}
+
+/* ============================================================
+   5. STATE + PANE
+   ============================================================ */
+const state = { panes:[], timeline:{ step:0, playing:false, speed:1, maxStep:0 }, syncView:true };
+let paneSeq = 0, syncing = false, playTimer = null;
+const MAX_PANES = 6;
+
+function createPane(algo) {
+  const id = 'p' + (++paneSeq);
+  const el = document.createElement('div');
+  el.className = 'pane'; el.dataset.id = id;
+  el.innerHTML = `
+    <div class="pane-head" draggable="true">
+      <span class="grip">⋮⋮</span>
+      <select class="algoSel">${Object.entries(ALGOS)
+        .map(([k,v]) => `<option value="${k}"${k===algo?' selected':''}>${v}</option>`).join('')}</select>
+      <span class="badge">chưa chạy</span>
+      <span style="flex:1"></span>
+      <button class="close" title="Đóng">✕</button>
+    </div>
+    <div class="map"></div>
+    <div class="pane-foot"><span>Chưa có kết quả</span></div>`;
+  document.getElementById('grid').insertBefore(el, document.getElementById('addPane'));
+
+  const map = L.map(el.querySelector('.map'), { zoomControl:false, attributionControl:false })
+    .setView([10.792,106.700], 12);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    { maxZoom:19, subdomains:'abcd' }).addTo(map);
+
+  // Nền đường — màu theo mức kẹt xe, hiện cả khi chưa chạy
+  const congLayer = L.layerGroup().addTo(map);
+  EDGES.forEach(([a,b,,cong]) => L.polyline(
+    [[NODE[a].lat,NODE[a].lng],[NODE[b].lat,NODE[b].lng]],
+    { color:CONG_COLOR[cong], weight:3, opacity:.55 }).addTo(congLayer));
+
+  // Đường đi cuối — hai lớp, tách hẳn khỏi thang màu kẹt xe
+  const casing = L.polyline([], { color:'#fff',     weight:9, opacity:0 }).addTo(map);
+  const core   = L.polyline([], { color:'#7048e8',  weight:5, opacity:0 }).addTo(map);
+
+  const markers = {};
+  NODES.forEach(n => {
+    markers[n.id] = L.circleMarker([n.lat,n.lng],
+      { radius:4, weight:0, fillColor:'#b8bfc9', fillOpacity:.9 })
+      .bindTooltip(n.name, { direction:'top', offset:[0,-6] })
+      .addTo(map);
+    markers[n.id].on('click', () => openNodeMenu(n, map));
+  });
+
+  const pane = { id, el, map, markers, congLayer, casing, core, algo, result:null };
+  state.panes.push(pane);
+
+  map.on('move zoom', () => {
+    if (syncing || !state.syncView) return;
+    syncing = true;
+    const c = map.getCenter(), z = map.getZoom();
+    state.panes.forEach(p => { if (p !== pane) p.map.setView(c, z, { animate:false }); });
+    syncing = false;
+  });
+  // Leaflet xám tile khi container đổi kích thước — bắt buộc gọi invalidateSize
+  new ResizeObserver(() => map.invalidateSize()).observe(el.querySelector('.map'));
+
+  el.querySelector('.algoSel').onchange = e => {
+    pane.algo = e.target.value;
+    if (state.timeline.maxStep) pane.result = planRoute(pane.algo);
+    recomputeMax(); render();
+  };
+  el.querySelector('.close').onclick = () => {
+    state.panes = state.panes.filter(p => p !== pane);
+    map.remove(); el.remove(); recomputeMax(); render(); refreshChrome();
+  };
+
+  const head = el.querySelector('.pane-head');
+  head.addEventListener('dragstart', e => {
+    e.dataTransfer.setData('text/plain', id); el.classList.add('dragging');
+  });
+  head.addEventListener('dragend', () => el.classList.remove('dragging'));
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('dropzone'); });
+  el.addEventListener('dragleave', () => el.classList.remove('dropzone'));
+  el.addEventListener('drop', e => {
+    e.preventDefault(); el.classList.remove('dropzone');
+    const src = document.querySelector(`.pane[data-id="${e.dataTransfer.getData('text/plain')}"]`);
+    if (!src || src === el) return;
+    const grid = document.getElementById('grid'), mark = document.createComment('');
+    grid.insertBefore(mark, src); grid.insertBefore(src, el); grid.insertBefore(el, mark); mark.remove();
+    state.panes.forEach(p => p.map.invalidateSize());
+  });
+
+  refreshChrome();
+  return pane;
+}
+
+// Bấm vào một node trên bản đồ để đặt làm điểm đi / đến / điểm dừng
+function openNodeMenu(n, map) {
+  const div = document.createElement('div');
+  div.innerHTML = `<div style="font-weight:600;margin-bottom:5px">${n.name}</div>
+    <button class="popbtn" data-a="start">Đặt làm điểm đi</button>
+    <button class="popbtn" data-a="goal">Đặt làm điểm đến</button>
+    <button class="popbtn" data-a="stop">Thêm làm điểm dừng</button>`;
+  div.querySelectorAll('button').forEach(b => b.onclick = () => {
+    const a = b.dataset.a;
+    if (a === 'start') query.start = n.id;
+    if (a === 'goal')  query.goal  = n.id;
+    if (a === 'stop' && !query.stops.includes(n.id)) query.stops.push(n.id);
+    map.closePopup(); buildJourney(); clearResults();
+  });
+  L.popup().setLatLng([n.lat,n.lng]).setContent(div).openOn(map);
+}
+
+/* ============================================================
+   6. CHẠY & VẼ
+   ============================================================ */
+function recomputeMax() {
+  state.timeline.maxStep = Math.max(0, ...state.panes.map(p => p.result ? p.result.trace.length : 0));
+  const s = document.getElementById('slider');
+  s.max = state.timeline.maxStep;
+  if (state.timeline.step > state.timeline.maxStep) state.timeline.step = state.timeline.maxStep;
+  document.getElementById('timeline').classList.toggle('off', state.timeline.maxStep === 0);
+}
+function runAll() {
+  state.panes.forEach(p => p.result = planRoute(p.algo));
+  recomputeMax(); state.timeline.step = 0; setPlaying(true); render();
+}
+function clearResults() {
+  state.panes.forEach(p => p.result = null);
+  state.timeline.step = 0; setPlaying(false); recomputeMax(); render();
+}
+
+function render() {
+  const step = state.timeline.step;
+  document.getElementById('stepNow').textContent = step;
+  document.getElementById('stepMax').textContent = state.timeline.maxStep;
+  document.getElementById('slider').value = step;
+  const fade = document.getElementById('showFade').checked;
+
+  state.panes.forEach(pane => {
+    const badge = pane.el.querySelector('.badge');
+    const foot  = pane.el.querySelector('.pane-foot');
+
+    if (!pane.result) {
+      badge.textContent = 'chưa chạy'; badge.className = 'badge';
+      foot.innerHTML = '<span>Chưa có kết quả</span>';
+      NODES.forEach(n => pane.markers[n.id].setStyle({ radius:4, weight:0, fillColor:'#b8bfc9', fillOpacity:.9 }));
+      paintEndpoints(pane);
+      pane.casing.setStyle({ opacity:0 }); pane.core.setStyle({ opacity:0 });
+      return;
+    }
+
+    const tr = pane.result.trace, s = Math.min(step, tr.length);
+    const openedAt = {};
+    for (let i = 0; i < s; i++) openedAt[tr[i].expanded] = i;
+    const frontier = s > 0 ? new Set(tr[s-1].frontier) : new Set();
+    const current  = s > 0 ? tr[s-1].expanded : null;
+
+    NODES.forEach(n => {
+      const m = pane.markers[n.id];
+      if (n.id === current)
+        m.setStyle({ radius:7, weight:3, color:'#1c3faa', fillColor:'#fff', fillOpacity:1 });
+      else if (n.id in openedAt) {
+        const age = fade ? (s - openedAt[n.id]) / Math.max(tr.length,1) : 0;
+        m.setStyle({ radius:5, weight:0, fillColor:'#4c6ef5', fillOpacity:.95 - Math.min(age,1)*.55 });
+      } else if (frontier.has(n.id))
+        m.setStyle({ radius:6, weight:2.5, color:'#f59f00', fillColor:'#fff', fillOpacity:1 });
+      else
+        m.setStyle({ radius:4, weight:0, fillColor:'#b8bfc9', fillOpacity:.9 });
+    });
+    paintEndpoints(pane);
+
+    // Mỗi chặng xong thì đoạn đó hiện ra, không đợi cả hành trình
+    let shown = null;
+    for (const r of pane.result.reveal) if (s >= r.upto) shown = r;
+    const ll = shown ? shown.path.map(id => [NODE[id].lat, NODE[id].lng]) : [];
+    pane.casing.setLatLngs(ll).setStyle({ opacity: ll.length ? .95 : 0 });
+    pane.core.setLatLngs(ll).setStyle({ opacity: ll.length ? 1 : 0 });
+
+    const done = s >= tr.length;
+    if (!pane.result.found && done) { badge.textContent = 'không tìm được đường'; badge.className = 'badge fail'; }
+    else if (done) { badge.textContent = `xong ở bước ${tr.length}`; badge.className = 'badge done'; }
+    else { badge.textContent = `đang chạy · ${s}`; badge.className = 'badge'; }
+
+    const mt = pane.result.metrics;
+    foot.innerHTML =
+      `<span><b>${mt.distanceKm}</b> km</span><span><b>${mt.timeMin}</b> phút</span>` +
+      `<span>cost <b>${mt.cost}</b></span><span><b>${s}</b>/${mt.nodesExpanded} node</span>` +
+      `<span style="margin-left:auto">${mt.optimal ? 'tối ưu' : 'xấp xỉ'}</span>`;
+  });
+}
+
+function paintEndpoints(pane) {
+  const set = (id, color) => id && pane.markers[id] &&
+    pane.markers[id].setStyle({ radius:7, weight:2.5, color:'#fff', fillColor:color, fillOpacity:1 });
+  query.stops.forEach(id => set(id, '#f59f00'));
+  set(query.start, '#2fbf71');
+  set(query.goal,  '#e03131');
+}
+
+/* ============================================================
+   7. TIMELINE
+   ============================================================ */
+function setPlaying(on) {
+  state.timeline.playing = on;
+  document.getElementById('playBtn').textContent = on ? '❚❚' : '▶';
+  clearInterval(playTimer);
+  if (on) playTimer = setInterval(() => {
+    if (state.timeline.step >= state.timeline.maxStep) return setPlaying(false);
+    state.timeline.step++; render();
+  }, 360 * state.timeline.speed);
+}
+
+/* ============================================================
+   8. SIDEBAR — dựng phần hành trình
+   ============================================================ */
+function buildJourney() {
+  const sHost = document.getElementById('startPick');
+  const gHost = document.getElementById('goalPick');
+  const lHost = document.getElementById('stopList');
+  sHost.innerHTML = ''; gHost.innerHTML = ''; lHost.innerHTML = '';
+
+  makePicker(sHost, {
+    color:'#2fbf71', placeholder:'Điểm đi — gõ tên địa điểm', value:query.start,
+    onPick:id => { query.start = id; clearResults(); refreshChrome(); },
+  });
+  query.stops.forEach((sid, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.innerHTML = `<span class="dot" style="background:#f59f00"></span>
+      <span>${NODE[sid].name}</span><button title="Bỏ">✕</button>`;
+    chip.querySelector('button').onclick = () => { query.stops.splice(i,1); buildJourney(); clearResults(); };
+    lHost.appendChild(chip);
+  });
+  makePicker(gHost, {
+    color:'#e03131', placeholder:'Điểm đến — gõ tên địa điểm', value:query.goal,
+    onPick:id => { query.goal = id; clearResults(); refreshChrome(); },
+  });
+}
+
+function refreshChrome() {
+  const add = document.getElementById('addPane');
+  if (add) add.disabled = state.panes.length >= MAX_PANES;
+  document.getElementById('empty').style.display = state.panes.length ? 'none' : 'block';
+  const run = document.getElementById('runBtn');
+  run.disabled = state.panes.length === 0;
+  document.getElementById('runNote').textContent = state.panes.length === 0
+    ? 'Thêm ít nhất một màn hình để chạy'
+    : `${state.panes.length} màn hình · ${query.stops.length} điểm dừng`;
+}
+
+/* ============================================================
+   9. NỐI DÂY
+   ============================================================ */
+const addBtn = document.createElement('button');
+addBtn.id = 'addPane'; addBtn.textContent = '＋  Thêm màn hình';
+document.getElementById('grid').appendChild(addBtn);
+
+function addPane() {
+  const used = state.panes.map(p => p.algo);
+  const next = Object.keys(ALGOS).find(a => !used.includes(a)) || 'astar';
+  const pane = createPane(next);
+  // Màn hình tạo giữa chừng chạy ngay để bám vào dòng thời gian chung
+  if (state.timeline.maxStep) { pane.result = planRoute(pane.algo); recomputeMax(); }
+  if (state.panes.length > 1) {
+    const ref = state.panes[0].map;
+    pane.map.setView(ref.getCenter(), ref.getZoom(), { animate:false });
+  }
+  render();
+}
+addBtn.onclick = addPane;
+document.getElementById('emptyAdd').onclick = addPane;
+
+document.getElementById('addStopBtn').onclick = () => {
+  const wrap = document.getElementById('stopPickWrap');
+  wrap.style.display = 'block'; wrap.innerHTML = '';
+  const p = makePicker(wrap, {
+    color:'#f59f00', placeholder:'Điểm dừng — gõ tên địa điểm',
+    onPick:id => {
+      if (!query.stops.includes(id)) query.stops.push(id);
+      wrap.style.display = 'none'; wrap.innerHTML = '';
+      buildJourney(); clearResults(); refreshChrome();
+    },
+    onRemove:() => { wrap.style.display = 'none'; wrap.innerHTML = ''; },
+  });
+  p.el.querySelector('input').focus();
+};
+
+document.getElementById('optOrder').onchange = e => { query.optimizeOrder = e.target.checked; clearResults(); };
+document.getElementById('timeSel').onchange  = e => { query.timeOfDay = e.target.value; clearResults(); };
+document.getElementById('vehSel').onchange   = e => { query.vehicle   = e.target.value; clearResults(); };
+
+document.querySelectorAll('#criteria button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#criteria button').forEach(x => x.classList.toggle('on', x === b));
+  Object.assign(query.weights, CRITERIA[b.dataset.c]);
+  document.querySelectorAll('.slider').forEach(sl => {
+    const v = query.weights[sl.dataset.w];
+    sl.querySelector('input').value = v;
+    sl.querySelector('b').textContent = v.toFixed(2);
+  });
+  clearResults();
+});
+document.querySelectorAll('.slider').forEach(sl => {
+  sl.querySelector('input').oninput = e => {
+    const v = +e.target.value;
+    query.weights[sl.dataset.w] = v;
+    sl.querySelector('b').textContent = v.toFixed(2);
+    document.querySelectorAll('#criteria button').forEach(x => x.classList.remove('on'));
+    clearResults();
+  };
+});
+
+document.getElementById('showCong').onchange = e =>
+  state.panes.forEach(p => e.target.checked ? p.congLayer.addTo(p.map) : p.congLayer.remove());
+document.getElementById('showLabels').onchange = e =>
+  state.panes.forEach(p => NODES.forEach(n =>
+    p.markers[n.id].unbindTooltip().bindTooltip(n.name,
+      { direction:'top', offset:[0,-6], permanent:e.target.checked })));
+document.getElementById('showFade').onchange = render;
+
+document.getElementById('syncBtn').onclick = e => {
+  state.syncView = !state.syncView;
+  e.target.classList.toggle('on', state.syncView);
+  e.target.textContent = state.syncView ? '🔒 Đồng bộ khung nhìn' : '🔓 Khung nhìn tự do';
+};
+document.getElementById('runBtn').onclick   = runAll;
+document.getElementById('playBtn').onclick  = () => setPlaying(!state.timeline.playing);
+document.getElementById('stepBack').onclick = () => { setPlaying(false); state.timeline.step = Math.max(0, state.timeline.step-1); render(); };
+document.getElementById('stepFwd').onclick  = () => { setPlaying(false); state.timeline.step = Math.min(state.timeline.maxStep, state.timeline.step+1); render(); };
+document.getElementById('slider').oninput   = e => { setPlaying(false); state.timeline.step = +e.target.value; render(); };
+document.getElementById('speedSel').onchange = e => {
+  state.timeline.speed = +e.target.value;
+  if (state.timeline.playing) setPlaying(true);
+};
+
+// Khởi động: lưới trống hoàn toàn, người dùng tự spawn màn hình
+buildJourney();
+refreshChrome();
+render();
+</script>
+</body>
+</html>

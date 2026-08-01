@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="572" height="464" viewBox="0 0 572 464">
+<rect width="572" height="464" fill="#f0eadd"/><g transform="translate(16,16)">
+      <rect width="96" height="78" rx="6" fill="#fbf8f2" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#23201b" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#23201b">
+        <path d="M6.2 7.2h3.4"/><path d="M8.3 7.6 7.3 12.6"/><path d="M7.3 12.6 6.9 14.5"/><path d="M7.3 12.6c-.1 1.6.8 2.6 2.3 2.6h3"/><path d="M12.6 15.2 14.3 10.8h3.1c2.1 0 3.5 1.7 3.5 3.8v.6"/><circle cx="6.9" cy="16.8" r="2.4"/><circle cx="17.9" cy="16.8" r="2.4"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">scooter</text>
+    </g><g transform="translate(16,124)">
+      <rect width="96" height="78" rx="6" fill="#23201b" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#fbf8f2" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#fbf8f2">
+        <path d="M6.2 7.2h3.4"/><path d="M8.3 7.6 7.3 12.6"/><path d="M7.3 12.6 6.9 14.5"/><path d="M7.3 12.6c-.1 1.6.8 2.6 2.3 2.6h3"/><path d="M12.6 15.2 14.3 10.8h3.1c2.1 0 3.5 1.7 3.5 3.8v.6"/><circle cx="6.9" cy="16.8" r="2.4" fill="currentColor"/><circle cx="17.9" cy="16.8" r="2.4" fill="currentColor"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">scooter ·chọn</text>
+    </g><g transform="translate(124,16)">
+      <rect width="96" height="78" rx="6" fill="#fbf8f2" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#23201b" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#23201b">
+        <path d="M3 15.3V9.5c0-1.2 1-2.2 2.2-2.2h6.9l4.5 4h1.5c1.2 0 2.2 1 2.2 2.2v1.8"/><path d="M12.1 7.3v4h4.5"/><path d="M3 15.3h1.5M10 15.3h5.1M19.9 15.3h.4"/><circle cx="7.1" cy="16.8" r="2.4"/><circle cx="17.5" cy="16.8" r="2.4"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">van</text>
+    </g><g transform="translate(124,124)">
+      <rect width="96" height="78" rx="6" fill="#23201b" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#fbf8f2" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#fbf8f2">
+        <path d="M3 15.3V9.5c0-1.2 1-2.2 2.2-2.2h6.9l4.5 4h1.5c1.2 0 2.2 1 2.2 2.2v1.8"/><path d="M12.1 7.3v4h4.5"/><path d="M3 15.3h1.5M10 15.3h5.1M19.9 15.3h.4"/><circle cx="7.1" cy="16.8" r="2.4" fill="currentColor"/><circle cx="17.5" cy="16.8" r="2.4" fill="currentColor"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">van ·chọn</text>
+    </g><g transform="translate(232,16)">
+      <rect width="96" height="78" rx="6" fill="#fbf8f2" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#23201b" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#23201b">
+        <path d="M2.9 15.1v-2.4l2.7-4.1c.36-.55.9-.83 1.6-.83h6.6c.55 0 1 .2 1.4.62l3.1 3.8 1.6.5c.7.22 1.1.75 1.1 1.5v.95"/><path d="M2.9 15.1h1.4M9.8 15.1h4.1M19.6 15.1h1.4"/><path d="M6.9 12.2h9.4"/><circle cx="7.1" cy="16.4" r="2.4"/><circle cx="16.7" cy="16.4" r="2.4"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">car</text>
+    </g><g transform="translate(232,124)">
+      <rect width="96" height="78" rx="6" fill="#23201b" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#fbf8f2" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#fbf8f2">
+        <path d="M2.9 15.1v-2.4l2.7-4.1c.36-.55.9-.83 1.6-.83h6.6c.55 0 1 .2 1.4.62l3.1 3.8 1.6.5c.7.22 1.1.75 1.1 1.5v.95"/><path d="M2.9 15.1h1.4M9.8 15.1h4.1M19.6 15.1h1.4"/><path d="M6.9 12.2h9.4"/><circle cx="7.1" cy="16.4" r="2.4" fill="currentColor"/><circle cx="16.7" cy="16.4" r="2.4" fill="currentColor"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">car ·chọn</text>
+    </g><g transform="translate(340,16)">
+      <rect width="96" height="78" rx="6" fill="#fbf8f2" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#23201b" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#23201b">
+        <path d="M2.5 15.2V6.4h9.1v8.8"/><path d="M13.5 15.2v-4.4h3.1l3.2 3.1v1.3"/><path d="M2.5 15.2h1.4M8.6 15.2h6.9M19.8 15.2h.4"/><circle cx="6.2" cy="16.8" r="2.4"/><circle cx="17.5" cy="16.8" r="2.4"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">truck</text>
+    </g><g transform="translate(340,124)">
+      <rect width="96" height="78" rx="6" fill="#23201b" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#fbf8f2" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#fbf8f2">
+        <path d="M2.5 15.2V6.4h9.1v8.8"/><path d="M13.5 15.2v-4.4h3.1l3.2 3.1v1.3"/><path d="M2.5 15.2h1.4M8.6 15.2h6.9M19.8 15.2h.4"/><circle cx="6.2" cy="16.8" r="2.4" fill="currentColor"/><circle cx="17.5" cy="16.8" r="2.4" fill="currentColor"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">truck ·chọn</text>
+    </g><g transform="translate(448,16)">
+      <rect width="96" height="78" rx="6" fill="#fbf8f2" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#23201b" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#23201b">
+        <circle cx="12" cy="12" r="3.9"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2"/><path d="M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">peak</text>
+    </g><g transform="translate(448,124)">
+      <rect width="96" height="78" rx="6" fill="#23201b" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#fbf8f2" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#fbf8f2">
+        <circle cx="12" cy="12" r="3.9" fill="currentColor"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2"/><path d="M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">peak ·chọn</text>
+    </g><g transform="translate(16,232)">
+      <rect width="96" height="78" rx="6" fill="#fbf8f2" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#23201b" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#23201b">
+        <path d="M3.4 17.6h17.2"/><path d="M7.6 17.6a4.4 4.4 0 0 1 8.8 0"/><path d="M12 3.4v2.1M4.9 7.2l1.5 1.5M19.1 7.2l-1.5 1.5"/><path d="M6.6 20.6h3.1M14.3 20.6h3.1"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">offpeak</text>
+    </g><g transform="translate(16,340)">
+      <rect width="96" height="78" rx="6" fill="#23201b" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#fbf8f2" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#fbf8f2">
+        <path d="M3.4 17.6h17.2"/><path d="M7.6 17.6a4.4 4.4 0 0 1 8.8 0"/><path d="M12 3.4v2.1M4.9 7.2l1.5 1.5M19.1 7.2l-1.5 1.5"/><path d="M6.6 20.6h3.1M14.3 20.6h3.1"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">offpeak ·chọn</text>
+    </g><g transform="translate(124,232)">
+      <rect width="96" height="78" rx="6" fill="#fbf8f2" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#23201b" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#23201b">
+        <path d="M19.3 14.4a8 8 0 0 1-9.7-9.7 8 8 0 1 0 9.7 9.7Z"/><path d="M17.4 3.6l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7Z"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">night</text>
+    </g><g transform="translate(124,340)">
+      <rect width="96" height="78" rx="6" fill="#23201b" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#fbf8f2" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#fbf8f2">
+        <path d="M19.3 14.4a8 8 0 0 1-9.7-9.7 8 8 0 1 0 9.7 9.7Z"/><path d="M17.4 3.6l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7Z"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">night ·chọn</text>
+    </g><g transform="translate(232,232)">
+      <rect width="96" height="78" rx="6" fill="#fbf8f2" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#23201b" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#23201b">
+        <path d="M3.5 12h17M12 3.5v17"/><circle cx="12" cy="12" r="2.3"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">trunkRoads</text>
+    </g><g transform="translate(232,340)">
+      <rect width="96" height="78" rx="6" fill="#23201b" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#fbf8f2" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#fbf8f2">
+        <path d="M3.5 12h17M12 3.5v17"/><circle cx="12" cy="12" r="2.3" fill="currentColor"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">trunkRoads ·chọn</text>
+    </g><g transform="translate(340,232)">
+      <rect width="96" height="78" rx="6" fill="#fbf8f2" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#23201b" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#23201b">
+        <path d="M3.5 6h17M3.5 12h17M3.5 18h17"/><path d="M6 3.5v17M12 3.5v17M18 3.5v17"/><circle cx="12" cy="12" r="1.9"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">midRoads</text>
+    </g><g transform="translate(340,340)">
+      <rect width="96" height="78" rx="6" fill="#23201b" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#fbf8f2" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#fbf8f2">
+        <path d="M3.5 6h17M3.5 12h17M3.5 18h17"/><path d="M6 3.5v17M12 3.5v17M18 3.5v17"/><circle cx="12" cy="12" r="1.9" fill="currentColor"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">midRoads ·chọn</text>
+    </g><g transform="translate(448,232)">
+      <rect width="96" height="78" rx="6" fill="#fbf8f2" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#23201b" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#23201b">
+        <path d="M3.2 4.5h17.6M3.2 8.7h17.6M3.2 12.9h17.6M3.2 17.1h17.6"/><path d="M4.5 3.2v17.6M8.7 3.2v17.6M12.9 3.2v17.6M17.1 3.2v17.6"/><circle cx="12.9" cy="12.9" r="1.5"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">smallRoads</text>
+    </g><g transform="translate(448,340)">
+      <rect width="96" height="78" rx="6" fill="#23201b" stroke="#e0d8c8"/>
+      <g transform="translate(24,15) scale(2)"
+         fill="none" stroke="#fbf8f2" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" color="#fbf8f2">
+        <path d="M3.2 4.5h17.6M3.2 8.7h17.6M3.2 12.9h17.6M3.2 17.1h17.6"/><path d="M4.5 3.2v17.6M8.7 3.2v17.6M12.9 3.2v17.6M17.1 3.2v17.6"/><circle cx="12.9" cy="12.9" r="1.5" fill="currentColor"/>
+      </g>
+      <text x="48" y="94" font-family="monospace" font-size="11"
+            fill="#857d6e" text-anchor="middle">smallRoads ·chọn</text>
+    </g></svg>
