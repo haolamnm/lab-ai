@@ -250,6 +250,8 @@ UCS and A\* rely on — the app would keep stamping "optimal" on a route that is
 ├── Lab 1 - Searching.pdf       the assignment brief
 ├── docs/
 │   ├── design-spec.md          UI/UX design spec, with the reasoning behind each decision
+│   ├── ui-screenshot.png       the screenshot at the top of this file
+│   └── ui-overview.svg         annotated schematic of the same layout
 ├── prototype/
 │   └── index.html              earlier single-file vanilla-JS prototype (see Status below)
 └── web/                        the real application
