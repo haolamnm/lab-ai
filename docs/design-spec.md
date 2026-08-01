@@ -1,126 +1,126 @@
-# Route Lab — Thiết kế UI/UX
+# Route Lab — UI/UX Design
 
-**Ngày:** 2026-07-31
-**Phạm vi:** Frontend cho Lab 1 — Search Algorithms for Vietnamese Traffic Route Optimization
-**Người phụ trách:** UI/UX và code frontend. Thuật toán do thành viên khác cài, giao tiếp qua FastAPI.
+**Date:** 2026-07-31
+**Scope:** Frontend for Lab 1 — Search Algorithms for Vietnamese Traffic Route Optimization
+**Owner:** UI/UX and frontend code. The algorithms are built by another team member, connected via FastAPI.
 
 ---
 
-## 1. Bối cảnh
+## 1. Background
 
-Đề bài yêu cầu ứng dụng tìm đường tối ưu trong giao thông đô thị Việt Nam. Nhóm chọn kịch bản **giao hàng tại TP.HCM**.
+The assignment calls for an app that finds optimal routes in Vietnamese urban traffic. The team chose a **delivery scenario in TP.HCM**.
 
-Tài liệu này mô tả giao diện, luồng tương tác, và hợp đồng dữ liệu frontend cần từ backend. Phần thuật toán không thuộc phạm vi ở đây.
+This document describes the interface, the interaction flow, and the frontend data contract required from the backend. The algorithms themselves are out of scope here.
 
-## 2. Ràng buộc từ đề bài
+## 2. Constraints from the assignment
 
-Giao diện chịu trách nhiệm trực tiếp hoặc gián tiếp cho 35 trên 100 điểm:
+The interface is directly or indirectly responsible for 35 of the 100 points:
 
-| Hạng mục | Điểm | Giao diện phải làm gì |
+| Item | Points | What the interface must do |
 |---|---:|---|
-| Trực quan hoá quá trình tìm kiếm | 10 | Hiện từng bước: nút đã xét, hàng đợi biên, tuyến cuối |
-| Giải thích tuyến và so sánh phương án | 10 | Đặt các phương án cạnh nhau, nói rõ vì sao chọn |
-| Bối cảnh giao thông Việt Nam | 10 | Đường thật, địa danh thật, mức kẹt xe đọc được |
-| Video demo | 5 | Giao diện phải quay lên hình dễ hiểu |
+| Visualize the search process | 10 | Show step by step: expanded nodes, frontier, final route |
+| Explain the route and compare options | 10 | Place the options side by side, state clearly why one was chosen |
+| Vietnamese traffic context | 10 | Real roads, real place names, readable congestion levels |
+| Demo video | 5 | The interface must film clearly and read well on camera |
 
-Đề bắt buộc cho chọn: điểm đầu, điểm đích, điểm trung gian, thuật toán, tiêu chí tối ưu. Phải hiện: tuyến đi, thứ tự ghé, số nút đã xét, tổng quãng đường, tổng thời gian, tổng chi phí, thời gian xử lý.
+The assignment requires letting the user choose: start point, destination, intermediate stops, algorithm, optimization criterion. It must display: the route taken, the visit order, the number of nodes expanded, total distance, total time, total cost, processing time.
 
-## 3. Quyết định đã chốt
+## 3. Decisions locked in
 
-**Mạng lưới dựng động từ OpenStreetMap.** Người dùng chọn điểm lấy hàng và điểm giao ở bất kỳ đâu, ứng dụng tải đường thật trong vùng bao quanh hai điểm đó rồi rút gọn thành đồ thị. Không có danh sách địa điểm cố định. Đây là dạng dữ liệu "simplified real-world" mà đề cho phép, và mạnh hơn nhiều so với đồ thị chép tay.
+**Road network built dynamically from OpenStreetMap.** The user picks the pickup point and the dropoff point anywhere at all, the app loads the real roads inside the bounding box around those two points, and reduces them to a graph. There is no fixed list of locations. This is the "simplified real-world" kind of data the assignment allows, and it is far more compelling than a hand-drawn graph.
 
-**Bản đồ: Leaflet, nền CARTO Positron.** Nhẹ, vẽ marker và polyline trực tiếp. Nền xám nhạt để mọi màu bão hoà trên màn hình đều là màu do ứng dụng vẽ ra. Không dùng Google Maps: tốn phí, và Directions API dễ gây hiểu lầm là nhóm không tự cài thuật toán.
+**Map: Leaflet, CARTO Positron basemap.** Lightweight, draws markers and polylines directly. A light grey background means every saturated color on screen is a color the app drew itself. Not using Google Maps: it costs money, and its Directions API can easily give the impression the team didn't build the algorithms itself.
 
-**Stack:** Vite, React, TypeScript, Zustand, Leaflet. Không dùng thư viện lưới ngoài — kéo thả bằng HTML drag and drop, co giãn bằng `resize` của CSS.
+**Stack:** Vite, React, TypeScript, Zustand, Leaflet. No external grid library — drag-and-drop uses native HTML drag and drop, resizing uses CSS `resize`.
 
-**Chữ: IBM Plex Sans và IBM Plex Mono.** Cả hai có bộ tiếng Việt đầy đủ, dấu thanh đặt đúng chỗ.
+**Typefaces: IBM Plex Sans and IBM Plex Mono.** Both have a complete Vietnamese character set, with tone marks placed correctly.
 
-## 4. Hai nguyên tắc thiết kế
+## 4. Two design principles
 
-**Giao diện không có màu, chỉ dữ liệu mới có màu.** Khung ứng dụng chỉ dùng trắng, xám và mực. Mọi sắc độ xuất hiện đều mang nghĩa: xanh sang đỏ là mức đông đúc, xanh lam là vùng thuật toán đã xét, mực đen là tuyến được chọn. Trong một công cụ so sánh, màu nào không mang nghĩa là màu gây nhiễu.
+**The interface has no color of its own — only data has color.** The application chrome uses only white, grey, and ink. Every saturated hue that appears carries meaning: green through red is the congestion level, blue is the region the algorithm has expanded, black ink is the chosen route. In a comparison tool, any color that carries no meaning is noise.
 
-**Máy nói bằng chữ đơn cách, người nói bằng chữ thường.** Mọi con số, tên thuật toán, số bước đặt bằng IBM Plex Mono. Nhãn, câu hướng dẫn, mô tả đặt bằng IBM Plex Sans. Đọc lướt là biết ngay đâu là số liệu đo được, đâu là lời của giao diện.
+**The machine speaks in monospace, people speak in regular type.** Every number, algorithm name, and step count is set in IBM Plex Mono. Labels, instructions, and descriptions are set in IBM Plex Sans. A glance tells you which is a measured value and which is the interface talking.
 
-Hệ quả quan trọng nhất: **thứ phân biệt các thuật toán không phải tuyến đi, mà là dấu chân khám phá.** UCS và A\* luôn trả cùng một tuyến vì cả hai đều tối ưu trên cùng hàm chi phí (UCS chính là Dijkstra nên không tách riêng làm hai thuật toán). Khác biệt nằm ở số nút phải xét và hình dạng vùng lan ra. Đo trên tuyến Bến Thành đến Landmark 81: UCS xét 263 nút, A\* xét 197, Greedy chỉ 79. Giao diện phải làm nổi bật quá trình, tuyến cuối chỉ là kết quả.
+The most important consequence: **what distinguishes the algorithms is not the route, but the exploration footprint.** UCS and A\* always return the same route, because both are optimal on the same cost function (UCS *is* Dijkstra, which is why it isn't split out as a separate algorithm). The difference lies in how many nodes must be expanded and the shape of the region that spreads out. Measured on the Bến Thành to Landmark 81 route: UCS expands 263 nodes, A\* expands 197, Greedy only 79. The interface must foreground the process — the final route is only the outcome.
 
-Vì vậy nút đã xét **nhạt dần theo thời gian** thay vì giữ nguyên độ đậm — người xem thấy được hướng lan, không chỉ vùng đã lan.
+So expanded nodes **fade over time** instead of staying at a fixed intensity — the viewer sees the direction of the spread, not just the region it has already covered.
 
-## 5. Kiến trúc màn hình
+## 5. Screen architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ Route Lab · giao hàng TP.HCM   [Khung nhìn đang đồng bộ]  chú giải│
+│ Route Lab · TP.HCM delivery   [Synced view]  legend              │
 ├──────────────┬───────────────────────────────────────────────────┤
-│ HÀNH TRÌNH   │ ┌────────────────────┐ ┌────────────────────┐     │
-│  Lấy  …      │ │ A*        bước 128 │ │ BFS       bước 128 │     │
-│  Ghé  …      │ │ ┌────────────────┐ │ │ ┌────────────────┐ │     │
-│  Giao …      │ │ │    BẢN ĐỒ      │ │ │ │    BẢN ĐỒ      │ │     │
+│ TRIP         │ ┌────────────────────┐ ┌────────────────────┐     │
+│  Pickup …    │ │ A*        step 128 │ │ BFS       step 128 │     │
+│  Stop …      │ │ ┌────────────────┐ │ │ ┌────────────────┐ │     │
+│  Dropoff …   │ │ │      MAP       │ │ │ │      MAP       │ │     │
 │              │ │ └────────────────┘ │ │ └────────────────┘ │     │
-│ MẠNG LƯỚI    │ │ 5.53 km  15 phút   │ │ 5.54 km  15 phút   │     │
-│  Mức chi tiết│ └────────────────────┘ └────────────────────┘     │
-│  [Dựng]      │ ┌────────────────────┐  ┌──────────────┐          │
-│  483 nút     │ │ DFS       bước 128 │  │ Thêm màn hình│          │
+│ ROAD NETWORK │ │ 5.53 km  15 min    │ │ 5.54 km  15 min    │     │
+│  Detail level│ └────────────────────┘ └────────────────────┘     │
+│  [Build]     │ ┌────────────────────┐  ┌──────────────┐          │
+│  483 nodes   │ │ DFS       step 128 │  │ Add pane     │          │
 │              │ └────────────────────┘  └──────────────┘          │
-│ ĐIỀU KIỆN    │                                                    │
-│  Khung giờ   │                                                    │
-│  Phương tiện │                                                    │
-│  Mạnh / Yếu  │                                                    │
-│              │                                                    │
-│ TIÊU CHÍ     │                                                    │
-│ TRỌNG SỐ     ├───────────────────────────────────────────────────┤
-│ [Chạy]       │ Lùi Chạy Tiến  Bước 128/263  ────●────  1x        │
+│ CONDITIONS   │                                                   │
+│  Time period │                                                   │
+│  Vehicle     │                                                   │
+│  Strong/Weak │                                                   │
+│              │                                                   │
+│ CRITERION    │                                                   │
+│ WEIGHTS      ├───────────────────────────────────────────────────┤
+│ [Run]        │ Back Run Forward  Step 128/263  ────●────  1x     │
 └──────────────┴───────────────────────────────────────────────────┘
 ```
 
 ### Sidebar
 
-Nguồn sự thật duy nhất cho truy vấn. Không màn hình nào được sửa các giá trị này. Đổi bất kỳ giá trị nào thì mọi màn hình đồng loạt xoá kết quả cũ và về trạng thái chưa chạy — không cho phép nửa màn hình hiện kết quả cũ, nửa kia hiện kết quả mới.
+The single source of truth for the query. No pane is allowed to edit these values. Changing any value clears every pane's old results at once and returns them all to the not-yet-run state — no pane is allowed to keep showing an old result while another shows a new one.
 
-Năm nhóm: hành trình, mạng lưới đường, điều kiện, tiêu chí, trọng số.
+Five groups: trip, road network, conditions, criterion, weights.
 
-Bốn thanh trượt trọng số đặt tên bằng tiếng Việt: quãng đường, thời gian, mức kẹt xe, rủi ro. Đề bắt buộc giải thích cách chọn trọng số; kéo thanh trước mặt người chấm rồi chỉ ra tuyến bẻ hướng thuyết phục hơn nhiều so với viết công thức trong báo cáo.
+The four weight sliders are named for the quantity each controls: *distance, time, congestion, risk*. The assignment requires explaining how the weights were chosen; dragging a slider in front of the grader and pointing out how the route bends is far more persuasive than writing a formula in the report.
 
-### Trạng thái khởi động
+### Startup state
 
-Lưới trống hoàn toàn. Không dựng sẵn màn hình nào, và chỉ có **một** lời mời thêm màn hình — ô gạch đứt chỉ xuất hiện khi lưới đã có ít nhất một màn hình. Nút chạy khoá cho tới khi có mạng lưới và có màn hình.
+The grid starts completely empty. No pane is pre-built, and there is only **one** invitation to add a pane — the dashed placeholder cell only appears once the grid already holds at least one pane. The run button stays locked until there is both a network and a pane.
 
-### Lưới bento
+### Bento grid
 
-Mỗi màn hình là một bản đồ độc lập với danh sách thuật toán riêng, kéo tiêu đề để đổi vị trí, kéo góc để co giãn, nút đóng riêng. Giới hạn **5 màn hình**: quá số đó mỗi ô nhỏ hơn 300px thì bản đồ mất ý nghĩa.
+Each pane is an independent map with its own algorithm list, dragged by its header to reorder, dragged by its corner to resize, with its own close button. **Limited to 5 panes**: beyond that, each cell drops below 300px and the map loses its usefulness.
 
-Khung nhìn đồng bộ giữa mọi màn hình, tắt được bằng nút trên thanh trên khi cần soi kỹ một chỗ.
+The view stays synced across every pane, and can be switched off with a button on the top bar when a spot needs a closer look.
 
-Màn hình thêm giữa chừng tự chạy ngay với truy vấn hiện tại, không bao giờ có ô lệch pha.
+A pane added midway through automatically runs against the current query right away — no pane is ever left out of phase.
 
-### Dòng thời gian chung
+### Shared timeline
 
-Một thanh duy nhất điều khiển tất cả. Kéo tới bước 128 thì mọi màn hình hiện trạng thái ở bước 128 của thuật toán của nó. Người xem thấy trực tiếp: cùng bước 128, A\* đã tới đích còn BFS vẫn đang loang. Màn hình xong sớm hiện nhãn *xong ở bước N* rồi đứng yên.
+A single bar controls everything. Drag to step 128 and every pane shows the state of its own algorithm at step 128. The viewer sees it directly: at the same step 128, A\* has already reached the destination while BFS is still spreading. A pane that finishes early shows the label *done at step N* and then holds still.
 
-Cố ý **không** cho mỗi màn hình chạy tốc độ riêng — làm vậy là mất khả năng so sánh.
+Deliberately, panes are **not** allowed to run at their own individual speed — doing so would destroy the ability to compare them.
 
-### Ba chế độ xem trong mỗi màn hình
+### Three view modes within each pane
 
-Ba tab trên đầu mỗi ô, mỗi chế độ trả lời một câu hỏi khác nhau. Tab chứ không phải một nút xoay vòng: người dùng nhìn thấy cả ba lựa chọn và bấm thẳng vào cái mình muốn, không phải đoán còn mấy lần bấm nữa mới tới.
+Three tabs sit at the top of each pane, each mode answering a different question. Tabs, not a single cycling button: the user sees all three options and clicks straight to the one they want, instead of guessing how many more clicks it takes to get there.
 
-**Bản đồ** — nền CARTO thật, tên đường thật, cạnh tô theo mức kẹt xe. Trả lời "tuyến này né chỗ nào". Đây là chế độ giữ mười điểm bối cảnh giao thông Việt Nam.
+**Map** — the real CARTO basemap, real street names, edges tinted by congestion level. Answers "what does this route avoid." This is the mode that carries the ten points for Vietnamese traffic context.
 
-**Sơ đồ** — bóc sạch nền bản đồ, chỉ còn lưới đường trên nền giấy, cạnh lùi về một sắc trung tính. Nền sạch thì màu duy nhất còn lại là màu của thuật toán, dấu chân khám phá nổi lên không còn gì tranh chấp.
+**Schematic** — strips the basemap away entirely, leaving just the road grid on a paper background, with edges receding to a neutral tone. With a clean background, the only color left is the algorithm's, and the exploration footprint stands out with nothing competing against it.
 
-**Cây** — trải cây tìm kiếm theo kiểu toả tròn. Mỗi nút được mở đều có một nút cha; tập các cặp cha–con ấy là một cây thật sự, và **hình dạng của cây chính là chân dung của thuật toán**. DFS ra chuỗi dài gần như không phân nhánh, BFS ra hình quạt toả đều theo lớp, A\* ra hình giọt nước lệch về phía đích, Greedy ra một nhánh gầy. Đặt bốn cây cạnh nhau là hiểu ngay khác biệt, không cần lời nào.
+**Tree** — lays out the search tree in a radial layout. Every node that gets expanded has a parent; the set of those parent–child pairs is a genuine tree, and **the shape of the tree is the algorithm's portrait**. DFS produces a long chain with almost no branching, BFS produces a fan spreading out evenly by layer, A\* produces a teardrop skewed toward the destination, Greedy produces one thin branch. Put four trees side by side and the difference is understood instantly, no words needed.
 
-Dùng bố cục toả tròn theo độ sâu chứ không dùng mô phỏng lực đẩy: tính một lần là xong, luôn giống nhau giữa các lần chạy nên so sánh mới có nghĩa, và không tốn vòng lặp vật lý nào mỗi khung hình. Duyệt bằng ngăn xếp tường minh vì cây của DFS sâu tới hàng trăm tầng.
+Uses a **radial layout by depth** rather than a force simulation: computed once and done, always identical across runs so the comparison stays meaningful, and it costs no physics iterations per frame. Traversed with an explicit stack, since a DFS tree runs hundreds of levels deep.
 
-Khung nhìn lấy khung bao khít quanh các nút, không phải hình vuông theo bán kính lớn nhất — cây toả tròn hiếm khi phủ kín hình tròn, nhất là A\*, nên khung khít cho cây choán gấp bốn tới năm lần diện tích ô. Lăn chuột để phóng (0.6× đến 40×, điểm dưới con trỏ đứng yên), kéo để dời, bấm đúp để về vừa ô. Cỡ chấm và nét chia cho mức phóng nên giữ nguyên kích thước trên màn hình: phóng to là các nhánh tách nhau ra, không phải cả cây phình lên. Cỡ chấm đo theo khoảng cách giữa hai tầng — luôn bằng 1 — chứ không theo khung bao, vì khung bao của cây sâu rộng ra mà các tầng vẫn cách nhau đúng chừng ấy.
+The viewport takes a **tight bounding box around the nodes**, not a square sized to the largest radius — a radial tree rarely fills its circle, especially for A\*, so a tight box lets the tree occupy four to five times more of the pane's area. Scroll to zoom (0.6× to 40×, the point under the cursor stays fixed), drag to pan, double-click to fit the pane. Dot size and stroke width are divided by the zoom level so they hold a constant size on screen: zooming in spreads the branches apart, it doesn't inflate the whole tree. Dot size is measured against the distance between two levels — always equal to 1 — rather than against the bounding box, because the bounding box of a deep tree widens out while the levels stay exactly that far apart.
 
-### Đồ thị mẫu tự thiết kế
+### Custom-designed sample graph
 
-Đề tách riêng phần giảng giải thuật toán và yêu cầu nhóm tự dựng ví dụ minh hoạ, không chép từ tutorial. Mạng lưới OpenStreetMap không dùng cho việc đó được: hàng trăm tới hàng nghìn nút, mã nút là chuỗi toạ độ, không ai dò bằng mắt nổi.
+The assignment separates out the part where the algorithms are explained and requires the team to build its own illustrative example, not copy one from a tutorial. The OpenStreetMap network can't be used for that: hundreds to thousands of nodes, node IDs that are coordinate strings — no one can trace that by eye.
 
-Nút **Đồ thị mẫu** nạp một đồ thị hai mươi nút ba mươi tư cạnh, mỗi nút mang một chữ cái và tên một địa điểm có thật ở TP.HCM. Vượt mức tối thiểu hai mươi nút ba mươi cạnh mà đề đặt ra, nên bộ này nộp kèm được luôn.
+The **Sample graph** button loads a graph of twenty nodes and thirty-four edges, each node carrying a letter and the name of a real place in TP.HCM. It exceeds the assignment's minimum of twenty nodes and thirty edges, so this set can be submitted as-is.
 
-Các con số không đặt ngẫu nhiên. Đo trên tuyến A → J, xe máy, giờ cao điểm:
+The numbers weren't picked at random. Measured on the A → J route, motorbike, peak hour:
 
-| Thuật toán | Nút đã xét | Quãng đường | Tuyến |
+| Algorithm | Nodes expanded | Distance | Route |
 |---|---:|---:|---|
 | BFS | 19 | 12.4 km | A→C→L→F→K→J |
 | DFS | 9 | 21.8 km | A→O→N→M→K→J |
@@ -128,299 +128,294 @@ Các con số không đặt ngẫu nhiên. Đo trên tuyến A → J, xe máy, g
 | A\* | 11 | 11.4 km | A→D→E→F→K→J |
 | Greedy | 7 | 13.1 km | A→D→E→G→H→K→J |
 
-Năm thuật toán cho bốn tuyến khác nhau. Bốn loại xe cũng tách đôi: xe máy chui qua cụm kẹt E–F ở Hàng Xanh vì luồn được, còn xe van, ô tô và xe tải vòng hẳn qua Landmark 81.
+Five algorithms produce four different routes. The four vehicle types also split into two: the motorbike threads through the E–F congestion cluster at Hàng Xanh because it can weave through, while the van, car, and truck all detour around via Landmark 81.
 
-Nút **Nhập file** nạp lại đồ thị từ JSON, nên nhóm sửa tay bộ dữ liệu rồi nạp lại được — đúng nghĩa "tự thiết kế".
+The **Import file** button reloads the graph from JSON, so the team can hand-edit the dataset and reload it — genuinely "custom-designed."
 
-## 6. Chọn địa điểm và dựng mạng lưới
+## 6. Choosing locations and building the road network
 
-Luồng ba bước, thay cho danh sách địa điểm cố định:
+A three-step flow, replacing a fixed list of locations:
 
-1. **Gõ tên địa điểm bất kỳ.** Ứng dụng tra Nominatim, giới hạn trong Việt Nam. Chờ người dùng ngừng gõ 350ms rồi mới hỏi, và huỷ lượt hỏi cũ khi có lượt mới.
-2. **Dựng mạng lưới.** Gọi Overpass lấy toàn bộ đường trong khung bao quanh các điểm đã chọn, nới thêm 22% để thuật toán còn chỗ vòng tránh. Rút gọn: chỉ giữ nút giao, các đoạn thẳng ở giữa gộp thành một cạnh mang hình dạng thật của con đường. Giữ lại cụm đường liền mạch lớn nhất.
-3. **Ghim.** Mỗi địa điểm quy về nút giao gần nhất, hiện rõ khoảng cách bằng mét.
+1. **Type any place name.** The app queries Nominatim, restricted to Vietnam. It waits 350ms after the user stops typing before querying, and cancels the previous query when a new one comes in.
+2. **Build the road network.** Calls Overpass for every road inside the bounding box around the selected points, expanded by 22% so the algorithm has room to route around obstacles. Simplify: keep only intersections, merging the straight segments in between into a single edge that carries the road's real shape. Keep only the largest connected cluster of roads.
+3. **Pin.** Each location is snapped to its nearest intersection, with the distance shown clearly in meters.
 
-Nhãn khoảng cách là bắt buộc, không phải trang trí: nó nói thật rằng thuật toán chạy trên nút giao chứ không phải trên cửa nhà, và biến giới hạn của mô hình thành thông tin minh bạch.
+The distance label is mandatory, not decoration: it states honestly that the algorithm runs on intersections, not on doorsteps, and turns a limitation of the model into transparent information.
 
-**Ba mức chi tiết** đổi được: trục chính, thêm đường vừa, cả đường nhỏ. Mức chi tiết quyết định kích thước đồ thị — đo trên tuyến Bến Thành đến Landmark 81: 483 nút ở mức thô, 679 ở mức vừa, 2241 ở mức chi tiết. Trên 900 nút thì giao diện cảnh báo hoạt ảnh sẽ dài và chậm.
+**Three detail levels** can be toggled: coarse (major roads), medium (adds medium roads), fine (adds small roads too). The detail level determines graph size — measured on the Bến Thành to Landmark 81 route: 483 nodes at the coarse level, 679 at medium, 2241 at fine. Above 900 nodes, the interface warns that the animation will be long and slow.
 
-Điều kiện giao thông của mỗi đoạn đường được mô phỏng từ cấp đường cộng nhiễu cố định theo mã tuyến: chạy lại bao nhiêu lần cũng ra cùng kết quả, nên so sánh mới có nghĩa.
+Traffic conditions for each road segment are simulated from the road class plus a fixed amount of noise keyed to the way ID: running it again any number of times produces the same result, which is what makes comparison meaningful.
 
-Bản nộp nên đổi Nominatim sang **Goong** vì gợi ý địa chỉ tiếng Việt tốt hơn hẳn. Goong cần khoá API nên bản này dùng Nominatim để chạy được ngay; chỉ cần thay thân một hàm.
+The submission should switch from Nominatim to **Goong**, since its Vietnamese address suggestions are considerably better. Goong requires an API key, so this build uses Nominatim so it runs right away; switching only requires replacing the body of one function.
 
-### Dựng nút giao: kiểm toán trên dữ liệu thật
+### Building intersections: an audit against real data
 
-Ba câu hỏi về cách dựng nút, trả lời bằng đo chứ không bằng suy luận. Vùng đo: khung bao Nhà thờ Đức Bà – Thảo Điền, 4.260 tuyến đường, 16.224 điểm.
+Three questions about how intersections are built, answered by measurement rather than by reasoning. Measurement area: the bounding box between Nhà thờ Đức Bà and Thảo Điền, 4.260 roads, 16.224 points.
 
-**Định danh nút bằng gì.** Bản đầu làm tròn toạ độ tới năm chữ số (~1,1 m) rồi ghép chuỗi làm mã nút. Đo lại thì cách ấy đếm ra đúng **3.929 nút giao, bằng đúng số đếm bằng mã nút thật** — không sai một nút nào. Nhưng nó **gộp nhầm 17 cặp nút vốn tách rời**, tức dựng ra 17 lối đi không có thật, thường ở chỗ cầu vượt và đường bên dưới tình cờ trùng toạ độ. Overpass vốn đã trả kèm mảng `nodes`, nên chuyển sang dùng mã nút thật xoá sạch lớp lỗi ấy mà không tốn thêm gì. Toạ độ làm tròn giữ lại làm phương án dự phòng.
+**What identifies a node.** The first version rounded coordinates to five decimal places (~1,1 m) and concatenated them into a node ID. Measured again, that approach counts out **3.929 intersections, exactly matching the count from the real node IDs** — not a single node off. But it **incorrectly merges 17 pairs of nodes that are actually separate**, meaning it fabricates 17 paths that don't exist, typically where an overpass and the road beneath it happen to share coordinates. Overpass already returns a `nodes` array, so switching to real node IDs wipes out that whole class of error at no extra cost. The rounded coordinate is kept as a fallback.
 
-**Cấp đường bị bỏ sót.** Bản đầu chỉ hỏi sáu cấp đường chính, bỏ hết các nhánh `*_link` — đường dẫn lên xuống cầu vượt và nút giao khác mức. Thiếu chúng thì không có lối lên cũng không có lối xuống trục lớn:
+**Missing road classes.** The first version only queried six major road classes, dropping all `*_link` branches — the ramps up to and down from overpasses and grade-separated interchanges. Without them, there is no way up onto, or down off of, a major arterial:
 
-| Mức chi tiết | Cụm liên thông mạnh (cũ) | Có thêm `*_link` |
+| Detail level | Strongly connected cluster (old) | With `*_link` added |
 |---|---:|---:|
-| Trục chính | 438 / 664 — 66% | 580 / 857 — 68% |
-| Đường vừa | 716 / 971 — 74% | **961 / 1135 — 85%** |
-| Đường nhỏ | 4315 / 5040 — 86% | **4731 / 5169 — 92%** |
+| Coarse | 438 / 664 — 66% | 580 / 857 — 68% |
+| Medium | 716 / 971 — 74% | **961 / 1135 — 85%** |
+| Fine | 4315 / 5040 — 86% | **4731 / 5169 — 92%** |
 
-Vùng đo có 199 nhánh nối như vậy. Thêm chúng vào, tuyến Đức Bà – Thủ Thiêm đi từ 239 lên **437 nút**, điểm đến ghim từ 1260 m xuống **723 m**, và tuyến trả về từ 3,77 km lên **5,0 km** — sát thực tế hơn hẳn. `unclassified` và `living_street` cũng lấy kèm, quy về `residential`.
+The measurement area has 199 such link branches. Adding them, the Đức Bà – Thủ Thiêm route goes from 239 up to **437 nodes**, the destination pin moves from 1260 m down to **723 m**, and the returned route goes from 3,77 km up to **5,0 km** — far closer to reality. `unclassified` and `living_street` are pulled in too, folded into `residential`.
 
-**Thẻ một chiều.** Bổ sung `oneway=-1` (chiều đi ngược thứ tự điểm — phải đảo cạnh, không phải bỏ qua), `oneway=true/1`, `junction=circular`, và quy ước ngầm rằng đường cao tốc mặc định một chiều. Đo trong vùng thì cả bốn trường hợp đều bằng không — dữ liệu Việt Nam không dùng chúng — nhưng xử lý đúng chỉ tốn một dòng nên vẫn làm.
+**One-way tags.** Added `oneway=-1` (travel runs opposite to the point order — the edge must be reversed, not dropped), `oneway=true/1`, `junction=circular`, and the implicit convention that motorways default to one-way. Measured within the area, all four cases came back at zero — Vietnamese data doesn't use them — but handling them correctly costs only one line, so it's done anyway.
 
-### Cấm rẽ
+### Turn restrictions
 
-Đo trước khi viết, vì không đáng dựng cả bộ máy cho một tập rỗng. Số quan hệ `type=restriction` trong dữ liệu OpenStreetMap:
+Measured before writing any code, because it isn't worth building an entire subsystem for an empty set. The number of `type=restriction` relations in the OpenStreetMap data:
 
-| Vùng | Tuyến đường | Quan hệ cấm rẽ |
+| Area | Roads | Turn-restriction relations |
 |---|---:|---:|
-| TP.HCM mở rộng | 45.404 | 1.350 |
-| Trung tâm Hà Nội | 3.861 | 487 — **12,6 trên mỗi 100 tuyến** |
+| Greater TP.HCM | 45.404 | 1.350 |
+| Central Hà Nội | 3.861 | 487 — **12,6 per 100 roads** |
 
-Dữ liệu dày và đáng dùng. Khoảng 76% có `via` là một nút giao nên dùng được ngay; 24% có `via` là cả một tuyến đường, dành cho nút giao nhiều nhánh, cần mô hình khác hẳn nên bỏ qua — thà thiếu một lệnh cấm còn hơn dựng sai một lệnh.
+The data is dense and worth using. About 76% have a `via` that is a single intersection, so they're usable right away; 24% have a `via` that is an entire road, meant for multi-branch junctions, needing a completely different model, so those are skipped — better to miss one restriction than to build one wrong.
 
-Điều bất ngờ nằm ở cách người Việt gắn thẻ. Trong 757 quan hệ ở trung tâm TP.HCM, **491 dùng `restriction:conditional`** thay vì `restriction`, và **459 mang `except`**:
+The surprise is in how Vietnamese mappers tag things. Of 757 relations in central TP.HCM, **491 use `restriction:conditional`** instead of `restriction`, and **459 carry `except`**:
 
 ```
 "restriction:conditional": "no_left_turn @ (06:00-09:00,16:00-19:00)"
 "except": "motorcycle;bicycle;mofa;moped"
 ```
 
-Nghĩa là: ô tô cấm rẽ trái giờ cao điểm, xe máy thì không. Đúng hai trục ứng dụng đã có sẵn — khung giờ và loại xe — nên biển cấm rẽ trở thành chỗ hai lựa chọn ấy gặp nhau.
+In other words: cars are banned from turning left during peak hours, motorbikes are not. That lines up exactly with two axes the app already has — time period and vehicle type — so turn-restriction signs become the place where those two choices meet.
 
-Ứng dụng chỉ có ba khung giờ còn biển thì ghi giờ thật, nên mỗi khung lấy một **mốc giờ đại diện**: cao điểm 17:30, thấp điểm 13:00, ban đêm 22:00. Hỏi mốc ấy có nằm trong biển cấm không. Cách này cho kết quả dứt khoát và giải thích được bằng một câu, hơn hẳn so chồng lấn hai khoảng giờ — chồng lấn mười lăm phút cũng làm cả khung bị coi là cấm.
+The app only has three time periods, while the signs record real clock times, so each period is assigned a **representative timestamp**: peak 17:30, off-peak 13:00, night 22:00. The question asked is whether that timestamp falls inside the restriction's window. This gives a clear-cut result that can be explained in one sentence, far better than overlapping two time ranges — where a fifteen-minute overlap would get the whole period treated as restricted.
 
-Đo trên tuyến Đức Bà – Landmark 81, mức "Đường nhỏ", 124 lệnh cấm rẽ đọc được (92 có khung giờ, 111 có miễn trừ):
+Measured on the Đức Bà – Landmark 81 route, at the "fine" level, 124 readable turn restrictions (92 with a time window, 111 with an exemption):
 
-| Xe | Cao điểm | Thấp điểm | Ban đêm |
+| Vehicle | Peak | Off-peak | Night |
 |---|---:|---:|---:|
-| Xe máy | 3 lần bị chặn | 3 | 3 |
-| Ô tô con, xe van | **22** | 18 | 6 |
-| Xe tải | 3 | 3 | 2 |
+| Motorbike | blocked 3 times | 3 | 3 |
+| Car, van | **22** | 18 | 6 |
+| Truck | 3 | 3 | 2 |
 
-Xe máy gần như miễn nhiễm, ô tô lúc cao điểm bị chặn gấp bảy lần. Đó là điều ai đi đường Sài Gòn cũng biết, và giờ nó nằm trong dữ liệu chứ không phải trong lời kể.
+Motorbikes are nearly immune, cars get blocked seven times as often at peak. It's something anyone who drives in Sài Gòn already knows, and now it's sitting in the data instead of in anecdote.
 
-**Nói thẳng một điều:** trên các tuyến đã đo, cấm rẽ **không** làm đổi tuyến cuối cùng — nó chặn những hướng mà tuyến rẻ nhất vốn không dùng tới. Giá trị của nó nằm ở chỗ mô hình đúng hơn và ở con số chênh lệch giữa các loại xe, chứ chưa phải ở kết quả tìm đường.
+**One thing to state plainly:** on the routes measured, turn restrictions **do not** change the final route — they block directions the cheapest route was never going to use anyway. Their value lies in a more correct model and in the gap in numbers between vehicle types, not yet in the route-finding outcome itself.
 
-**Xấp xỉ, và xấp xỉ ở đâu.** Cấm rẽ ràng buộc trên **cặp** đoạn đường, trong khi thuật toán tìm kiếm trên đồ thị nút chỉ nhớ một nút cha cho mỗi nút. Cách xử lý ở đây vì thế là xấp xỉ: nó **không bao giờ sinh ra tuyến phạm luật**, nhưng có thể bỏ lỡ một tuyến hợp lệ rẻ hơn mà muốn đi thì phải vào nút ấy bằng hướng khác. Muốn đúng tuyệt đối phải tìm kiếm trên đồ thị cạnh, số trạng thái tăng theo bậc của mỗi nút.
+**An approximation, and where it approximates.** Turn restrictions constrain a **pair** of road segments, while the search algorithm on the node graph only remembers one parent node per node. The handling here is therefore an approximation: it **never generates a route that breaks the rules**, but it may miss a cheaper legal route that would require entering that node from a different direction. Getting it exactly right would need to search on an edge graph, with the number of states growing with the degree of each node.
 
-Điều này cố tình **không** tính vào cột "tối ưu". Lượt chạy nào trên mạng lưới thật cũng gặp ít nhất một biển cấm rẽ ở đâu đó, nên gộp vào là mọi kết quả đều thành "xấp xỉ" và cột ấy mất sạch khả năng phân biệt UCS với Greedy — đúng thứ nó sinh ra để nói. Thay vào đó, số lần bị chặn hiện riêng ở chân ô, và khối giải thích nói rõ giới hạn.
+This is deliberately **not** counted in the "optimal" column. Every run on a real road network hits at least one turn restriction somewhere, so folding it in would turn every result into "approximate" and the column would lose all ability to tell UCS apart from Greedy — the exact thing it exists to do. Instead, the block count is shown separately at the foot of the pane, and the explanation block states the limitation clearly.
 
-### Khung giờ phải tác động qua mức kẹt, không qua tốc độ nền
+### Time period must act through the congestion level, not through the base speed
 
-Bản đầu nhân tốc độ nền theo khung giờ. Sai một cách kín đáo: nhân tốc độ thì nhân cho **mọi** loại xe như nhau, nên lợi thế luồn lách của xe máy thành một tỉ lệ cố định. Đo trên một ki-lô-mét đường trục:
+The first version multiplied the base speed by the time period. It was wrong in a subtle way: multiplying speed multiplies it the same way for **every** vehicle type, so a motorbike's lane-splitting advantage turns into a fixed ratio. Measured over one kilometer of arterial road:
 
-| | Cao điểm | Thấp điểm |
+| | Peak | Off-peak |
 |---|---:|---:|
-| Xe máy, kẹt làm chậm | ×1,92 | ×1,92 |
-| Ô tô, kẹt làm chậm | ×2,93 | ×2,93 |
+| Motorbike, congestion slowdown | ×1,92 | ×1,92 |
+| Car, congestion slowdown | ×2,93 | ×2,93 |
 
-Y hệt nhau. Tức mô hình nói hai giờ sáng xe máy vẫn hơn ô tô đúng ngần ấy phần trăm — chuyện không có thật.
+Identical. Meaning the model says that at two in the morning a motorbike is still faster than a car by that exact same percentage — which isn't true.
 
-Cái thay đổi theo giờ là **đường có kẹt hay không**. Nên khung giờ nhân vào phần kẹt (`peak 1,00 · offpeak 0,55 · night 0,18`), và tốc độ nền chỉnh lại cho đúng: xe máy 0,95, ô tô 1,10 — đường trống thì ô tô nhanh hơn.
+What changes with time of day is **whether the road is congested**. So the time period is multiplied into the congestion term (`peak 1,00 · offpeak 0,55 · night 0,18`), and the base speed is corrected to match: motorbike 0,95, car 1,10 — on an open road, the car is faster.
 
-| | Trước | Sau |
+| | Before | After |
 |---|---:|---:|
-| Cao điểm | xe máy nhanh hơn 36% | 14% |
-| Thấp điểm | 31% | 6% |
-| Ban đêm | 31% | **0%** |
+| Peak | motorbike faster by 36% | 14% |
+| Off-peak | 31% | 6% |
+| Night | 31% | **0%** |
 
-Trên 1 km đường thoáng: ô tô 1,70 phút, xe máy 1,97 — ô tô thắng. Trên 1 km kẹt 5/5 giờ cao điểm: ô tô 5,00, xe máy 3,80 — xe máy thắng. Lợi thế đảo chiều đúng chỗ nó phải đảo, và thang "Tốc độ" trong giao diện tự đổi theo vì nó suy ra từ chính hệ số.
+Over 1 km of open road: car 1,70 minutes, motorbike 1,97 — the car wins. Over 1 km at congestion 5/5 during peak hour: car 5,00, motorbike 3,80 — the motorbike wins. The advantage flips exactly where it should, and the "Speed" scale in the interface updates automatically, since it's derived from the same coefficients.
 
-### Mức chi tiết thứ tư: Cả hẻm
+### Fourth detail level: alleys
 
-Mạng hẻm là thứ làm shipper xe máy Việt Nam khác mọi phương tiện khác, và bản đầu **không có nó**. Đếm trong vùng trung tâm TP.HCM:
+The alley network is what sets Vietnamese motorbike shippers apart from every other vehicle, and the first version **didn't have it**. Counted across the central TP.HCM area:
 
-| Cấp đường | Số tuyến | |
+| Road class | Number of roads | |
 |---|---:|---|
-| `service` | 5794 | không nạp — trong đó **4345 là `service=alley`**, tức hẻm |
-| `residential` | 2414 | đang nạp |
+| `service` | 5794 | not loaded — of which **4345 are `service=alley`**, i.e. alleys |
+| `residential` | 2414 | currently loaded |
 
-Cái ứng dụng gọi là "đường nhỏ" thực ra là đường khu dân cư, ô tô vào bình thường — nên xe máy chẳng có lợi thế riêng nào. Đo trước khi sửa: ô tô đi đúng 0,5 km "đường nhỏ" y như xe máy, chênh lệch thời gian hoàn toàn do hệ số kẹt.
+What the app calls "fine" is really residential streets, which cars enter normally — so the motorbike has no distinct advantage there at all. Measured before the fix: a car covers the exact same 0,5 km of "fine" road as a motorbike, with the time difference coming entirely from the congestion coefficient.
 
-Dữ liệu còn nói rõ ô tô vào được hay không: trong 4345 hẻm, 27% ghi `motorcar=destination` và 10% ghi `motorcar=no`. Mô hình: `service=alley` thành một cấp đường riêng `alley`, chỉ xe máy đi được; hẻm nào ghi `motorcar=yes` thì coi như đường khu dân cư (đo được đúng một tuyến).
+The data also states plainly whether cars can enter: of the 4345 alleys, 27% are tagged `motorcar=destination` and 10% are tagged `motorcar=no`. The model: `service=alley` becomes its own road class, `alley`, passable only by motorbike; any alley tagged `motorcar=yes` is treated as a residential street (measured for exactly one route).
 
-Hẻm phải hỏi bằng mệnh đề Overpass riêng, và phải lọc đúng `service=alley` — lấy cả `service` là vơ luôn lối vào bãi đỗ và đường dẫn vào nhà, những thứ không nối đi đâu cả.
+Alleys have to be queried with a separate Overpass clause, and must filter precisely for `service=alley` — pulling in all of `service` would also sweep in parking-lot entrances and driveways, things that don't connect anywhere.
 
-Đo trên quãng 1,5 km trong Quận 1–Quận 3:
+Measured over a 1,5 km stretch in Quận 1–Quận 3:
 
-| | Mức "Đường nhỏ" | Mức "Cả hẻm" |
+| | "Fine" level | "Alleys" level |
 |---|---|---|
-| Đồ thị | 946 nút, 2030 cạnh | **2793 nút, 6480 cạnh** (3343 cạnh hẻm, 129 km) |
-| Xe máy | 2,15 km · 9 phút | **2,09 km** · 9 phút · có 0,1 km hẻm |
-| Ô tô, xe van | 2,15 km · 11 phút — **cùng tuyến** | **2,36 km** · 12 phút — **tuyến khác** |
+| Graph | 946 nodes, 2030 edges | **2793 nodes, 6480 edges** (3343 alley edges, 129 km) |
+| Motorbike | 2,15 km · 9 min | **2,09 km** · 9 min · includes 0,1 km of alley |
+| Car, van | 2,15 km · 11 min — **same route** | **2,36 km** · 12 min — **different route** |
 
-Trước khi sửa, cả ba xe đi chung một đường. Sau khi sửa, xe máy có tuyến riêng và ngắn hơn 11%, vì đúng lý do thật.
+Before the fix, all three vehicle types took the same road. After the fix, the motorbike gets its own route, 11% shorter, for the real reason.
 
-Cái giá: đồ thị nặng gấp ba, tải mất ~21 giây. Nên hạn mức của mức này đặt rất chặt (hành lang 1,4 km, diện tích 14 km²), chỉ chạy được với quãng dưới khoảng 3 km, và nó **không bao giờ được tự chọn giúp** khi mức khác bị đứt đoạn — phải là quyết định của người dùng.
+The cost: the graph is three times heavier, loading takes ~21 seconds. So this level's limits are set very tight (1,4 km corridor, 14 km² area), it only works for trips under roughly 3 km, and it is **never auto-selected as a fallback** when another level is disconnected — it has to be the user's decision.
 
-### Bảng so sánh phương tiện
+### Vehicle comparison table
 
-Lưới màn hình so sánh **thuật toán**: mỗi ô một thuật toán, cùng một hành trình. Loại xe thì ngược lại — nó là lựa chọn chung của cả lưới, nên muốn biết xe tải đi khác xe máy chỗ nào thì phải bấm đổi xe rồi tự nhớ lấy con số cũ. Không so được.
+The pane grid compares **algorithms**: one pane per algorithm, the same trip. Vehicle type is the opposite — it's a single choice shared across the whole grid, so finding out where a truck differs from a motorbike means clicking to change vehicle and remembering the old numbers yourself. That's not really a comparison.
 
-Khối **So sánh phương tiện** dưới phần giải thích chạy cả bốn xe một lượt, giữ nguyên thuật toán, khung giờ và trọng số đang đặt. Cột: quãng đường, thời gian, chi phí, số cạnh bị cấm, số lần cấm rẽ chặn, khoảng ghim xa nhất, và một chữ cái nhóm tuyến — cùng chữ nghĩa là đi trùng đường.
+The **Vehicle comparison** block below the explanation panel runs all four vehicle types in one pass, holding the current algorithm, time period, and weights fixed. Columns: distance, time, cost, number of banned edges, number of turn-restriction blocks, farthest pin distance, and a route-group letter — matching letters mean the same road was taken.
 
-Không thể chỉ đổi `vehicle` rồi chạy lại bốn lần, vì **mỗi loại xe ghim vào một nút giao khác nhau**: chỗ xe máy dừng được chưa chắc xe tải rời đi được. Bảng tự ghim lại cho từng xe; thiếu bước đó là so hai thứ khác nhau.
+It isn't enough to just change `vehicle` and rerun four times, because **each vehicle type pins to a different intersection**: a spot a motorbike can stop at isn't necessarily one a truck can pull away from. The table re-pins for each vehicle on its own; skip that step and you're comparing two different things.
 
-Chỉ tính khi người dùng mở ra. Mỗi lần tính là bốn lượt tìm kiếm đầy đủ — đo trên 1701 nút mất 19–34 ms, đủ nhanh khi bấm nhưng để chạy nền theo mỗi cái nhích thanh trượt thì giao diện sẽ giật.
+Only computed when the user opens it. Each computation is four full search passes — measured on a 1701-node graph it takes 19–34 ms, fast enough on a click, but running it in the background on every slider nudge would make the interface stutter.
 
-Đo trên Đức Bà – Landmark 81, A*, mức Đường nhỏ:
+Measured on Đức Bà – Landmark 81, A\*, at the fine level:
 
-| Xe | Cao điểm | Thấp điểm | Cạnh bị cấm (cao điểm → thấp điểm) |
+| Vehicle | Peak | Off-peak | Banned edges (peak → off-peak) |
 |---|---|---|---|
-| Xe máy | 4,75 km · 14 phút | 4,75 km · 11 phút | 0 |
-| Xe van, ô tô | 4,75 km · 22 phút | 4,75 km · 16 phút | 0 |
-| Xe tải | **4,54 km** · 29 phút | **4,08 km** · 20 phút | 2951 → 2184 |
+| Motorbike | 4,75 km · 14 min | 4,75 km · 11 min | 0 |
+| Van, car | 4,75 km · 22 min | 4,75 km · 16 min | 0 |
+| Truck | **4,54 km** · 29 min | **4,08 km** · 20 min | 2951 → 2184 |
 
-Ba xe đầu đi trùng đường, chỉ khác thời gian. Xe tải đi tuyến riêng, và tuyến ấy còn đổi theo khung giờ.
+The first three vehicles take the same road, differing only in time. The truck takes its own route, and that route even changes with the time period.
 
-### Trọng số bằng 0 hết
+### All weights at zero
 
-Kéo cả bốn thanh về 0 thì hàm chi phí trả về 0 cho mọi đoạn đường, nên mọi tuyến đều có chi phí bằng nhau. Đo trên đồ thị mẫu:
+Dragging all four sliders to 0 makes the cost function return 0 for every road segment, so every route has an equal cost. Measured on the sample graph:
 
-| | Cân bằng | Bốn trọng số đều 0 |
+| | Balanced | All four weights at zero |
 |---|---|---|
-| UCS | 11,4 km · TỐI ƯU | **20,7 km · vẫn TỐI ƯU** |
-| A\* | 11,4 km · xét 11 nút | 20,7 km · xét 10 nút, y hệt UCS |
-| Greedy | 13,1 km · xét 7 nút | 20,7 km · y hệt UCS |
+| UCS | 11,4 km · OPTIMAL | **20,7 km · still OPTIMAL** |
+| A\* | 11,4 km · expands 11 nodes | 20,7 km · expands 10 nodes, identical to UCS |
+| Greedy | 13,1 km · expands 7 nodes | 20,7 km · identical to UCS |
 
-Về mặt toán học không câu nào sai: tuyến 20,7 km thật sự có chi phí nhỏ nhất, vì mọi tuyến đều bằng 0. A\* thoái hoá vì ước lượng nhân với chi phí thấp nhất mỗi ki-lô-mét, mà số đó cũng bằng 0 nên h = 0. Nhưng người dùng đọc chữ "tối ưu" bên cạnh một tuyến vòng vèo thì chỉ kết luận là ứng dụng hỏng.
+Mathematically, no statement here is false: the 20,7 km route genuinely does have the lowest cost, because every route costs 0. A\* degenerates because its heuristic multiplies distance by the lowest cost per kilometer, and that number is also 0, so h = 0. But a user who reads the word "optimal" next to a meandering route can only conclude the app is broken.
 
-Xử lý: `costIsFlat` phát hiện trường hợp này, bỏ dấu "tối ưu" ở cả năm thuật toán, hiện cảnh báo ngay dưới bốn thanh trượt, và khối giải thích nói rõ nguyên nhân thay vì lời khẳng định tối ưu thường lệ. Không chặn người dùng — họ vẫn kéo được về 0 nếu muốn xem điều gì xảy ra.
+Handling: `costIsFlat` detects this case, drops the "optimal" tag on all five algorithms, shows a warning right below the four sliders, and the explanation block states the cause instead of the usual claim of optimality. It doesn't block the user — they can still drag everything to 0 if they want to see what happens.
 
-### Giờ cấm tải
+### Truck curfew
 
-Xe tải trước đây bị cấm cả `residential` lẫn `tertiary` suốt ngày, tức 75% số cạnh ở mức chi tiết cao. Quá tay: xe tải nhẹ giao hàng vẫn đi được đường nhánh, chỉ không vào nổi hẻm.
+Trucks used to be banned from both `residential` and `tertiary` all day, i.e. 75% of edges at the high detail level. Too aggressive: a light delivery truck can still use side roads, it just can't fit into an alley.
 
-Cái chặn thật ở nội thành không phải cấp đường mà là **giờ cấm tải** — một ràng buộc theo giờ. Nên tách làm hai:
+What actually blocks trucks downtown isn't the road class but the **truck curfew** — a time-based restriction. So it's split in two:
 
-- Cấm suốt ngày: chỉ `residential`.
-- Giờ cấm tải, chỉ khung cao điểm: thêm `tertiary` và `secondary`.
+- All-day ban: `residential` only.
+- Truck curfew, peak period only: adds `tertiary` and `secondary`.
 
-Xe van được miễn hoàn toàn — đó chính là lý do thật khiến các hãng giao hàng ở Việt Nam dùng xe van.
+Vans are fully exempt — that's the real reason delivery companies in Vietnam use vans.
 
-Kết quả đo trên cùng tuyến: xe tải đi **4,54 km lúc cao điểm** nhưng **4,08 km lúc thấp điểm và ban đêm**. Khung giờ giờ không chỉ đổi tốc độ, nó đổi cả mạng lưới đi được. Vì vậy đổi khung giờ cũng phải ghim lại điểm như đổi xe: chỗ xe tải đỗ được lúc trưa có thể không rời đi được lúc cao điểm.
+Measured on the same route: a truck travels **4,54 km at peak** but **4,08 km off-peak and at night**. Time period now changes not just speed, it changes which network is even reachable. So changing the time period must also re-pin locations, just like changing vehicle: a spot a truck can park at midday might not be one it can pull away from at peak hour.
 
-**Vẫn chưa mô hình hoá:** cấm rẽ có `via` là tuyến đường, hạn chế theo tải trọng (`maxweight`), và phân vùng cấm tải theo địa giới hành chính. Nói rõ ra để không ai tưởng là đã có.
+**Not yet modeled:** turn restrictions whose `via` is a road, weight-based limits (`maxweight`), and administrative-zone truck bans. Stated plainly so no one assumes it's already there.
 
-### Khác biệt giữa các loại xe chỉ hiện ở mức "Đường nhỏ"
+### Differences between vehicle types only show up at the "fine" level
 
-Đo tuyến Đức Bà – Landmark 81, cùng một điểm đi và điểm đến:
+Measured on the Đức Bà – Landmark 81 route, same origin and destination:
 
-| Mức | Xe máy | Xe van | Ô tô con | Xe tải |
+| Level | Motorbike | Van | Car | Truck |
 |---|---|---|---|---|
-| Đường vừa | 3,71 km · 11 phút | 3,71 km · 16 phút | 3,71 km · 16 phút | 3,71 km · 25 phút |
-| Đường nhỏ | 4,75 km · 14 phút | 4,75 km · 22 phút | 4,75 km · 22 phút | **3,71 km** · 25 phút |
+| Medium | 3,71 km · 11 min | 3,71 km · 16 min | 3,71 km · 16 min | 3,71 km · 25 min |
+| Fine | 4,75 km · 14 min | 4,75 km · 22 min | 4,75 km · 22 min | **3,71 km** · 25 min |
 
-Ở mức "Đường vừa" cả bốn xe đi **cùng một tuyến**, chỉ khác thời gian và chi phí. Lý do thì hợp lẽ: mức ấy chỉ có `trunk`, `primary`, `secondary`, mà xe máy chỉ bị cấm cao tốc còn xe tải chỉ bị cấm `residential` và `tertiary` — không cấp nào trong số đó có mặt, nên **không cạnh nào bị cấm cho bất kỳ xe nào**.
+At the "medium" level all four vehicles take the **same route**, differing only in time and cost. The reason makes sense: that level only has `trunk`, `primary`, `secondary`, and motorbikes are only banned from motorways while trucks are only banned from `residential` and `tertiary` — none of those classes are present, so **no edge is banned for any vehicle**.
 
-Ở mức "Đường nhỏ", xe tải bị cấm 2712/3598 cạnh và buộc phải bám trục lớn, ra một tuyến khác hẳn. Vậy nên khi quay video minh hoạ khác biệt giữa các loại xe, phải dùng **đồ thị mẫu hoặc mức "Đường nhỏ"** — ở mức "Đường vừa" thì khác biệt chỉ nằm ở thời gian, không nằm ở đường đi.
+At the "fine" level, trucks are banned from 2712/3598 edges and forced to hug the major arterials, producing a completely different route. So when filming a video to illustrate the difference between vehicle types, it has to use **the sample graph or the "fine" level** — at the "medium" level the difference is only in time, not in the path taken.
 
-### Cụm giữ lại phải liên thông mạnh
+### The retained cluster must be strongly connected
 
-Mạng lưới tải về luôn có những mẩu rời, nên chỉ giữ lại một cụm. Cụm ấy phải **liên thông mạnh** — đi xuôi chiều từ nút nào cũng tới được mọi nút còn lại — chứ không phải liên thông theo nghĩa bỏ chiều đi mà xét.
+The downloaded road network always has stray disconnected fragments, so only one cluster is kept. That cluster must be **strongly connected** — following the direction of travel from any node reaches every other node — not merely connected in the sense of ignoring direction.
 
-Đường một chiều làm hai khái niệm đó khác hẳn nhau, và ở Việt Nam khoảng cách ấy rất lớn. Đo thẳng trên dữ liệu Overpass quanh trung tâm Sài Gòn: **1414 trên 1931 tuyến đường mang thẻ `oneway=yes`, tức 73%**, chủ yếu vì đại lộ có dải phân cách được vẽ thành hai tuyến một chiều song song.
+One-way streets make those two notions very different from each other, and in Vietnam that gap is large. Measured directly on Overpass data around central Sài Gòn: **1414 of 1931 roads carry the `oneway=yes` tag, i.e. 73%**, mostly because boulevards with a median strip are drawn as two parallel one-way roads.
 
-Hậu quả khi xét liên thông vô hướng, đo trên tuyến Nhà thờ Đức Bà đến Thủ Thiêm ở mức "đường vừa":
+The consequence of checking undirected connectivity, measured on the Nhà thờ Đức Bà to Thủ Thiêm route at the "medium" level:
 
-| Cách đo | Số nút giữ lại | Từ điểm xuất phát đi xuôi chiều tới được |
+| Method | Nodes kept | Reachable forward from the start point |
 |---|---:|---:|
-| Liên thông vô hướng (cũ) | 506 | 374 / 506 — 132 nút không đường nào dẫn tới |
-| Liên thông mạnh (nay) | 239 | 239 / 239 |
+| Undirected connectivity (old) | 506 | 374 / 506 — 132 nodes no road leads to |
+| Strong connectivity (now) | 239 | 239 / 239 |
 
-Bản cũ dựng mạng lưới **báo thành công**, ghim hai điểm cách 83 m và 142 m, rồi thuật toán mới báo không tới được — và lời giải thích đổ oan cho mạng lưới đứt đoạn trong khi đường vẫn nối, chỉ là ngược chiều. Đây là kiểu lỗi tệ nhất: mọi dấu hiệu đều nói ổn cho tới bước cuối.
+The old version would build the network and **report success**, pin two points 83 m and 142 m away, and only then would the algorithm report unreachable — with the explanation wrongly blaming a disconnected network, when the road was actually still connected, just facing the wrong way. This is the worst kind of bug: every signal says everything is fine right up to the very last step.
 
-Dùng Kosaraju, duyệt bằng ngăn xếp tường minh vì mạng lưới có hàng nghìn nút. Đo lại bốn tuyến sau khi sửa, tất cả đều tới được 100% số nút và đều tìm ra đường.
+Uses **Kosaraju's algorithm**, traversed with an explicit stack because the network has thousands of nodes. Remeasured on four routes after the fix, all reach 100% of nodes and all find a route.
 
-Cái giá phải trả: cụm nhỏ đi nên có điểm bị ghim xa hơn — Thủ Thiêm từ 723 m lên 1260 m, vì đường trong đó phần lớn là nhánh cụt một chiều. Đổi lại, hai điểm bất kỳ trong mạng lưới đã giữ đều chắc chắn đi tới nhau được, nên di chuyển điểm đi và điểm đến không cần dựng lại mạng lưới.
+The cost paid: with a smaller cluster, some points end up pinned farther away — Thủ Thiêm goes from 723 m up to 1260 m, because most of the roads in there are one-way dead ends. In exchange, any two points within the retained network are guaranteed to reach each other, so moving the origin and destination never requires rebuilding the network.
 
-## 7. Phương tiện giao hàng
+## 7. Delivery vehicles
 
-Bốn loại xe, mỗi loại mạnh yếu khác nhau, nên cùng hai điểm vẫn ra tuyến khác nhau. Đây là chỗ bài toán mang tính Việt Nam rõ nhất — shipper xe máy và xe tải thực tế không đi cùng đường.
+Four vehicle types, each with different strengths and weaknesses, so the same two points can still produce different routes. This is where the problem is at its most distinctly Vietnamese — motorbike shippers and trucks genuinely don't take the same roads.
 
-| Xe | Mạnh | Yếu |
+| Vehicle | Strengths | Weaknesses |
 |---|---|---|
-| Xe máy | Luồn được khi kẹt, vào được đường nhỏ | Cấm cao tốc, chở ít, rủi ro cao hơn |
-| Xe van | Đi được mọi cấp đường, cân bằng nhất | Không nhanh hơn ai ở điều kiện nào |
-| Ô tô con | Nhanh trên trục lớn, an toàn | Kẹt là chịu chết, không luồn được |
-| Xe tải | Chở được khối lượng lớn nhất | Cấm đường nhỏ và hẻm, chậm, phạt nặng đoạn rủi ro |
+| Motorbike | Can weave through when congested, can enter small roads | Banned from motorways, low cargo, higher risk |
+| Van | Can use every road class, the most balanced | Not the fastest at anything, under any condition |
+| Car | Fast on major arterials, safe | Helpless in congestion, can't weave through |
+| Truck | Largest cargo capacity | Banned from small roads and alleys, slow, heavily penalized on risky segments |
 
-Mô hình hoá bằng ba hệ số: nhân tốc độ, mức chịu ảnh hưởng của kẹt xe, hệ số rủi ro — cộng danh sách cấp đường bị cấm.
+Modeled with three coefficients: a speed multiplier, a congestion-sensitivity factor, a risk factor — plus a list of banned road classes.
 
-**Đổi xe phải ghim lại điểm.** Chỗ xe máy dừng được chưa chắc xe tải vào được. Thiếu bước này thì chọn xe tải là mọi tuyến báo không tới được, dù đường lớn ngay bên cạnh. Đo thực tế: xe máy ghim cách 59m vào một con hẻm, xe tải phải ghim ra đường lớn cách 92m và đi tuyến dài hơn nhưng lớn hơn.
+**Changing vehicle must re-pin the points.** A spot a motorbike can stop at isn't necessarily one a truck can enter. Skip this step and choosing a truck reports every route as unreachable, even with a main road right next door. Measured in practice: the motorbike pins 59m into an alley, the truck has to pin to a main road 92m away and takes a longer but bigger route.
 
-### Khi không có tuyến
+### When there is no route
 
-Ghim đúng rồi vẫn có thể không tới được — một khu chỉ nối vào mạng lưới qua đường cao tốc thì xe máy chịu, dù mạng lưới liền mạch. "Không tới được" đứng một mình chỉ nói rằng hỏng, không nói phải làm gì tiếp, mà hai nguyên nhân của nó lại đòi hai cách xử lý trái ngược: mạng lưới đứt đoạn thì phải dựng lại, còn xe bị cấm thì mạng lưới vẫn tốt, chỉ cần đổi xe.
+Even with correct pins, a route may still be unreachable — an area that only connects to the network via a motorway leaves the motorbike stuck, even though the network is fully connected. "Unreachable" on its own only says something is broken, not what to do next, and its two causes call for opposite fixes: a disconnected network needs rebuilding, while a vehicle ban means the network is fine and only the vehicle needs to change.
 
-Phân biệt được hai trường hợp chỉ tốn hai lượt duyệt theo chiều rộng — một lượt bỏ hết ràng buộc, một lượt cho từng loại xe còn lại — nên cứ nói thẳng ra:
+Telling the two cases apart costs only two breadth-first traversals — one with every constraint dropped, one for each remaining vehicle type — so it just states the reason outright:
 
-> Xe máy không qua được: mọi đường nối hai điểm đều phải đi qua đường cao tốc, mà xe máy bị cấm ở đó. Đổi sang xe van hoặc ô tô con hoặc xe tải thì đi được.
+> Motorbike can't get through: every road connecting the two points has to pass through a motorway, and motorbikes are banned there. Switching to a van, car, or truck will get through.
 
-Kèm hai quy tắc về cách báo số:
+Along with two rules about how numbers are reported:
 
-- **Không có tuyến thì không có gì để tối ưu.** `metrics.optimal` phải xét cả `found`, không chỉ đọc tính chất lý thuyết của thuật toán. Trước đây chỗ này đóng dấu "TỐI ƯU" lên một kết quả rỗng, ngay cạnh dòng "không tới được".
-- **Không hiện số không giả.** Quãng đường, thời gian và chi phí bằng không không phải vì tuyến ngắn mà vì chẳng có tuyến nào. Chân ô chỉ giữ hai con số có thật: đã xét bao nhiêu nút và mất bao lâu trước khi bỏ cuộc.
+- **No route means nothing to optimize.** `metrics.optimal` must check `found` too, not just read the algorithm's theoretical property. This used to stamp "OPTIMAL" on an empty result, right next to the line reading "unreachable."
+- **Never show a fake zero.** Distance, time, and cost at zero aren't because the route is short but because there is no route at all. The foot of the pane keeps only two numbers that are real: how many nodes were expanded and how long it took before giving up.
 
-Cùng lẽ ấy, `order` chỉ liệt kê những điểm thật sự ghé được: chặng nào tắc thì các điểm sau nó chưa hề tới, kể tên chúng ra là nói sai.
+By the same logic, `order` only lists the points actually reached: whichever leg gets blocked, the points after it were never reached, and naming them would be stating something false.
 
-## 8. Hàm chi phí
+## 8. Cost function
 
 ```
-chi phí = w₁·quãng đường + w₂·thời gian + w₃·kẹt xe·quãng đường + w₄·rủi ro·quãng đường
+cost = w₁·distance + w₂·time + w₃·congestion·distance + w₄·risk·distance
 ```
 
-Phần kẹt xe và rủi ro **nhân với chiều dài**, không cộng thẳng một cục. Ba trăm mét kẹt cứng không thể tính bằng ba ki-lô-mét kẹt cứng, mà mạng lưới lấy từ OpenStreetMap có rất nhiều đoạn chỉ vài chục mét — cộng cục sẽ phạt oan tuyến nào đi qua nhiều nút giao.
+The congestion and risk terms are **multiplied by length**, not added as a flat lump. Three hundred meters of heavy congestion can't be counted the same as three kilometers of heavy congestion, and the network pulled from OpenStreetMap has plenty of segments only a few dozen meters long — a flat lump sum would unfairly penalize any route that passes through many intersections.
 
-Nhân theo chiều dài còn cho một lợi ích thứ hai: mọi thành phần đều tỉ lệ với quãng đường, nên cận dưới mà A\* dùng để ước lượng trở nên sát. Trước khi sửa, A\* xét 516 nút so với 546 của UCS — gần như vô ích. Sau khi sửa, 197 so với 263.
+Multiplying by length gives a second benefit: every term is proportional to distance, so the lower bound A\* uses for its heuristic becomes tight. Before the fix, A\* expanded 516 nodes against UCS's 546 — nearly useless. After the fix, 197 against 263.
 
-**Ước lượng của A\*** là khoảng cách đường chim bay nhân với chi phí thấp nhất trên mỗi ki-lô-mét trong toàn mạng lưới. Cách này vẫn không bao giờ nói quá nên A\* giữ được tính tối ưu, nhưng chặt hơn nhiều so với dùng thẳng số ki-lô-mét. **Người viết thuật toán phải dùng đúng công thức này**, nếu không số liệu hai bên sẽ không khớp.
+**A\*'s heuristic** is the straight-line distance multiplied by the lowest cost per kilometer anywhere in the whole network. This still never overestimates, so A\* keeps its optimality, but it's far tighter than using the raw kilometer figure directly. **Whoever writes the algorithm must use this exact formula**, or the numbers on the two sides won't match.
 
-## 9. Ngôn ngữ thị giác
+## 9. Visual language
 
-**Xung đột màu.** Hai hệ thông tin cùng nằm trên đường: mức kẹt xe của từng đoạn, và tuyến thuật toán chọn. Tách theo chất liệu chứ không theo màu:
+**Color conflict.** Two information systems sit on the same roads: each segment's congestion level, and the route the algorithm chose. They're separated by material, not by color:
 
-- **Nền đường thể hiện mức kẹt xe**, thang xanh lá sang đỏ theo mức 1–5, nét mảnh, hơi mờ. Luôn hiện kể cả khi chưa chạy.
-- **Tuyến được chọn vẽ bằng mực đen**, viền trắng dày bọc ngoài, lõi đen chạy trong. Mực nằm ngoài mọi thang màu dữ liệu nên không thể nhầm, và đọc như một nét bút vạch lên bản đồ: điều kiện của thành phố là màu, quyết định của thuật toán là mực.
+- **The road base shows the congestion level**, a green-to-red scale over the 1–5 range, a thin, slightly faded line. Always visible, even before a run.
+- **The chosen route is drawn in black ink**, a thick white outline wrapping a black core running through the middle. Ink sits outside every data color scale, so it can never be mistaken for one, and reads like a pen stroke laid onto the map: the city's conditions are color, the algorithm's decision is ink.
 
-**Trạng thái nút** phân biệt bằng cả màu lẫn kích thước:
+**Node state** is distinguished by both color and size:
 
-| Trạng thái | Hình | Ý nghĩa |
+| State | Appearance | Meaning |
 |---|---|---|
-| Chưa chạm | chấm xám nhỏ | thuật toán chưa biết tới |
-| Trong hàng đợi biên | vòng tròn rỗng viền xanh nhạt | đang chờ được xét |
-| Đã xét | chấm xanh lam đặc, nhạt dần theo thời gian | đã xét xong |
-| Đang xét | vòng tròn lớn viền xanh đậm | tiêu điểm của bước hiện tại |
+| Untouched | small grey dot | the algorithm doesn't know about it yet |
+| In the frontier | hollow circle, light blue outline | waiting to be expanded |
+| Expanded | solid blue dot, fading over time | finished being expanded |
+| Being expanded | large circle, dark blue outline | the focus of the current step |
 
-Điểm lấy hàng, điểm ghé và điểm giao phân biệt bằng **hình dạng** chứ không thêm màu mới: tròn, thoi, vuông.
+Pickup, stop, and dropoff points are distinguished by **shape**, not by adding a new color: circle, diamond, square.
 
-**Không dùng biểu tượng.** Nút bấm ghi chữ: Lùi, Chạy, Tiến, Đóng, Xoá. Trong một giao diện đo đạc, chữ nói chính xác hơn hình.
+**No icons are used.** Buttons carry words: Back, Run, Forward, Close, Delete. In an interface built for measurement, words say it more precisely than pictures.
 
-## 10. Mô hình state
+## 10. State model
 
-Ba khối, lý do các màn hình không bao giờ lệch nhau:
+Three blocks, which is why the panes never drift out of sync with each other:
 
 ```ts
-truy vấn : { start, goal, stops[], detail, period, vehicle, criterion, weights }
-màn hình : { id, algo, result }[]
-thời gian: { step, playing, speed, maxStep }
+query    : { start, goal, stops[], detail, period, vehicle, criterion, weights }
+panes    : { id, algo, result }[]
+timeline : { step, playing, speed, maxStep }
 ```
 
-Màn hình **không** giữ bản sao của truy vấn.
+Panes do **not** keep a copy of the query.
 
-Trace lưu nút bằng **chỉ số** thay vì mã chuỗi: một lượt chạy trên mạng lưới vài trăm nút sinh ra hàng chục nghìn phần tử hàng đợi, nhân với năm màn hình thì lưu chuỗi sẽ ngốn bộ nhớ vô ích.
+The trace stores nodes as **indices** rather than string IDs: a single run over a network of a few hundred nodes generates tens of thousands of queue entries, and multiplied across five panes, storing strings would waste memory for nothing.
 
-## 11. Hợp đồng API
+## 11. API contract
 
-**Trạng thái hiện tại: frontend tự tính hết, chưa gọi backend.**
+**Current state: the frontend computes everything itself; it does not call the backend yet.**
 
-Bản đang chạy dựng đồ thị bằng `lib/overpass.ts` và chạy cả năm thuật toán bằng
-`lib/search.ts`, toàn bộ trong trình duyệt. Không có một lời gọi nào tới backend.
-Đây là lựa chọn có chủ đích để frontend không bị chặn, nhưng phải nói thẳng ra
-trong tài liệu, vì bản trước của mục này mô tả như thể việc nối đã xong — ai đọc
-mà cài backend theo rồi ráp vào sẽ thấy không chạy.
+The running build constructs the graph with `lib/overpass.ts` and runs all five algorithms with `lib/search.ts`, entirely in the browser. There is not a single call to the backend. This is a deliberate choice so the frontend isn't blocked, but it has to be stated plainly in this document, because the previous version of this section described it as if the integration were already done — anyone who read that, built a backend to match, and wired it in would find that it doesn't work.
 
-Khi nối, chỉ cần thay thân hai hàm: `buildGraph` gọi `GET /api/graph`, và
-`planRoute` gọi `POST /api/search/batch`. Phần còn lại của ứng dụng không đổi.
+When wiring it up, only the bodies of two functions need to change: `buildGraph` calls `GET /api/graph`, and `planRoute` calls `POST /api/search/batch`. The rest of the application stays the same.
 
 ```
 GET  /api/graph?points=lat,lng;lat,lng&detail=coarse|medium|fine
@@ -433,73 +428,76 @@ POST /api/search/batch
       results: [{ algo, order[], path[], found, problem?, metrics, trace[] }] }
 ```
 
-**Ba điều bắt buộc, thiếu một cái là phần trực quan hoá vỡ:**
+**Three things are mandatory; missing any one breaks the visualization:**
 
-**1. `nodeIds` là bắt buộc, và thứ tự phải cố định.** Đây là mảng mã nút, dùng
-làm bảng tra cho `trace`. Bản trước của tài liệu quên hẳn trường này. Mỗi bước
-trong `trace` lưu nút bằng **chỉ số trong `nodeIds`**, không phải mã nút, vì một
-lượt chạy trên mạng lưới vài trăm nút sinh ra hàng chục nghìn phần tử hàng đợi —
-nhân với năm màn hình thì lưu chuỗi sẽ ngốn bộ nhớ vô ích. Thứ tự `nodeIds` phải
-trùng khớp thứ tự mảng `nodes` mà `GET /api/graph` trả về, và phải giữ nguyên
-suốt phiên làm việc.
+**1. `nodeIds` is mandatory, and its order must be fixed.** This is an array of
+node IDs, used as the lookup table for `trace`. The previous version of this
+document forgot this field entirely. Each step in `trace` stores a node by
+**its index in `nodeIds`**, not by node ID, because a single run over a
+network of a few hundred nodes generates tens of thousands of queue entries —
+multiplied across five panes, storing strings would waste memory for nothing.
+The order of `nodeIds` must match the order of the `nodes` array returned by
+`GET /api/graph`, and must stay fixed for the entire session.
 
-**2. Tên trường là `algo`, không phải `algorithm`.** Bản trước ghi `algorithm`;
-mã nguồn dùng `algo`. Chọn `algo` để khỏi phải sửa frontend.
+**2. The field name is `algo`, not `algorithm`.** The previous version wrote
+`algorithm`; the source code uses `algo`. `algo` was chosen so the frontend
+wouldn't need to change.
 
-**3. `trace` không được rỗng.** Đây là điểm dễ vỡ nhất của cả dự án: backend rất
-hay chỉ trả tuyến cuối rồi quên trace, mà thiếu trace thì toàn bộ phần trực quan
-hoá từng bước — mười điểm trong bảng chấm — không tồn tại.
+**3. `trace` must never be empty.** This is the single most fragile point in
+the whole project: a backend very commonly returns just the final route and
+forgets `trace`, and without `trace` the entire step-by-step visualization —
+ten points on the grading rubric — simply doesn't exist.
 
-`metrics` gồm: `km`, `minutes`, `cost`, `expanded`, `ms`, `optimal`.
+`metrics` consists of: `km`, `minutes`, `cost`, `expanded`, `ms`, `optimal`.
 
-`trace` là mảng các bước:
+`trace` is an array of steps:
 ```json
 { "expanded": 412, "frontier": [128, 96, 431], "g": 4.21, "h": 3.08 }
 ```
-Với thuật toán không dùng ước lượng, `h` trả `null`; giao diện tự ẩn.
+For algorithms that don't use a heuristic, `h` returns `null`; the interface hides it automatically.
 
-`problem` là câu giải thích khi truy vấn tự nó vô nghĩa — ví dụ điểm đi và điểm
-đến ghim vào cùng một nút giao. Có trường này thì giao diện nói được lý do thay
-vì hiện "xong ở bước 0, tối ưu" trông như bị treo.
+`problem` is an explanatory sentence for when the query is inherently meaningless — for example,
+the start and destination both pin to the same intersection. With this field, the interface
+can state the reason instead of showing "done at step 0, optimal," which looks like it's stuck.
 
-Một request `batch` phục vụ cả năm màn hình, để mọi màn hình nhận kết quả cùng
-lúc và dòng thời gian chung khởi động đồng bộ.
+A single `batch` request serves all five panes, so every pane receives its result at the same
+time and the shared timeline starts up in sync.
 
-## 12. Bài toán nhiều điểm giao
+## 12. The multi-stop problem
 
-Dùng chung lưới bento, không tách tab riêng.
+Uses the same bento grid, no separate tab.
 
-Mỗi màn hình chạy thuật toán của nó lần lượt qua từng chặng rồi nối các trace thành một dòng thời gian duy nhất. Chặng nào tới nơi thì đoạn đó hiện ra ngay — tuyến được xây dần từng khúc.
+Each pane runs its own algorithm through each leg in turn, then stitches the traces together into a single timeline. Whichever leg arrives shows up right away — the route is built up piece by piece.
 
-Tuỳ chọn *tự sắp thứ tự ghé* dùng heuristic láng giềng gần nhất, đo bằng chi phí UCS thật giữa các cặp điểm. Đây là lời giải **xấp xỉ**, và ô số liệu phải ghi rõ điều đó — đề bắt buộc nêu rõ thuật toán cho kết quả tối ưu hay gần đúng.
+The *auto-order stops* option uses a nearest-neighbor heuristic, measured with the real UCS cost between pairs of points. This is an **approximate** solution, and the metrics pane must state that clearly — the assignment requires stating explicitly whether an algorithm's result is optimal or approximate.
 
-Đo thực tế với hai điểm giao thêm: tự sắp thứ tự cho 9.79 km, giữ thứ tự nhập tay cho 10.97 km. Chênh 11%.
+Measured in practice with two additional stops: auto-ordering gives 9.79 km, keeping the manually entered order gives 10.97 km. An 11% gap.
 
-## 13. Rủi ro kỹ thuật
+## 13. Technical risks
 
-**Leaflet vẽ hỏng khi khung chứa đổi kích thước.** Bắt buộc gọi `invalidateSize()` sau mỗi lần co giãn màn hình, qua `ResizeObserver` đặt trên từng khung bản đồ. Không xử lý là bản đồ vỡ ngay lần co giãn đầu tiên.
+**Leaflet renders incorrectly when its container is resized.** `invalidateSize()` must be called after every pane resize, via a `ResizeObserver` placed on each map container. Without this, the map breaks on the very first resize.
 
-**Vòng lặp vô hạn khi đồng bộ khung nhìn.** Màn hình A phát sự kiện di chuyển sang B, B phát ngược lại A. Cần một cờ chặn ở tầng ứng dụng.
+**Infinite loop when syncing the view.** Pane A fires a move event to B, B fires one back to A. Needs a guard flag at the application layer.
 
-**Vẽ lại quá nhiều.** Mỗi bước có thể phải cập nhật vài nghìn nút. Hai biện pháp: dùng canvas thay cho SVG, và chỉ đổi kiểu cho nút thật sự đổi trạng thái — hiệu ứng nhạt dần chia làm bốn nấc thay vì liên tục, để phần lớn nút không đổi nấc ở mỗi bước.
+**Too many redraws.** Each step may need to update several thousand nodes. Two measures: use canvas instead of SVG, and only restyle nodes whose state actually changed — the fade effect is split into four discrete steps instead of continuous, so most nodes don't change step on any given tick.
 
-**Overpass từ chối User-Agent mặc định của Node** bằng mã 406. Trình duyệt không bị vì luôn gửi User-Agent thật. Chỉ ảnh hưởng khi chạy kiểm thử ngoài trình duyệt.
+**Overpass rejects Node's default User-Agent** with a 406 error. Browsers aren't affected, since they always send a real User-Agent. This only matters when running tests outside the browser.
 
-**Overpass có lúc chậm.** Đo được từ 1.7 giây tới 8.7 giây cho cùng một truy vấn. Phải có trạng thái đang tải rõ ràng và thông báo lỗi nói được cách khắc phục.
+**Overpass is sometimes slow.** Measured from 1.7 seconds to 8.7 seconds for the same query. There must be a clear loading state and an error message that says how to fix it.
 
-## 14. Thứ tự cắt phạm vi nếu thiếu thời gian
+## 14. Scope-cutting order if time runs short
 
-Cắt từ dưới lên:
+Cut from the bottom up:
 
-1. Bốn mức tuỳ chỉnh trọng số (giữ bốn nút tiêu chí định sẵn)
-2. Kéo thả đổi vị trí màn hình (giữ co giãn)
-3. Ba mức chi tiết mạng lưới (chốt cứng một mức)
-4. Điểm giao trung gian — **không cắt được**, đề bắt buộc bài toán nhiều điểm
+1. Four custom weight sliders (keep the four preset criterion buttons)
+2. Drag-and-drop pane reordering (keep resizing)
+3. Three road-network detail levels (lock to one fixed level)
+4. Intermediate stops — **cannot be cut**, the assignment requires the multi-stop problem
 
-Phần lõi không đụng tới: lưới nhiều màn hình, chọn thuật toán theo màn hình, dòng thời gian chung, trạng thái nút, bảng số liệu.
+The core that stays untouched: the multi-pane grid, per-pane algorithm selection, the shared timeline, node state, the metrics table.
 
-## 15. Câu hỏi còn mở
+## 15. Open questions
 
-- Bản nộp có đổi sang Goong không? Cần một người đăng ký khoá API.
-- Có làm giao diện tối không? Hiện giả định **không**; cân nhắc lại nếu quay video trong phòng tối.
-- Có cần chạy trên điện thoại không? Giả định **không** — lưới nhiều màn hình vốn là giao diện cho màn hình rộng.
+- Will the submission switch to Goong? Someone needs to register an API key.
+- Will there be a dark theme? Currently assumed **no**; reconsider if the video ends up filmed in a dark room.
+- Does it need to run on a phone? Assumed **no** — a multi-pane grid is inherently a wide-screen interface.
