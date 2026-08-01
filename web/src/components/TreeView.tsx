@@ -14,20 +14,34 @@ interface Props {
   step: number
 }
 
-/** Vị trí khung nhìn: dịch bao nhiêu, phóng bao nhiêu lần. */
+/** Viewport position: how far it's panned, how much it's zoomed. */
 interface Camera { x: number; y: number; k: number }
+
+/**
+ * Scale by `factor` while holding `anchor` still on screen.
+ *
+ * The wheel holds the point under the cursor; the buttons hold the pane's
+ * centre. Only the anchor differs, but the arithmetic that keeps it fixed is
+ * easy to get subtly wrong, and with a copy on each path a sign error gets
+ * fixed for the wheel and left in the buttons.
+ */
+function zoomAround(c: Camera, factor: number, anchor: { x: number; y: number }): Camera {
+  const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, c.k * factor))
+  const ratio = k / c.k
+  return { k, x: anchor.x - (anchor.x - c.x) * ratio, y: anchor.y - (anchor.y - c.y) * ratio }
+}
 const HOME: Camera = { x: 0, y: 0, k: 1 }
 
 /**
- * Cây tìm kiếm của một thuật toán, trải theo kiểu toả tròn.
+ * One algorithm's search tree, laid out radially.
  *
- * Cùng dòng thời gian với bản đồ: kéo tới bước nào thì cây mọc tới đó. Nhánh
- * nằm trên tuyến cuối được tô mực đen để thấy đường đi thật sự đã đi qua những
- * nhánh nào của cây.
+ * Shares the timeline with the map: drag to a step and the tree grows to
+ * match. The branch that lies on the final route is inked in black so you can
+ * see which branches of the tree the actual path went through.
  *
- * Cây vài trăm nút thì nhìn tổng thể chỉ thấy hình dạng chung, muốn đọc từng
- * nhánh phải phóng to được — nên có lăn chuột để phóng, kéo để dời, bấm đúp để
- * về vừa ô.
+ * A tree of a few hundred nodes only shows its overall shape at a glance;
+ * reading individual branches needs zoom — hence scroll to zoom, drag to pan,
+ * double-click to fit the pane.
  */
 export function TreeView({ result, step }: Props) {
   const tree = useMemo(() => (result ? buildTree(result) : null), [result])
@@ -35,7 +49,7 @@ export function TreeView({ result, step }: Props) {
   const [cam, setCam] = useState<Camera>(HOME)
   const drag = useRef<{ x: number; y: number; cam: Camera } | null>(null)
 
-  // Chạy lượt mới thì cây khác hẳn, giữ lại khung nhìn cũ chỉ tổ lạc chỗ.
+  // A new run means a completely different tree; keeping the old viewport would just leave you lost.
   useEffect(() => setCam(HOME), [result])
 
   const onPath = useMemo(() => {
@@ -44,7 +58,7 @@ export function TreeView({ result, step }: Props) {
     return new Set(result.path.map(id => index.get(id)!).filter(i => i !== undefined))
   }, [result])
 
-  /** Đổi toạ độ con trỏ trên màn hình sang toạ độ trong khung vẽ. */
+  /** Convert screen cursor coordinates to coordinates inside the drawing frame. */
   const atCursor = (e: { clientX: number; clientY: number }) => {
     const el = svg.current
     const ctm = el?.getScreenCTM()
@@ -53,20 +67,16 @@ export function TreeView({ result, step }: Props) {
     return { x: p.x, y: p.y }
   }
 
-  // Bánh xe chuột đăng ký thủ công: React gắn sự kiện wheel ở chế độ thụ động
-  // nên preventDefault trong onWheel không có tác dụng, và cả trang sẽ cuộn theo.
+  // The wheel listener is registered manually: React attaches the wheel event as
+  // passive, so preventDefault inside onWheel has no effect, and the whole page would scroll along with it.
   useEffect(() => {
     const el = svg.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       const p = atCursor(e)
-      setCam(c => {
-        const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, c.k * Math.exp(-e.deltaY * 0.0016)))
-        const ratio = k / c.k
-        // Giữ nguyên điểm dưới con trỏ: nó là chỗ người ta đang nhìn.
-        return { k, x: p.x - (p.x - c.x) * ratio, y: p.y - (p.y - c.y) * ratio }
-      })
+      // Keep the point under the cursor fixed — that's what the user is looking at.
+      setCam(c => zoomAround(c, Math.exp(-e.deltaY * 0.0016), p))
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
@@ -78,17 +88,19 @@ export function TreeView({ result, step }: Props) {
     if (!tree?.nodes.length) return null
     const [xMin, yMin, xMax, yMax] = tree.bounds
     const pad = Math.max(1, (xMax - xMin + yMax - yMin) * 0.04)
-    // Cây càng lớn thì nét càng phải mảnh, nếu không cả ô chỉ còn là một mảng
-    // đặc. Cỡ chấm đo theo khoảng cách giữa hai tầng, luôn bằng 1 — không đo
-    // theo khung bao, vì khung bao của cây sâu thì rộng ra mà các tầng vẫn cách
-    // nhau đúng chừng ấy, chấm sẽ phình lên chồng đè lên nhau.
+    // The bigger the tree, the finer the strokes need to be, otherwise the whole
+    // pane turns into one solid mass. Dot size is measured against the distance
+    // between two levels, always 1 — not against the bounding box, because a deep
+    // tree's bounding box grows wide while the levels stay exactly as far apart,
+    // so the dots would swell up and overlap each other.
     //
-    // Cũng không chia cho mức phóng. Chia là giữ chấm nguyên cỡ trên màn hình,
-    // nghe thì hợp lý nhưng hoá ra sai hẳn mục đích: chấm ở mức vừa ô vốn đã bé
-    // tới mức chỉ đủ thấy hình dạng chung, giữ nguyên cỡ ấy thì phóng lên mười
-    // bốn lần vẫn không đọc thêm được gì, chỉ còn trơ mấy sợi chỉ. Để phép biến
-    // hình phóng cả chấm lẫn nét thì tỉ lệ giữa chấm và khoảng cách hai tầng
-    // không đổi ở mọi mức phóng — phóng tới đâu cũng ra một đồ thị đọc được.
+    // It's also not divided by the zoom level. Dividing would keep the dots a
+    // fixed size on screen, which sounds reasonable but actually defeats the
+    // purpose: at fit-to-pane zoom the dots are already small enough to show only
+    // the overall shape, and holding that size while zooming in fourteen times
+    // reveals nothing more — just bare threads. Letting the zoom transform scale
+    // both dots and lines keeps the ratio between dot size and level spacing
+    // constant at every zoom level — zoom anywhere and you still get a readable graph.
     const n = tree.nodes.length
     return {
       box: {
@@ -101,13 +113,28 @@ export function TreeView({ result, step }: Props) {
     }
   }, [tree])
 
-  // Phần vẽ tách riêng và ghi nhớ lại: kéo hay phóng chỉ đổi một thuộc tính
-  // transform, không đụng tới hàng trăm chấm bên trong. Thiếu chỗ này thì mỗi
-  // lần nhích chuột React phải dựng lại toàn bộ cây, và tay kéo thấy giật.
+  // The drawing is split out and memoized: panning or zooming only changes one
+  // transform attribute, without touching the hundreds of dots inside. Without
+  // this, every mouse nudge would force React to rebuild the whole tree, and dragging would feel jerky.
+  // Nodes sorted by the step that revealed them, computed once per result. The
+  // visible set is then a prefix, so advancing the timeline is a slice rather
+  // than a predicate run across every node ever expanded, once per frame, per
+  // pane — which on a network of a few thousand nodes is the difference between
+  // scanning them all three times a second and not.
+  const byOrder = useMemo(() => (tree ? [...tree.nodes].sort((a, b) => a.order - b.order) : []), [tree])
+
   const body = useMemo(() => {
     if (!tree || !frame) return null
     const { dot, line } = frame
-    const visible = tree.nodes.filter(t => t.order < shown)
+    // First index whose node has not been revealed yet — binary search, since
+    // byOrder is sorted by exactly that field.
+    let lo = 0, hi = byOrder.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (byOrder[mid].order < shown) lo = mid + 1
+      else hi = mid
+    }
+    const visible = byOrder.slice(0, lo)
     return (
       <g strokeLinecap="round">
         {visible.map(t => {
@@ -142,20 +169,16 @@ export function TreeView({ result, step }: Props) {
         })}
       </g>
     )
-  }, [tree, frame, onPath, shown])
+  }, [tree, byOrder, frame, onPath, shown])
 
   if (!result || !frame || !body)
-    return <div className="tree-empty">Chạy thuật toán để thấy cây tìm kiếm.</div>
+    return <div className="tree-empty">Run the algorithm to see the search tree.</div>
 
   const { box } = frame
-  // Nút bấm phóng quanh tâm ô, không phải quanh gốc toạ độ — bấm phóng mà cây
-  // trượt ra khỏi khung thì coi như nút không dùng được.
-  const zoomBy = (factor: number) => setCam(c => {
-    const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, c.k * factor))
-    const ratio = k / c.k
-    const mx = box.x + box.w / 2, my = box.y + box.h / 2
-    return { k, x: mx - (mx - c.x) * ratio, y: my - (my - c.y) * ratio }
-  })
+  // The zoom buttons zoom around the pane's center, not the coordinate origin —
+  // if clicking zoom made the tree slide out of frame, the button would be unusable.
+  const zoomBy = (factor: number) =>
+    setCam(c => zoomAround(c, factor, { x: box.x + box.w / 2, y: box.y + box.h / 2 }))
 
   return (
     <div className="tree-wrap">
@@ -185,10 +208,10 @@ export function TreeView({ result, step }: Props) {
       </svg>
 
       <div className="tree-zoom">
-        <button onClick={() => zoomBy(1 / 1.5)} title="Thu nhỏ">–</button>
+        <button onClick={() => zoomBy(1 / 1.5)} title="Zoom out">–</button>
         <span className="num">{cam.k < 10 ? cam.k.toFixed(1) : Math.round(cam.k)}×</span>
-        <button onClick={() => zoomBy(1.5)} title="Phóng to">+</button>
-        <button onClick={() => setCam(HOME)} title="Bấm đúp lên cây cũng về được vị trí này">Vừa ô</button>
+        <button onClick={() => zoomBy(1.5)} title="Zoom in">+</button>
+        <button onClick={() => setCam(HOME)} title="Double-clicking the tree also returns here">Fit</button>
       </div>
     </div>
   )

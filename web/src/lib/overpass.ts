@@ -1,7 +1,8 @@
-import { hash, haversine, paddedBounds, pathKm, type LatLng } from './geo'
+import { boundsOf, hash, haversine, paddedBounds, pathKm, type LatLng } from './geo'
+import { clampCongestion, clampRisk } from './traffic'
 import type { Detail, Graph, GraphEdge, GraphNode, RoadClass, TurnRule, TurnTable } from './types'
 
-/** Cấp đường lấy về theo từng mức chi tiết. */
+/** Road classes fetched for each detail level. */
 const CLASSES: Record<Detail, RoadClass[]> = {
   coarse: ['motorway', 'trunk', 'primary'],
   medium: ['motorway', 'trunk', 'primary', 'secondary'],
@@ -10,15 +11,17 @@ const CLASSES: Record<Detail, RoadClass[]> = {
 }
 
 /**
- * Cấp đường phụ phải lấy kèm, rồi quy về đúng cấp đường chính của nó.
+ * Secondary road classes that must be fetched alongside the main ones, then
+ * folded back onto their proper main road class.
  *
- * Đường dẫn lên xuống (`*_link`) là các nhánh nối cầu vượt và nút giao khác mức.
- * Thiếu chúng thì không có lối lên cũng không có lối xuống trục lớn, và mạng
- * lưới vỡ thành nhiều mảnh chỉ đi được một chiều. Đo trên vùng Đức Bà – Thảo
- * Điền, cụm liên thông mạnh lớn nhất ở mức "Đường vừa" nhảy từ 74% lên 85% chỉ
- * nhờ thêm 199 nhánh nối này.
+ * Ramps (`*_link`) are the branches connecting flyovers and grade-separated
+ * intersections. Without them there's no way up onto a major road and no way
+ * down off it, and the network breaks into many fragments only reachable one
+ * way. Measured on the Đức Bà – Thảo Điền area, the largest strongly
+ * connected component at the "Medium roads" level jumps from 74% to 85%
+ * just from adding these 199 ramp branches.
  *
- * `unclassified` và `living_street` là đường phố thật, chỉ khác cách gắn thẻ.
+ * `unclassified` and `living_street` are real streets, just tagged differently.
  */
 const ALIAS: Record<string, RoadClass> = {
   motorway_link: 'motorway', trunk_link: 'trunk', primary_link: 'primary',
@@ -26,9 +29,10 @@ const ALIAS: Record<string, RoadClass> = {
   unclassified: 'residential', living_street: 'residential',
 }
 
-/** Cấp đường thật sự hỏi Overpass, gồm cả các cấp phụ quy về cấp đang bật.
- *  Hẻm để riêng vì OpenStreetMap gắn thẻ nó là `highway=service` + `service=alley`,
- *  không cùng dạng biểu thức với các cấp còn lại. */
+/** Road classes actually queried from Overpass, including the secondary
+ *  classes that fold onto an enabled one. Alleys are handled separately
+ *  because OpenStreetMap tags them as `highway=service` + `service=alley`,
+ *  which doesn't fit the same expression pattern as the other classes. */
 function osmClasses(detail: Detail): string[] {
   const want = new Set<string>(CLASSES[detail].filter(c => c !== 'alley'))
   for (const [alias, main] of Object.entries(ALIAS)) if (want.has(main)) want.add(alias)
@@ -36,31 +40,32 @@ function osmClasses(detail: Detail): string[] {
 }
 
 export const DETAIL_LABEL: Record<Detail, string> = {
-  coarse: 'Trục chính',
-  medium: 'Đường vừa',
-  fine:   'Đường nhỏ',
-  alleys: 'Cả hẻm',
+  coarse: 'Main roads',
+  medium: 'Medium roads',
+  fine:   'Minor roads',
+  alleys: 'With alleys',
 }
 
-/** Mức đông đúc nền theo cấp đường, trước khi cộng nhiễu. */
+/** Baseline congestion level by road class, before adding noise. */
 const BASE_JAM: Record<RoadClass, number> = {
   motorway: 2, trunk: 3, primary: 4, secondary: 4, tertiary: 3, residential: 2, alley: 1,
 }
-/** Rủi ro nền: đường càng nhỏ càng nhiều giao cắt khuất, ngập, xe cắt ngang. */
+/** Baseline risk: the smaller the road, the more blind intersections, flooding, and vehicles cutting across. */
 const BASE_RISK: Record<RoadClass, number> = {
   motorway: 0.10, trunk: 0.20, primary: 0.25, secondary: 0.30, tertiary: 0.40, residential: 0.55,
-  // Hẻm không kẹt nhưng khuất tầm nhìn, mặt đường xấu, người và xe cắt ngang liên tục.
+  // Alleys don't jam up, but sight lines are blocked, the surface is poor,
+  // and people and vehicles constantly cut across.
   alley: 0.70,
 }
 
-/** Một phần tử Overpass trả về. Truy vấn hỏi cả tuyến đường lẫn quan hệ cấm rẽ
- *  trong một lượt, nên hai loại về chung một mảng. */
+/** One element returned by Overpass. The query asks for both ways and turn-
+ *  restriction relations in a single pass, so both types come back in one array. */
 interface OsmElement {
   type: 'way' | 'relation' | 'node'
   id: number
   tags?: Record<string, string>
   geometry?: { lat: number; lon: number }[]
-  /** Mã nút OpenStreetMap, khớp một-một với từng điểm trong `geometry`. */
+  /** OpenStreetMap node id, matching one-to-one with each point in `geometry`. */
   nodes?: number[]
   members?: { type: string; ref: number; role: string }[]
 }
@@ -69,7 +74,7 @@ type OsmRelation = OsmElement
 
 const key = (lat: number, lon: number) => `${lat.toFixed(5)},${lon.toFixed(5)}`
 
-/** "06:00-09:00,16:00-19:00" → [[360,540],[960,1140]], tính bằng phút từ nửa đêm. */
+/** "06:00-09:00,16:00-19:00" -> [[360,540],[960,1140]], in minutes since midnight. */
 function parseHours(spec: string): [number, number][] {
   const out: [number, number][] = []
   for (const part of spec.split(',')) {
@@ -81,11 +86,12 @@ function parseHours(spec: string): [number, number][] {
 }
 
 /**
- * Đọc các quan hệ cấm rẽ thành bảng tra.
+ * Reads turn-restriction relations into a lookup table.
  *
- * Chỉ nhận quan hệ có `via` là một nút giao. Loại `via` là cả một tuyến đường —
- * dùng cho nút giao nhiều nhánh phức tạp — chiếm khoảng một phần tư và cần mô
- * hình khác hẳn, nên bỏ qua; thà thiếu một lệnh cấm còn hơn dựng sai một lệnh.
+ * Only accepts relations whose `via` is a single node. The variant where
+ * `via` is an entire way — used for complex multi-branch intersections —
+ * makes up roughly a quarter of them and needs an entirely different model,
+ * so it's skipped; better to miss a restriction than build a wrong one.
  */
 function readTurns(relations: OsmRelation[]): TurnTable {
   const table: TurnTable = { no: {}, only: {} }
@@ -126,18 +132,20 @@ function readTurns(relations: OsmRelation[]): TurnTable {
 }
 
 /**
- * Định danh một điểm trên tuyến đường.
+ * Identifies a point on a way.
  *
- * Dùng mã nút do OpenStreetMap cấp, vì đó mới là định danh thật: hai tuyến
- * đường nối nhau khi và chỉ khi chúng dùng chung một mã nút. Toạ độ làm tròn
- * chỉ là phương án dự phòng nếu máy chủ không trả mảng `nodes`.
+ * Uses the node id assigned by OpenStreetMap, because that's the real
+ * identity: two ways connect if and only if they share the same node id.
+ * Rounded coordinates are only a fallback for when the server doesn't
+ * return a `nodes` array.
  *
- * Đo trên 16.224 điểm quanh Đức Bà – Thảo Điền: cách làm tròn toạ độ tới năm
- * chữ số (khoảng 1,1 m) đếm ra đúng 3.929 nút giao, không hơn không kém so với
- * đếm bằng mã nút — nên nó không sai chỗ nhận diện nút giao. Nhưng nó gộp nhầm
- * 17 cặp nút vốn tách rời, tức là dựng ra 17 lối đi không có thật, thường là
- * chỗ cầu vượt và đường bên dưới tình cờ trùng toạ độ. Dùng mã nút thì cả lớp
- * lỗi ấy biến mất mà không tốn thêm gì.
+ * Measured on 16,224 points around Đức Bà – Thảo Điền: rounding coordinates
+ * to five decimal places (about 1.1 m) counts exactly 3,929 intersections —
+ * no more, no fewer than counting by node id — so it doesn't miss any
+ * intersections. But it wrongly merges 17 pairs of nodes that are actually
+ * separate, meaning it fabricates 17 connections that don't exist, usually
+ * where a flyover and the road beneath it happen to share coordinates.
+ * Using node ids makes that whole class of error disappear at no extra cost.
  */
 const pointId = (w: OsmWay, i: number): string =>
   w.nodes?.[i] != null ? `n${w.nodes[i]}` : key(w.geometry![i].lat, w.geometry![i].lon)
@@ -145,31 +153,32 @@ const pointId = (w: OsmWay, i: number): string =>
 export class GraphBuildError extends Error {
   constructor(
     message: string,
-    /** Đúng khi lỗi có thể tự khắc phục bằng cách đổi mức chi tiết. */
+    /** True when the error can be self-resolved by changing the detail level. */
     readonly needsMoreDetail = false,
-    /** Đúng khi lỗi do máy chủ chập chờn, thử lại là có thể xong. */
-    readonly transient = false,
   ) { super(message) }
 }
 
-/** Diện tích hành lang tối đa cho từng mức chi tiết, tính bằng km². */
-// Hiệu chỉnh theo số liệu đo thật: hành lang 454 km² ở mức "thêm đường vừa" trả về
-// 732 đoạn đường, 0.8 MB, hai mươi giây — nên hạn mức cũ đặt quá chặt. Diện tích chỉ
-// là thước đo thô vì mật độ đường nội thành dày hơn ngoại tỉnh nhiều lần; chốt chặn
-// thật nằm ở hạn giờ bảy mươi lăm giây.
+/** Maximum corridor area for each detail level, in km². */
+// Calibrated against real measurements: a 454 km² corridor at the "add
+// medium roads" level returns 732 road segments, 0.8 MB, twenty seconds —
+// so the old limit was set too tight. Area is only a rough proxy since
+// inner-city road density is many times denser than in the provinces; the
+// real backstop is the seventy-five-second timeout.
 const AREA_LIMIT: Record<Detail, number> = { coarse: 3000, medium: 700, fine: 60, alleys: 14 }
 
 /**
- * Bề rộng hành lang quanh tuyến, tính bằng km.
+ * Corridor width around the route, in km.
  *
- * Hẹp quá thì thuật toán không có đường nào để vòng tránh, và tệ hơn là mạng
- * lưới bị đứt: quốc lộ nối hai tỉnh hiếm khi bám sát đường thẳng nối hai điểm,
- * nó vòng ra ngoài dải hẹp rồi vòng lại, để lại hai mẩu rời nhau. Rộng quá thì
- * tải về cả những vùng chẳng liên quan.
+ * Too narrow and the algorithm has no road to detour onto, and worse, the
+ * network gets cut: a highway connecting two provinces rarely hugs the
+ * straight line between two points — it swings outside the narrow band and
+ * back in, leaving two disconnected fragments. Too wide and it downloads
+ * whole areas that are irrelevant.
  *
- * Vì vậy trần bề rộng phụ thuộc mức chi tiết. Mức trục chính rất nhẹ — bảy trăm
- * đoạn đường cho bảy mươi ki-lô-mét — nên cho nó dải rộng để bắt trọn quốc lộ.
- * Mức chi tiết cao thì phải bó hẹp, nếu không khối lượng tải sẽ nổ.
+ * So the width cap depends on the detail level. The "Main roads" level is
+ * very light — seven hundred road segments for seventy kilometres — so it
+ * gets a wide band to capture the full highway. High detail levels must be
+ * kept tight, or the download volume explodes.
  */
 const RADIUS_CAP: Record<Detail, number> = { coarse: 12, medium: 4, fine: 2.5, alleys: 1.4 }
 
@@ -183,44 +192,46 @@ function routeSpan(points: LatLng[]): number {
   return km
 }
 
-/** Diện tích hành lang: một hình chữ nhật dài cộng hai nửa hình tròn ở hai đầu. */
+/** Corridor area: a long rectangle plus two half-circles at the ends. */
 function corridorArea(points: LatLng[], detail: Detail): number {
   const r = corridorRadius(points, detail)
   return 2 * r * routeSpan(points) + Math.PI * r * r
 }
 
 /**
- * Kiểm tra khối lượng cần tải có vừa sức không, trước khi gọi Overpass.
+ * Checks whether the volume to fetch is manageable, before calling Overpass.
  *
- * Tải cả một vùng rộng ở mức chi tiết cao nghĩa là hàng trăm nghìn đoạn đường:
- * Overpass hết giờ, trình duyệt hết bộ nhớ, người dùng chỉ nhận một câu báo lỗi
- * vô nghĩa. Chặn sớm và nói rõ cách sửa thì hơn.
+ * Fetching a wide area at a high detail level means hundreds of thousands
+ * of road segments: Overpass times out, the browser runs out of memory, and
+ * the user just gets a meaningless error message. Better to block it early
+ * and say clearly how to fix it.
  */
 export function areaProblem(points: LatLng[], detail: Detail): string | null {
   const km2 = corridorArea(points, detail)
   if (km2 <= AREA_LIMIT[detail]) return null
 
-  // Gợi ý mức chi tiết cao nhất còn vừa sức, không phải mức thô nhất.
+  // Suggest the highest detail level that still fits, not the coarsest one.
   const fits = (['alleys', 'fine', 'medium', 'coarse'] as Detail[])
     .find(d => corridorArea(points, d) <= AREA_LIMIT[d])
   const len = Math.round(routeSpan(points))
   const wide = corridorRadius(points, detail).toFixed(1)
   return fits
-    ? `Tuyến dài ${len} km nên phải tải dải đường rộng ${wide} km mỗi bên — quá sức cho mức `
-      + `"${DETAIL_LABEL[detail]}". Chuyển sang mức "${DETAIL_LABEL[fits]}" là chạy được.`
-    : `Tuyến dài ${len} km, vượt khả năng tải của cả mức "${DETAIL_LABEL.coarse}". `
-      + `Hãy chọn hai điểm gần nhau hơn.`
+    ? `The route is ${len} km long, which needs a ${wide} km-wide corridor on each side — too much `
+      + `for the "${DETAIL_LABEL[detail]}" level. Switch to "${DETAIL_LABEL[fits]}" to make it work.`
+    : `The route is ${len} km long, beyond what even the "${DETAIL_LABEL.coarse}" level can fetch. `
+      + `Pick two points closer together.`
 }
 
 
-/** Máy chủ Overpass công cộng lúc đông hay bỏ dở giữa chừng bằng mã 504 dù truy
- *  vấn hoàn toàn hợp lệ — cùng một câu hỏi, lúc hỏng lúc xong trong bốn giây.
- *  Vì vậy thử lại vài lần trước khi kết luận, để buổi quay video không chết oan
- *  vì máy chủ đang bận. */
+/** The public Overpass server, when busy, sometimes aborts mid-query with a
+ *  504 even though the query is perfectly valid — the same question fails
+ *  once and succeeds in four seconds the next time. So retry a few times
+ *  before giving up, so a demo recording doesn't die needlessly just
+ *  because the server happened to be busy. */
 const RETRY_WAITS = [0, 4_000, 9_000]
 
 async function fetchElements(query: string, signal?: AbortSignal): Promise<OsmElement[]> {
-  // Hạn giờ tính cho cả loạt thử lại, không phải từng lượt.
+  // The timeout covers the whole retry sequence, not each individual attempt.
   const cutoff = AbortSignal.timeout(75_000)
   const merged = signal ? AbortSignal.any([signal, cutoff]) : cutoff
   let last: GraphBuildError | null = null
@@ -230,9 +241,10 @@ async function fetchElements(query: string, signal?: AbortSignal): Promise<OsmEl
     try {
       const res = await fetch('https://overpass-api.de/api/interpreter', {
         method: 'POST', body: 'data=' + encodeURIComponent(query), signal: merged,
-        // Overpass từ chối User-Agent mặc định của Node bằng mã 406. Trình duyệt
-        // luôn tự gửi User-Agent thật nên không cần, nhưng khai báo ở đây để chạy
-        // kiểm thử ngoài trình duyệt cũng được — trình duyệt sẽ bỏ qua dòng này.
+        // Overpass rejects Node's default User-Agent with a 406. Browsers
+        // always send a real User-Agent on their own so this isn't strictly
+        // needed, but declaring it here lets tests also run outside the
+        // browser — a real browser will just ignore this line.
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'User-Agent': 'vn-route-lab/0.1 (bai tap mon Nhap mon Tri tue nhan tao)',
@@ -240,45 +252,58 @@ async function fetchElements(query: string, signal?: AbortSignal): Promise<OsmEl
       })
       if (res.status === 504 || res.status === 429 || res.status === 503) {
         last = new GraphBuildError(
-          'OpenStreetMap đang quá tải. Đã thử lại vài lần nhưng chưa được — chờ một phút rồi bấm dựng lại, '
-          + 'hoặc giảm mức chi tiết.', false, true)
+          'OpenStreetMap is overloaded. Retried a few times but it still failed — wait a minute then '
+          + 'click rebuild, or lower the detail level.')
         continue
       }
-      if (!res.ok) throw new GraphBuildError(`OpenStreetMap trả về mã ${res.status}. Chờ ít phút rồi thử lại.`)
-      return (await res.json()).elements || []
+      if (!res.ok) throw new GraphBuildError(`OpenStreetMap returned status ${res.status}. Wait a few minutes and try again.`)
+      const data = await res.json()
+      // Overpass returns 200 with a `remark` when the query died partway
+      // through on the server side (out of memory, timed out). Without
+      // catching that here, an empty `elements` would be misread as "this
+      // area has no roads", telling the user to change the detail level
+      // when all they actually need is to click again.
+      if (!data.elements?.length && data.remark) {
+        last = new GraphBuildError(`OpenStreetMap reported an error mid-query: ${data.remark}`)
+        continue
+      }
+      return data.elements || []
     } catch (e) {
       if (e instanceof GraphBuildError) throw e
       const name = (e as Error).name
       if (name === 'TimeoutError')
-        throw new GraphBuildError('Tải mạng lưới quá 75 giây nên đã dừng. Giảm mức chi tiết hoặc chọn hai điểm gần nhau hơn.')
+        throw new GraphBuildError('Loading the network took longer than 75 seconds and was stopped. Lower the detail level or pick two points closer together.')
       if (name === 'AbortError') throw e
-      // Mạng chập chờn cũng đáng thử lại.
-      last = new GraphBuildError(`Không gọi được OpenStreetMap: ${(e as Error).message}`, false, true)
+      // A flaky connection is also worth retrying.
+      last = new GraphBuildError(`Could not reach OpenStreetMap: ${(e as Error).message}`)
     }
   }
-  throw last ?? new GraphBuildError('Không tải được mạng lưới đường.')
+  throw last ?? new GraphBuildError('Could not load the road network.')
 }
 
 /**
- * Dựng mạng lưới đường thật từ OpenStreetMap cho vùng bao quanh các điểm
- * người dùng chọn. Trả về đồ thị đã rút gọn: chỉ giữ nút giao, các đoạn
- * đường thẳng ở giữa được gộp lại thành một cạnh mang hình dạng thật.
+ * Builds a real road network from OpenStreetMap for the area surrounding
+ * the points the user picked. Returns a reduced graph: only intersections
+ * are kept as nodes, and the straight stretches in between are merged into
+ * a single edge carrying the road's real shape.
  */
 export async function buildGraph(points: LatLng[], detail: Detail, signal?: AbortSignal): Promise<Graph> {
   const tooBig = areaProblem(points, detail)
   if (tooBig) throw new GraphBuildError(tooBig)
 
-  // Hai cách khoanh vùng, chọn theo độ dài chuyến.
+  // Two ways to bound the area, chosen by trip length.
   //
-  // Chuyến trong thành phố dùng hình chữ nhật: Overpass có sẵn chỉ mục không
-  // gian cho hình chữ nhật nên trả lời gần như tức thì, còn bộ lọc around phải
-  // đo khoảng cách tới từng đoạn đường và với máy chủ công cộng đang đông thì
-  // đủ chậm để bị cắt giữa chừng bằng mã 504 — kể cả khi vùng chỉ vài km².
+  // An in-city trip uses a bounding box: Overpass has a built-in spatial
+  // index for bounding boxes so it answers almost instantly, whereas the
+  // around filter has to measure the distance to every road segment, and on
+  // a busy public server that's slow enough to get cut off mid-query with a
+  // 504 — even when the area is only a few km².
   //
-  // Chuyến liên tỉnh thì ngược lại, bắt buộc dùng hành lang: hình chữ nhật bao
-  // quanh hai tỉnh rộng hàng nghìn km² trong khi dải đường thật sự cần chỉ vài
-  // trăm. Bộ lọc around nhận cả một đường gấp khúc, nên hành trình nhiều điểm
-  // giao cũng chỉ tải đúng dải bám theo thứ tự ghé.
+  // An interprovincial trip is the opposite, and requires a corridor: a
+  // bounding box around two provinces spans thousands of km² while the road
+  // band actually needed is only a few hundred. The around filter accepts a
+  // whole polyline, so a multi-stop trip only fetches the band hugging the
+  // visit order.
   const filter = osmClasses(detail).join('|')
   const span = routeSpan(points)
   let area: string
@@ -289,12 +314,13 @@ export async function buildGraph(points: LatLng[], detail: Detail, signal?: Abor
     const line = points.map(p => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(',')
     area = `(around:${Math.round(corridorRadius(points, detail) * 1000)},${line})`
   }
-  // Lấy kèm quan hệ cấm rẽ chạm vào các tuyến đường vừa lấy. `rel(bw.roads)`
-  // lọc ngay trên máy chủ nên không tốn thêm lượt gọi nào.
-  // Hẻm phải hỏi bằng một mệnh đề riêng. Trong OpenStreetMap chúng là
-  // `highway=service` kèm `service=alley`, và phải lọc đúng `alley` chứ không
-  // lấy cả `service` — bằng không sẽ vơ luôn lối vào bãi đỗ và đường dẫn vào
-  // nhà, những thứ không nối đi đâu cả.
+  // Also fetch turn-restriction relations touching the ways just fetched.
+  // `rel(bw.roads)` filters right on the server so it costs no extra call.
+  // Alleys have to be queried with a separate clause. In OpenStreetMap
+  // they're `highway=service` with `service=alley`, and the filter must
+  // match `alley` specifically, not all of `service` — otherwise it would
+  // sweep in parking-lot entrances and driveways too, things that don't
+  // connect anywhere.
   const wantAlleys = CLASSES[detail].includes('alley')
   const alleyClause = wantAlleys
     ? `way["highway"="service"]["service"="alley"]["access"!~"^(private|no)$"] ${area}->.alleys;`
@@ -315,9 +341,9 @@ out geom;`
   const ways = elements.filter(e => e.type === 'way' && (e.geometry?.length ?? 0) > 1)
   const turns = readTurns(elements.filter(e => e.type === 'relation'))
   if (!ways.length)
-    throw new GraphBuildError('Vùng này không có đường nào ở mức chi tiết đã chọn. Thử tăng mức chi tiết.')
+    throw new GraphBuildError('This area has no roads at the selected detail level. Try increasing the detail level.')
 
-  // Điểm nào được nhiều tuyến đường dùng chung thì đó là nút giao.
+  // A point shared by multiple ways is an intersection.
   const waysAtPoint = new Map<string, Set<number>>()
   for (const w of ways)
     for (let i = 0; i < w.geometry!.length; i++) {
@@ -332,19 +358,21 @@ out geom;`
   for (const w of ways) {
     const tags = w.tags ?? {}
     const raw = tags.highway || 'residential'
-    // Hẻm nào ghi rõ ô tô vào được thì coi như đường khu dân cư bình thường —
-    // đo trong vùng trung tâm thì chỉ đúng một tuyến, nhưng tôn trọng dữ liệu.
+    // An alley explicitly tagged as car-accessible is treated as an
+    // ordinary residential road — measured in the central area this
+    // matches only one way, but the data is respected as given.
     const cls: RoadClass = raw === 'service'
       ? (tags.motorcar === 'yes' ? 'residential' : 'alley')
       : ((ALIAS[raw] ?? raw) as RoadClass)
     const g = w.geometry!
 
-    // Một chiều. Ba nguồn: thẻ oneway, vòng xuyến, và quy ước ngầm của
-    // OpenStreetMap là đường cao tốc mặc định một chiều dù không gắn thẻ.
-    // `oneway=-1` nghĩa là chiều đi ngược với thứ tự điểm của tuyến, phải đảo
-    // lại chứ không phải bỏ qua. Đo quanh Đức Bà – Thảo Điền thì cả hai trường
-    // hợp sau đều bằng không, nhưng chúng vẫn có thật ở nơi khác và xử lý đúng
-    // chỉ tốn một dòng.
+    // One-way. Three sources: the oneway tag, roundabouts, and
+    // OpenStreetMap's implicit convention that a motorway defaults to
+    // one-way even when untagged. `oneway=-1` means the direction of travel
+    // is reversed from the way's point order, and must be flipped, not
+    // skipped. Measured around Đức Bà – Thảo Điền, the latter two cases are
+    // both zero, but they're real elsewhere and handling them correctly
+    // costs only one line.
     const reversed = tags.oneway === '-1' || tags.oneway === 'reverse'
     const oneway = reversed
       || ['yes', 'true', '1'].includes(tags.oneway)
@@ -370,11 +398,12 @@ out geom;`
       nodes[a]  ??= { id: a,  lat: head.lat, lng: head.lon }
       nodes[bk] ??= { id: bk, lat: tail.lat, lng: tail.lon }
 
-      // Điều kiện giao thông mô phỏng, nhưng cố định theo tuyến đường:
-      // chạy lại bao nhiêu lần cũng ra cùng kết quả, nên so sánh mới có nghĩa.
+      // Simulated traffic conditions, but fixed per way: running it again
+      // any number of times gives the same result, which is what makes
+      // comparisons meaningful.
       const r = hash(`${w.id}:${a}`)
-      const congestion = Math.min(5, Math.max(1, Math.round(BASE_JAM[cls] + (r - 0.5) * 2.2)))
-      const risk = Math.min(1, Math.max(0, +(BASE_RISK[cls] + (hash(`r${w.id}:${a}`) - 0.5) * 0.3).toFixed(2)))
+      const congestion = clampCongestion(Math.round(BASE_JAM[cls] + (r - 0.5) * 2.2))
+      const risk = clampRisk(+(BASE_RISK[cls] + (hash(`r${w.id}:${a}`) - 0.5) * 0.3).toFixed(2))
 
       const name = tags.name
       const rest = { km: +km.toFixed(4), roadClass: cls, congestion, risk, name, wayId: w.id }
@@ -392,17 +421,13 @@ out geom;`
 
   const kept = bestComponent(nodes, adj, points)
   if (kept.size < 8)
-    throw new GraphBuildError('Mạng lưới lấy về quá rời rạc để tìm đường. Thử tăng mức chi tiết hoặc chọn hai điểm gần nhau hơn.')
+    throw new GraphBuildError('The fetched network is too fragmented to route through. Try increasing the detail level or picking two points closer together.')
 
-  const worst = Math.max(...points.map(p => {
-    let best = Infinity
-    kept.forEach(id => { const d = haversine(p, nodes[id]); if (d < best) best = d })
-    return best
-  }))
+  const worst = worstReach(points, kept, nodes)
   if (worst > 3)
     throw new GraphBuildError(
-      `Ở mức "${DETAIL_LABEL[detail]}" mạng lưới bị đứt đoạn: cụm đường liền mạch lớn nhất còn cách `
-      + `một trong các điểm tới ${worst.toFixed(0)} km.`, true)
+      `At the "${DETAIL_LABEL[detail]}" level the network is fragmented: the largest connected `
+      + `cluster is still ${worst.toFixed(0)} km from one of the points.`, true)
 
   const fNodes: Record<string, GraphNode> = {}
   kept.forEach(id => (fNodes[id] = nodes[id]))
@@ -411,30 +436,48 @@ out geom;`
   kept.forEach(id => (fAdj[id] = []))
   for (const e of fEdges) fAdj[e.from].push(e)
 
-  const lats = Object.values(fNodes).map(n => n.lat)
-  const lngs = Object.values(fNodes).map(n => n.lng)
   return {
     nodes: fNodes, edges: fEdges, adj: fAdj, detail, turns,
-    bounds: [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]],
+    bounds: boundsOf(Object.values(fNodes)),
   }
 }
 
 /**
- * Chia mạng lưới thành các cụm **liên thông mạnh**: trong một cụm, đi xuôi
- * chiều từ nút nào cũng tới được mọi nút còn lại.
+ * How far the worst-served of `points` is from its nearest node in `ids`, in km.
  *
- * Phải là liên thông mạnh chứ không phải liên thông thường, vì đường một chiều
- * làm hai thứ đó khác hẳn nhau. Đo trên chính trung tâm Sài Gòn: 73% tuyến
- * đường lấy về mang thẻ `oneway=yes`, do đại lộ có dải phân cách được vẽ thành
- * hai tuyến một chiều song song. Bỏ chiều đi mà xét thì cả 506 nút trông như
- * một khối liền, nhưng đi xuôi chiều thật thì từ điểm xuất phát chỉ tới được
- * 374 nút — 132 nút còn lại nằm trong đồ thị mà không đường nào dẫn tới.
+ * This one number decides two different things — whether a network is too
+ * fragmented to use at all, and which component to keep when several are
+ * candidates — so the two callers have to measure it exactly the same way. They
+ * used to carry a copy each, which is how the two decisions drift apart.
+ */
+function worstReach(points: LatLng[], ids: Iterable<string>, nodes: Record<string, GraphNode>): number {
+  return Math.max(...points.map(p => {
+    let best = Infinity
+    for (const id of ids) { const d = haversine(p, nodes[id]); if (d < best) best = d }
+    return best
+  }))
+}
+
+/**
+ * Splits the network into **strongly connected** components: within one
+ * component, following the direction of travel from any node reaches every
+ * other node.
  *
- * Giữ nguyên chúng thì việc dựng mạng lưới báo thành công rồi thuật toán mới
- * báo không tới được, và lời giải thích đổ oan cho mạng lưới đứt đoạn trong khi
- * đường thì vẫn nối, chỉ là ngược chiều.
+ * It has to be strongly connected, not just connected, because one-way
+ * roads make the two very different. Measured on central Sài Gòn itself:
+ * 73% of the fetched ways carry `oneway=yes`, because boulevards with a
+ * median strip are drawn as two parallel one-way ways. Ignoring direction,
+ * all 506 nodes look like a single block, but following the real direction
+ * of travel, only 374 nodes are reachable from the starting point — the
+ * remaining 132 sit in the graph with no road actually leading to them.
  *
- * Dùng Kosaraju, duyệt bằng ngăn xếp tường minh vì mạng lưới có hàng nghìn nút.
+ * Keeping them means building the network reports success and only the
+ * algorithm later reports unreachable, and the explanation wrongly blames a
+ * fragmented network when the roads are in fact connected, just one-way in
+ * the wrong direction.
+ *
+ * Uses Kosaraju's algorithm, traversed with an explicit stack since the
+ * network has thousands of nodes.
  */
 function stronglyConnected(
   nodes: Record<string, GraphNode>,
@@ -445,7 +488,7 @@ function stronglyConnected(
   for (const id of ids) rev[id] = []
   for (const list of Object.values(adj)) for (const e of list) rev[e.to]?.push(e.from)
 
-  // Lượt một: ghi lại thứ tự kết thúc duyệt.
+  // Pass one: record the finish order of the traversal.
   const done = new Set<string>()
   const order: string[] = []
   for (const root of ids) {
@@ -465,7 +508,7 @@ function stronglyConnected(
     }
   }
 
-  // Lượt hai: duyệt đồ thị đảo chiều theo thứ tự kết thúc ngược lại.
+  // Pass two: traverse the reversed graph in reverse finish order.
   const seen = new Set<string>()
   const out: Set<string>[] = []
   for (let i = order.length - 1; i >= 0; i--) {
@@ -483,12 +526,15 @@ function stronglyConnected(
 }
 
 /**
- * Giữ lại cụm đường phục vụ được cả hành trình, bỏ các mẩu rời.
+ * Keeps the road cluster that can serve the whole trip, drops the loose
+ * fragments.
  *
- * Không lấy cụm lớn nhất. Trên chuyến liên tỉnh, cụm lớn nhất thường nằm gọn
- * trong thành phố xuất phát vì mạng lưới bị đứt ở giữa; giữ nó thì điểm đến bị
- * ghim cách hàng chục ki-lô-mét và tuyến trả về hoàn toàn vô nghĩa. Chọn cụm
- * nào chạm gần được tới **mọi** điểm trong hành trình, rồi mới xét tới độ lớn.
+ * Does not take the largest cluster. On an interprovincial trip, the
+ * largest cluster usually sits entirely within the starting city because
+ * the network is cut in the middle; keeping it would snap the destination
+ * dozens of kilometres away and the returned route would be entirely
+ * meaningless. Instead pick the cluster that comes close to **every**
+ * point in the trip, and only then consider its size.
  */
 function bestComponent(
   nodes: Record<string, GraphNode>,
@@ -498,17 +544,13 @@ function bestComponent(
   const components = stronglyConnected(nodes, adj)
   if (!components.length) return new Set()
 
-  // Điểm nào của hành trình cũng phải với tới được; lấy khoảng cách tệ nhất làm thước đo.
-  const reach = (comp: Set<string>) => Math.max(...points.map(p => {
-    let best = Infinity
-    comp.forEach(id => { const d = haversine(p, nodes[id]); if (d < best) best = d })
-    return best
-  }))
+  // Every point in the trip must be reachable; use the worst-case distance as the score.
+  const reach = (comp: Set<string>) => worstReach(points, comp, nodes)
 
   let winner = components[0], score = reach(winner)
   for (const comp of components.slice(1)) {
     const s = reach(comp)
-    // Chênh dưới 200m thì coi như ngang nhau, khi đó ưu tiên cụm dày hơn.
+    // Under 200m difference counts as a tie, in which case prefer the denser cluster.
     if (s < score - 0.2 || (Math.abs(s - score) <= 0.2 && comp.size > winner.size)) {
       winner = comp; score = s
     }
@@ -516,13 +558,13 @@ function bestComponent(
   return winner
 }
 
-/** Nút giao gần một toạ độ nhất, kèm khoảng cách tính bằng mét. */
 /**
- * Nút giao gần một toạ độ nhất, kèm khoảng cách tính bằng mét.
+ * Nearest intersection to a coordinate, with distance in metres.
  *
- * Có thể lọc theo loại xe: xe tải không đỗ được trong hẻm, nên phải ghim ra
- * nút giao gần nhất mà nó thật sự rời đi được. Thiếu bước lọc này thì chọn xe
- * tải là mọi tuyến đều báo không tới được, dù đường lớn ngay bên cạnh.
+ * Can filter by vehicle: a truck can't stop inside an alley, so it must be
+ * snapped to the nearest intersection it can actually leave from. Without
+ * this filtering step, choosing a truck would make every route report
+ * unreachable, even with a major road right next door.
  */
 export function snap(
   graph: Graph,
@@ -535,7 +577,7 @@ export function snap(
     const d = haversine(p, n)
     if (d < best) { best = d; nodeId = n.id }
   }
-  // Không có nút nào hợp lệ thì thà ghim bừa còn hơn trả về rỗng.
+  // If no node passes the filter, snapping to any node beats returning nothing.
   if (!nodeId) return snap(graph, p)
   return { nodeId, metres: Math.round(best * 1000) }
 }

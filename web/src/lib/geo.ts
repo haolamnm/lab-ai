@@ -1,8 +1,8 @@
 export interface LatLng { lat: number; lng: number }
 
-const R = 6371 // bán kính Trái Đất, km
+const R = 6371 // Earth's radius, km
 
-/** Khoảng cách đường chim bay giữa hai điểm, tính bằng km. */
+/** Straight-line distance between two points, in km. */
 export function haversine(a: LatLng, b: LatLng): number {
   const rad = (d: number) => (d * Math.PI) / 180
   const dLat = rad(b.lat - a.lat)
@@ -21,8 +21,22 @@ export function pathKm(points: [number, number][]): number {
 }
 
 /**
- * Khung bao quanh các điểm, nới rộng thêm để thuật toán còn chỗ vòng tránh.
- * Nếu bó sát hai điểm thì mọi tuyến đều bị ép thành đường thẳng.
+ * Tight bounding box around the points, in the corner-pair form Leaflet takes.
+ *
+ * Every graph source ends up needing this — the OpenStreetMap build, the sample
+ * graph, and an imported JSON file — and all three used to spell it out by hand.
+ * Three copies of one expression is three places to fix the day the box needs a
+ * margin or a different corner order.
+ */
+export function boundsOf(points: LatLng[]): [[number, number], [number, number]] {
+  const lats = points.map(p => p.lat), lngs = points.map(p => p.lng)
+  return [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]]
+}
+
+/**
+ * Bounding box around the points, padded out so the algorithm has room to
+ * route around obstacles. If the box hugs the points tightly, every route
+ * gets forced into a straight line.
  */
 export function paddedBounds(points: LatLng[], padRatio = 0.22, minPadKm = 0.8) {
   const lats = points.map(p => p.lat), lngs = points.map(p => p.lng)
@@ -35,7 +49,7 @@ export function paddedBounds(points: LatLng[], padRatio = 0.22, minPadKm = 0.8) 
   return { south: s - latPad, north: n + latPad, west: w - lngPad, east: e + lngPad }
 }
 
-/** Số nguyên giả ngẫu nhiên nhưng ổn định theo chuỗi đầu vào. */
+/** A pseudo-random number that stays stable for a given input string. */
 export function hash(str: string): number {
   let h = 2166136261
   for (let i = 0; i < str.length; i++) {

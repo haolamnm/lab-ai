@@ -1,4 +1,4 @@
-/** Một địa điểm người dùng chọn — chưa gắn với mạng lưới đường. */
+/** A place the user picked — not yet snapped to the road network. */
 export interface Place {
   name: string
   detail?: string
@@ -6,62 +6,63 @@ export interface Place {
   lng: number
 }
 
-/** Nút giao trong mạng lưới đường dựng từ dữ liệu OpenStreetMap. */
+/** An intersection in the road network built from OpenStreetMap data. */
 export interface GraphNode {
   id: string
   lat: number
   lng: number
-  /** Chữ cái ngắn để gọi tên nút khi giảng giải. Chỉ đồ thị mẫu mới có. */
+  /** Short letter used to name the node when explaining. Only the sample graph has this. */
   label?: string
-  /** Tên địa điểm. Chỉ đồ thị mẫu mới có; nút lấy từ OpenStreetMap không có tên. */
+  /** Place name. Only the sample graph has this; nodes from OpenStreetMap have no name. */
   name?: string
 }
 
-/** Một đoạn đường nối hai nút giao, kèm hình dạng thật của con đường. */
+/** A road segment connecting two intersections, with the road's real shape. */
 export interface GraphEdge {
   from: string
   to: string
   km: number
-  /** Cấp đường theo OpenStreetMap: motorway, primary, residential… */
+  /** Road class per OpenStreetMap: motorway, primary, residential… */
   roadClass: RoadClass
-  /** Mức đông đúc 1–5, mô phỏng từ cấp đường (xem lib/traffic.ts). */
+  /** Congestion level 1-5, simulated from road class (see lib/traffic.ts). */
   congestion: number
-  /** Hệ số rủi ro 0–1: đường hẹp, giao cắt khó, ngập nước. */
+  /** Risk factor 0-1: narrow road, hard intersection, flooding. */
   risk: number
-  /** Tên đường theo OpenStreetMap, dùng để gọi tên đoạn kẹt khi giải thích. */
+  /** Street name from OpenStreetMap, used to name the congested segment when explaining. */
   name?: string
-  /** Toạ độ dọc theo đường thật, để vẽ đúng hình con đường. */
+  /** Coordinates along the real road, so it draws in the road's true shape. */
   shape: [number, number][]
-  /** Mã tuyến đường OpenStreetMap. Cấm rẽ được ghi theo cặp tuyến đường, nên
-   *  không có mã này thì không đối chiếu được. Đồ thị mẫu không có. */
+  /** OpenStreetMap way id. Turn restrictions are recorded as pairs of ways, so
+   *  without this id there is nothing to match against. The sample graph has none. */
   wayId?: number
 }
 
 /**
- * Một lệnh cấm rẽ tại một nút giao.
+ * A turn restriction at one intersection.
  *
- * Biển "cấm rẽ trái" ở Việt Nam hiếm khi cấm suốt ngày và hiếm khi cấm mọi xe.
- * Đo trên dữ liệu OpenStreetMap vùng trung tâm TP.HCM: trong 757 quan hệ cấm rẽ
- * thì 491 dùng `restriction:conditional` — cấm theo khung giờ — và 459 mang
- * `except=motorcycle;bicycle;mofa;moped`, tức xe máy được miễn.
+ * A "no left turn" sign in Vietnam is rarely in force all day and rarely
+ * bans every vehicle. Measured on OpenStreetMap data for central HCMC: of
+ * 757 turn-restriction relations, 491 use `restriction:conditional` —
+ * restricted by time period — and 459 carry
+ * `except=motorcycle;bicycle;mofa;moped`, meaning motorbikes are exempt.
  *
- * Đó chính là hai trục ứng dụng đã có sẵn: khung giờ và loại xe.
+ * Those are exactly the two axes the app already has: time period and vehicle.
  */
 export interface TurnRule {
   /** no_left_turn, no_u_turn, only_straight_on… */
   kind: string
-  /** Khung giờ áp dụng, tính bằng phút từ nửa đêm. Rỗng nghĩa là cấm cả ngày. */
+  /** Time period this applies to, in minutes since midnight. Empty means restricted all day. */
   hours: [number, number][]
-  /** Loại xe được miễn, theo từ khoá OpenStreetMap. */
+  /** Vehicle types exempted, per OpenStreetMap keyword. */
   except: string[]
-  /** Với lệnh `only_*`: mã tuyến đường duy nhất được phép đi tiếp. */
+  /** For an `only_*` rule: the single way id allowed to continue onto. */
   onlyTo?: number
 }
 
 /**
- * Tra cứu cấm rẽ.
- * `no`   khoá `${nút}|${tuyến đến}|${tuyến đi}` — cặp bị cấm.
- * `only` khoá `${nút}|${tuyến đến}`            — chỉ được đi đúng một hướng.
+ * Turn-restriction lookup table.
+ * `no`   keyed by `${node}|${from way}|${to way}` — the banned pair.
+ * `only` keyed by `${node}|${from way}`            — only one direction allowed.
  */
 export interface TurnTable {
   no: Record<string, TurnRule[]>
@@ -76,9 +77,9 @@ export interface Graph {
   edges: GraphEdge[]
   adj: Record<string, GraphEdge[]>
   bounds: [[number, number], [number, number]]
-  /** Cấp đường đã dùng khi dựng, để hiện lại cho người dùng. */
+  /** Road class used when built, so it can be shown back to the user. */
   detail: Detail
-  /** Cấm rẽ lấy từ OpenStreetMap. Đồ thị mẫu không có. */
+  /** Turn restrictions from OpenStreetMap. The sample graph has none. */
   turns?: TurnTable
 }
 
@@ -96,18 +97,19 @@ export interface Weights {
 }
 
 /**
- * Một bước mở nút của thuật toán.
- * Nút được lưu bằng chỉ số thay vì mã chuỗi: một lần chạy trên mạng lưới vài
- * trăm nút sinh ra hàng chục nghìn phần tử hàng đợi, nhân với năm màn hình thì
- * lưu chuỗi sẽ ngốn bộ nhớ vô ích. Đổi ngược lại bằng RouteResult.nodeIds.
+ * One node-expansion step of the algorithm.
+ * Nodes are stored by index rather than by string id: a single run over a
+ * network of a few hundred nodes produces tens of thousands of queue
+ * entries, and multiplied across five panes, storing strings would waste
+ * memory for nothing. Convert back via RouteResult.nodeIds.
  */
 export interface TraceStep {
   expanded: number
   frontier: number[]
   g: number
   h: number | null
-  /** Nút đã dẫn tới nút này. Tập các cặp cha–con tạo thành cây tìm kiếm, và
-   *  hình dạng của cây đó chính là chân dung của thuật toán. */
+  /** The node that led to this node. The set of parent-child pairs forms the
+   *  search tree, and the shape of that tree is the portrait of the algorithm. */
   parent: number | null
 }
 
@@ -118,21 +120,21 @@ export interface Metrics {
   expanded: number
   ms: number
   optimal: boolean
-  /** Số lần thuật toán phải bỏ một hướng đi vì gặp biển cấm rẽ. */
+  /** Number of times the algorithm had to drop a direction because of a turn restriction. */
   turnsBlocked: number
 }
 
 export interface RouteResult {
   algo: AlgoKey
-  /** Lý do không chạy được, khi truy vấn tự nó đã vô nghĩa. */
+  /** Reason it could not run, when the query itself is meaningless. */
   problem?: string
-  /** Thứ tự các điểm phải ghé, sau khi đã tối ưu nếu người dùng bật. */
+  /** Order of the stops to visit, after optimising if the user enabled it. */
   order: string[]
   path: string[]
   trace: TraceStep[]
-  /** Bảng tra chỉ số nút trong trace về mã nút. */
+  /** Lookup table from a trace node index back to the node id. */
   nodeIds: string[]
-  /** Chặng nào xong ở bước nào — để hiện dần từng đoạn đường. */
+  /** Which leg finished at which step — to reveal each road segment progressively. */
   reveal: { upto: number; path: string[] }[]
   found: boolean
   metrics: Metrics

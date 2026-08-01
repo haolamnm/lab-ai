@@ -18,16 +18,18 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <span className="wordmark">Route <b>Lab</b> <em>· giao hàng</em></span>
+        <span className="wordmark">Route <b>Lab</b> <em>· delivery</em></span>
         <button className="button" onClick={toggleSync} aria-pressed={syncView}>
-          {syncView ? 'Khung nhìn đang đồng bộ' : 'Khung nhìn đang tự do'}
+          {syncView ? 'Synced view' : 'Independent view'}
         </button>
         <div className="legend">
-          <span><i className="swatch" style={{ background: '#1f9d55' }} /> đường thoáng</span>
-          <span><i className="swatch" style={{ background: '#d4342c' }} /> đường kẹt</span>
-          <span><i className="swatch hollow" /> đang chờ xét</span>
-          <span><i className="swatch" style={{ background: '#3b5bdb' }} /> đã xét</span>
-          <span><i className="swatch ink" /> tuyến chọn</span>
+          <span><i className="swatch pin-start" /> pickup</span>
+          <span><i className="swatch pin-goal" /> dropoff</span>
+          <span><i className="swatch" style={{ background: '#1f9d55' }} /> clear road</span>
+          <span><i className="swatch" style={{ background: '#d4342c' }} /> congested road</span>
+          <span><i className="swatch hollow" /> frontier</span>
+          <span><i className="swatch" style={{ background: '#3b5bdb' }} /> expanded</span>
+          <span><i className="swatch ink" /> chosen route</span>
         </div>
       </header>
 
@@ -38,13 +40,13 @@ export default function App() {
           <div className="grid">
             {panes.length === 0 ? (
               <div className="blank">
-                <h1>Chưa có màn hình nào</h1>
+                <h1>No panes yet</h1>
                 <p>
                   {graph
-                    ? 'Mỗi màn hình chạy một thuật toán trên cùng hành trình. Thêm vài màn hình rồi chạy để xem chúng tìm đường khác nhau ra sao.'
-                    : 'Chọn điểm lấy hàng và điểm giao ở cột bên trái, dựng mạng lưới đường, rồi thêm màn hình để so sánh các thuật toán.'}
+                    ? 'Each pane runs one algorithm on the same trip. Add a few panes, then run them to see how differently they find a route.'
+                    : 'Choose a pickup and a dropoff in the left-hand column, build the road network, then add panes to compare the algorithms.'}
                 </p>
-                <button className="button solid" onClick={addPane}>Thêm màn hình đầu tiên</button>
+                <button className="button solid" onClick={addPane}>Add the first pane</button>
               </div>
             ) : (
               <>
@@ -57,7 +59,7 @@ export default function App() {
                   />
                 ))}
                 <button className="pane-add" onClick={addPane} disabled={panes.length >= MAX_PANES}>
-                  {panes.length >= MAX_PANES ? `Tối đa ${MAX_PANES} màn hình` : 'Thêm màn hình'}
+                  {panes.length >= MAX_PANES ? `Max ${MAX_PANES} panes` : 'Add pane'}
                 </button>
               </>
             )}

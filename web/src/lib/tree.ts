@@ -1,23 +1,25 @@
 import type { RouteResult } from './types'
 
 /**
- * Trải cây tìm kiếm ra mặt phẳng theo kiểu toả tròn.
+ * Lays the search tree out on the plane in a radial layout.
  *
- * Mỗi nút được mở đều có một nút cha — nút đã dẫn tới nó. Tập các cặp cha–con
- * ấy là một cây thật sự, và **hình dạng của cây chính là chân dung của thuật
- * toán**: DFS ra một chuỗi dài gần như không phân nhánh, BFS ra hình quạt toả
- * đều theo lớp, A* ra hình giọt nước lệch hẳn về phía đích, Greedy ra một nhánh
- * gầy. Đặt bốn cây cạnh nhau là hiểu ngay khác biệt, không cần lời nào.
+ * Every expanded node has a parent — the node that led to it. That set of
+ * parent-child pairs is a genuine tree, and **the shape of the tree is a
+ * portrait of the algorithm**: DFS produces one long, almost unbranched
+ * chain; BFS produces a fan spreading evenly layer by layer; A* produces a
+ * teardrop shape skewed hard toward the goal; Greedy produces a single thin
+ * branch. Put four trees side by side and the difference is obvious without
+ * a word of explanation.
  *
- * Dùng bố cục toả tròn theo độ sâu chứ không dùng mô phỏng lực đẩy: kết quả
- * tính một lần là xong, luôn giống nhau giữa các lần chạy nên so sánh mới có
- * nghĩa, và không tốn một vòng lặp vật lý nào mỗi khung hình.
+ * This uses a radial layout by depth rather than a force-directed
+ * simulation: the result is computed once and stays identical across runs,
+ * so comparisons stay meaningful, and it costs no physics loop per frame.
  */
 
 export interface TreeNode {
-  /** Chỉ số nút trong RouteResult.nodeIds. */
+  /** Node index into RouteResult.nodeIds. */
   idx: number
-  /** Bước mà nút này được mở — dùng để hiện dần theo dòng thời gian. */
+  /** The step at which this node was expanded — used to reveal it progressively along the timeline. */
   order: number
   depth: number
   x: number
@@ -27,10 +29,10 @@ export interface TreeNode {
 
 export interface Tree {
   nodes: TreeNode[]
-  /** Tra từ chỉ số nút sang vị trí trong mảng nodes. */
+  /** Looks up array position in nodes from node index. */
   at: Map<number, number>
   maxDepth: number
-  /** Khung bao khít quanh các nút: [xMin, yMin, xMax, yMax]. */
+  /** Tight bounding box around the nodes: [xMin, yMin, xMax, yMax]. */
   bounds: [number, number, number, number]
 }
 
@@ -39,13 +41,22 @@ export function buildTree(result: RouteResult): Tree {
   const orderOf = new Map<number, number>()
   trace.forEach((s, i) => { if (!orderOf.has(s.expanded)) orderOf.set(s.expanded, i) })
 
-  // Cha phải là nút đã được mở trước đó; nếu không thì nút này tự làm gốc.
-  // Hành trình nhiều chặng nối nhiều lượt chạy lại nên có nhiều gốc là bình thường.
+  // A parent must be a node that was already expanded; otherwise this node
+  // becomes a root of its own. A multi-leg trip chains several runs
+  // together, so having more than one root is expected.
   const kids = new Map<number, number[]>()
   const roots: number[] = []
   const parentOf = new Map<number, number | null>()
 
   trace.forEach((s, i) => {
+    // Only accept the first expansion, matching orderOf above. A trip with
+    // several stops chains independent runs together, so an intersection
+    // sitting between two consecutive legs gets expanded once per leg, each
+    // time with a different parent. Accepting both would put that node into
+    // the kids of both parents, walking it twice and producing a ghost
+    // duplicate in `nodes` — skewing the fan angle of every ancestor along
+    // with it.
+    if (orderOf.get(s.expanded) !== i) return
     const p = s.parent
     const valid = p != null && orderOf.has(p) && orderOf.get(p)! < i
     parentOf.set(s.expanded, valid ? p! : null)
@@ -57,7 +68,7 @@ export function buildTree(result: RouteResult): Tree {
     }
   })
 
-  // Đếm số lá của mỗi nhánh để chia góc cho công bằng.
+  // Count each branch's leaves so the angle is divided fairly.
   const leaves = new Map<number, number>()
   const countLeaves = (n: number): number => {
     const c = kids.get(n)
@@ -72,8 +83,8 @@ export function buildTree(result: RouteResult): Tree {
   const at = new Map<number, number>()
   let maxDepth = 0
 
-  // Duyệt bằng ngăn xếp tường minh: cây của DFS sâu tới hàng trăm tầng, đệ quy
-  // ở đó là tràn ngăn xếp.
+  // Walk with an explicit stack: a DFS tree can run hundreds of levels
+  // deep, and recursion there would overflow the call stack.
   const stack: { n: number; depth: number; from: number; span: number }[] = []
   let cursor = 0
   for (const r of roots) {
@@ -105,9 +116,10 @@ export function buildTree(result: RouteResult): Tree {
     }
   }
 
-  // Cây toả tròn hiếm khi phủ kín hình tròn — nhánh dồn về một phía là chuyện
-  // thường, nhất là với A*. Lấy khung bao khít thay vì hình vuông theo bán kính
-  // để cây choán hết ô thay vì nằm co lại giữa một vùng trống.
+  // A radial tree rarely fills the whole circle — branches bunching toward
+  // one side is normal, especially for A*. Use a tight bounding box instead
+  // of a radius-based square so the tree fills the pane instead of huddling
+  // in the middle of empty space.
   let xMin = 0, yMin = 0, xMax = 0, yMax = 0
   for (const n of nodes) {
     if (n.x < xMin) xMin = n.x

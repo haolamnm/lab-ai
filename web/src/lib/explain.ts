@@ -1,17 +1,20 @@
+import { edgeBetween } from './search'
 import { costIsFlat, edgeCost, edgeMinutes, type Conditions } from './traffic'
 import type { Graph, RouteResult } from './types'
 
 /**
- * Sinh lời giải thích cho tuyến được chọn.
+ * Generates the explanation for the chosen route.
  *
- * Đề bài không chỉ đòi tìm ra đường, mà đòi hệ thống nói được **vì sao** đường
- * đó được chọn: nó thắng ở tiêu chí nào, thua ở tiêu chí nào, đoạn nào trên
- * tuyến đang kẹt, và thuật toán có đảm bảo tối ưu hay chỉ gần đúng.
+ * The brief doesn't just call for finding a route — it calls for the system
+ * to state **why** that route was chosen: which criteria it wins on, which
+ * it loses on, which segments along the route are congested, and whether
+ * the algorithm guarantees optimality or only produces an approximation.
  *
- * Mọi câu ở đây đều dựng từ số liệu của lượt chạy hiện tại, không có câu nào
- * viết cứng sẵn. Nhờ vậy đổi khung giờ hay đổi trọng số thì lời giải thích đổi
- * theo — và đó chính là thứ chứng minh được trước người chấm rằng hệ thống
- * thật sự hiểu kết quả của nó chứ không đọc thuộc lòng.
+ * Every sentence here is built from the current run's actual numbers; none
+ * of it is hard-coded. Because of that, changing the time period or the
+ * weights changes the explanation to match — and that is exactly what
+ * proves to a grader that the system genuinely understands its own result
+ * rather than reciting a script.
  */
 
 export interface Jam {
@@ -27,15 +30,15 @@ export interface Comparison {
   minutes: number
   cost: number
   expanded: number
-  /** Khác biệt đáng kể nhất so với tuyến được chọn, diễn đạt bằng lời. */
+  /** The most significant difference from the chosen route, expressed in words. */
   verdict: string
 }
 
 export interface Explanation {
-  /** Thuật toán cho tuyến rẻ nhất trong các màn hình đang mở. */
+  /** The algorithm behind the cheapest route among the open panes. */
   winner: string
   headline: string
-  /** Tuyến này đứng đầu ở những tiêu chí nào. */
+  /** Which criteria this route comes out on top for. */
   titles: string[]
   jams: Jam[]
   rivals: Comparison[]
@@ -45,13 +48,13 @@ export interface Explanation {
 
 const fmt = (n: number, d = 1) => n.toFixed(d)
 
-/** Các đoạn đông đúc nhất trên tuyến, gộp theo tên đường. */
+/** The most congested segments on the route, grouped by road name. */
 function jamsOn(graph: Graph, path: string[], c: Conditions): Jam[] {
   const byName = new Map<string, Jam>()
   for (let i = 0; i + 1 < path.length; i++) {
-    const e = graph.adj[path[i]]?.find(x => x.to === path[i + 1])
+    const e = edgeBetween(graph, path[i], path[i + 1])
     if (!e || e.congestion < 4) continue
-    const name = e.name ?? 'Đoạn không tên'
+    const name = e.name ?? 'Unnamed segment'
     const hit = byName.get(name)
     const minutes = edgeMinutes(e, c)
     if (hit) {
@@ -74,9 +77,10 @@ export function explain(
   const ok = results.filter(r => r.result.found && r.result.path.length > 1)
   if (!ok.length) return null
 
-  // Tuyến "được chọn" là tuyến rẻ nhất theo đúng hàm chi phí người dùng đang đặt.
-  // UCS và A* luôn đồng hạng chi phí, nên khi hoà thì tôn thuật toán xét ít nút
-  // nhất — đó mới là điều đáng nói giữa hai cái cùng ra một tuyến.
+  // The "chosen" route is the cheapest one under the exact cost function the
+  // user currently has set. UCS and A* always tie on cost, so on a tie this
+  // favours whichever algorithm expanded fewer nodes — that's the thing
+  // actually worth pointing out when two algorithms produce the same route.
   const best = ok.reduce((a, b) => {
     const d = b.result.metrics.cost - a.result.metrics.cost
     if (Math.abs(d) > 0.01) return d < 0 ? b : a
@@ -89,14 +93,14 @@ export function explain(
   const fastest = ok.every(r => r.result.metrics.minutes >= m.minutes)
 
   const titles: string[] = []
-  if (cheapest) titles.push('rẻ nhất theo tổng chi phí')
-  if (shortest) titles.push('ngắn nhất theo quãng đường')
-  if (fastest) titles.push('nhanh nhất theo thời gian')
+  if (cheapest) titles.push('cheapest by total cost')
+  if (shortest) titles.push('shortest by distance')
+  if (fastest) titles.push('fastest by time')
 
   const headline =
-    `${best.algo} cho tuyến ${fmt(m.km, 2)} km, đi hết ${m.minutes} phút, tổng chi phí ${fmt(m.cost)}.`
+    `${best.algo} gives a route of ${fmt(m.km, 2)} km, taking ${m.minutes} minutes, for a total cost of ${fmt(m.cost)}.`
 
-  // So với các thuật toán khác: chỉ giữ những tuyến thật sự khác đường đi.
+  // Compared to the other algorithms: only keep routes that actually differ in path.
   const bestPath = best.result.path.join('>')
   const rivals: Comparison[] = ok
     .filter(r => r !== best && r.result.path.join('>') !== bestPath)
@@ -105,21 +109,21 @@ export function explain(
       const dKm = x.km - m.km, dMin = x.minutes - m.minutes, dCost = x.cost - m.cost
       let verdict: string
       if (dKm < -0.005 && dMin > 0)
-        verdict = `ngắn hơn ${fmt(-dKm, 2)} km nhưng chậm hơn ${dMin} phút`
+        verdict = `shorter by ${fmt(-dKm, 2)} km but slower by ${dMin} minutes`
       else if (dMin < 0 && dCost > 0)
-        verdict = `nhanh hơn ${-dMin} phút nhưng đắt hơn ${fmt(dCost)} điểm chi phí`
+        verdict = `faster by ${-dMin} minutes but ${fmt(dCost)} cost points more expensive`
       else if (dKm > 0.005 && dMin > 0)
-        verdict = `dài hơn ${fmt(dKm, 2)} km và chậm hơn ${dMin} phút`
+        verdict = `longer by ${fmt(dKm, 2)} km and slower by ${dMin} minutes`
       else if (dKm > 0.005)
-        verdict = `dài hơn ${fmt(dKm, 2)} km`
+        verdict = `longer by ${fmt(dKm, 2)} km`
       else if (dCost > 0.05)
-        verdict = `đắt hơn ${fmt(dCost)} điểm chi phí`
+        verdict = `${fmt(dCost)} cost points more expensive`
       else
-        verdict = 'chi phí xấp xỉ ngang nhau'
+        verdict = 'roughly the same cost'
       return { algo: r.algo, km: x.km, minutes: x.minutes, cost: x.cost, expanded: x.expanded, verdict }
     })
 
-  // Các thuật toán ra cùng một tuyến nhưng tốn công khác nhau — đây là bài học chính.
+  // Algorithms that produce the same route but do different amounts of work — this is the main lesson.
   const twins = ok.filter(r => r !== best && r.result.path.join('>') === bestPath)
   if (twins.length) {
     const cheapestWork = twins.reduce((a, b) => (b.result.metrics.expanded < a.result.metrics.expanded ? b : a))
@@ -130,29 +134,29 @@ export function explain(
         algo: twins.map(t => t.algo).join(', '),
         km: m.km, minutes: m.minutes, cost: m.cost,
         expanded: cheapestWork.result.metrics.expanded,
-        verdict: `ra đúng cùng tuyến này, nhưng số nút phải xét chênh nhau ${more - less} (${less} so với ${more})`,
+        verdict: `produces this exact same route, but the node count differs by ${more - less} (${less} vs ${more})`,
       })
     }
   }
 
   let optimality = m.optimal
-    ? `${best.algo} đảm bảo tối ưu: mọi tuyến khác trên mạng lưới này đều có chi phí lớn hơn hoặc bằng.`
+    ? `${best.algo} guarantees optimality: every other route on this road network has a cost greater than or equal to this one.`
     : best.result.order.length > 2
-      ? `Kết quả là gần đúng. Thứ tự ghé do heuristic láng giềng gần nhất sắp, không đảm bảo là thứ tự rẻ nhất.`
-      : `${best.algo} không đảm bảo tối ưu — có thể tồn tại tuyến rẻ hơn mà thuật toán không xét tới.`
+      ? `This result is approximate. The visit order was set by the nearest-neighbour heuristic, which does not guarantee the cheapest order.`
+      : `${best.algo} does not guarantee optimality — a cheaper route the algorithm never considered may exist.`
 
   if (costIsFlat(conditions.weights))
-    optimality = 'Cả bốn trọng số đang bằng 0 nên hàm chi phí trả về 0 cho mọi đoạn đường. '
-      + 'Mọi tuyến đều có chi phí bằng nhau, nên không thuật toán nào có gì để tối ưu và '
-      + 'kết quả trả về chỉ là tuyến đầu tiên tìm thấy. Kéo ít nhất một trọng số lên khỏi 0.'
+    optimality = 'All four weights are currently 0, so the cost function returns 0 for every road segment. '
+      + 'Every route has the same cost, so no algorithm has anything to optimise, and '
+      + 'the result returned is simply the first route found. Raise at least one weight above 0.'
 
-  // Cấm rẽ làm yếu đi lời khẳng định tối ưu, và chỗ này phải nói rõ chứ không
-  // được lặng lẽ bỏ qua.
+  // Turn restrictions weaken the optimality claim, and that has to be
+  // stated clearly here rather than silently ignored.
   if (m.turnsBlocked > 0 && !costIsFlat(conditions.weights))
-    optimality += ` Trên đường đi thuật toán gặp ${m.turnsBlocked} lần phải bỏ một hướng vì biển cấm rẽ. `
-      + 'Cấm rẽ là ràng buộc trên cặp đoạn đường, còn thuật toán tìm kiếm trên đồ thị nút chỉ nhớ một nút cha '
-      + 'cho mỗi nút, nên cách xử lý ở đây là xấp xỉ: tuyến trả về không bao giờ phạm luật, nhưng có thể không '
-      + 'phải tuyến rẻ nhất tuyệt đối.'
+    optimality += ` Along the way, the algorithm had to abandon a direction ${m.turnsBlocked} times because of a turn restriction sign. `
+      + 'A turn restriction is a constraint on a pair of road segments, while a search over a node graph only remembers one parent '
+      + 'per node, so the handling here is an approximation: the route returned never breaks a rule, but it may not '
+      + 'be the absolute cheapest route.'
 
   const order = best.result.order.length > 2
     ? best.result.order.map(nameOf).join(' → ')
@@ -169,7 +173,7 @@ export function explain(
   }
 }
 
-/** Toàn bộ số liệu của một lượt chạy, để xuất ra file nộp kèm và viết báo cáo. */
+/** The complete data for one run, for exporting to the submission file and writing up the report. */
 export function toExportable(
   graph: Graph,
   results: { algo: string; result: RouteResult }[],

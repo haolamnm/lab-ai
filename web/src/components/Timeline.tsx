@@ -2,10 +2,19 @@ import { useEffect } from 'react'
 import { useStore } from '../store'
 import { Segment } from './Segment'
 
-/** Một dòng thời gian duy nhất điều khiển mọi màn hình, nên cùng một bước
- *  người xem thấy được thuật toán nào đã tới đích còn thuật toán nào vẫn loang. */
+/** A single timeline drives every pane, so at the same step the viewer can
+ *  see which algorithm has already reached the goal and which is still spreading. */
 export function Timeline() {
-  const { step, maxStep, playing, speed, setStep, setPlaying, setSpeed } = useStore()
+  // One selector per field. A bare useStore() subscribes to the whole store, so
+  // dragging a weight slider — which fires on every input event — would re-render
+  // the timeline dozens of times a second over state it never reads.
+  const step = useStore(s => s.step)
+  const maxStep = useStore(s => s.maxStep)
+  const playing = useStore(s => s.playing)
+  const speed = useStore(s => s.speed)
+  const setStep = useStore(s => s.setStep)
+  const setPlaying = useStore(s => s.setPlaying)
+  const setSpeed = useStore(s => s.setSpeed)
 
   useEffect(() => {
     if (!playing) return
@@ -21,24 +30,24 @@ export function Timeline() {
 
   return (
     <div className="timeline" data-idle={idle}>
-      <button className="button" onClick={() => setStep(Math.max(0, step - 1))} disabled={idle}>Lùi</button>
+      <button className="button" onClick={() => setStep(Math.max(0, step - 1))} disabled={idle}>Back</button>
       <button className="button" onClick={() => setPlaying(!playing)} disabled={idle}>
-        {playing ? 'Dừng' : 'Chạy'}
+        {playing ? 'Pause' : 'Play'}
       </button>
-      <button className="button" onClick={() => setStep(Math.min(maxStep, step + 1))} disabled={idle}>Tiến</button>
+      <button className="button" onClick={() => setStep(Math.min(maxStep, step + 1))} disabled={idle}>Forward</button>
 
       <span className="counter">
-        Bước <span className="num">{step}</span> / <span className="num">{maxStep}</span>
+        Step <span className="num">{step}</span> / <span className="num">{maxStep}</span>
       </span>
 
       <input
         type="range" min={0} max={maxStep} value={step}
         onChange={e => setStep(+e.target.value)}
-        aria-label="Bước của thuật toán"
+        aria-label="Algorithm step"
       />
 
       <Segment
-        label="Tốc độ phát"
+        label="Playback speed"
         value={speed}
         onChange={setSpeed}
         options={[

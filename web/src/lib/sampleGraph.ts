@@ -1,24 +1,27 @@
-import { haversine } from './geo'
+import { boundsOf } from './geo'
 import type { Graph, GraphEdge, GraphNode, RoadClass } from './types'
 
 /**
- * Đồ thị mẫu do nhóm tự thiết kế.
+ * Sample graph designed by the team.
  *
- * Đề bài tách riêng phần giảng giải thuật toán và yêu cầu nhóm **tự dựng ví dụ
- * minh hoạ, không chép từ tutorial**. Mạng lưới tải từ OpenStreetMap không dùng
- * cho việc đó được: hàng trăm tới hàng nghìn nút, mã nút là chuỗi toạ độ, không
- * ai dò bằng mắt nổi. Ví dụ giảng giải cần đúng thứ ngược lại — nhỏ, đặt tên,
- * kiểm soát được.
+ * The assignment separates out the algorithm-explanation section and
+ * requires the team to **build its own illustrative example, not copy one
+ * from a tutorial**. A network loaded from OpenStreetMap can't serve that
+ * purpose: hundreds to thousands of nodes, node ids that are coordinate
+ * strings, nobody can trace it by eye. An explanatory example needs the
+ * opposite — small, named, controllable.
  *
- * Hai mươi nút mang tên hai mươi địa điểm có thật ở TP.HCM, mỗi nút gắn một chữ
- * cái để nói được "tuyến A → C → F → H" đúng như đoạn văn mẫu trong đề. Ba mươi
- * tư cạnh, vượt mức tối thiểu hai mươi nút ba mươi cạnh mà đề đặt ra, nên bộ dữ
- * liệu này nộp kèm được luôn.
+ * Twenty nodes named after twenty real places in HCMC, each node tagged with
+ * a letter so a route can be described as "route A -> C -> F -> H", exactly
+ * like the sample paragraph in the assignment. Thirty-four edges, above the
+ * assignment's minimum of twenty nodes and thirty edges, so this dataset can
+ * be submitted as-is.
  *
- * Các con số không đặt ngẫu nhiên. Chúng được chọn để bốn thuật toán ra bốn kết
- * quả khác nhau rõ rệt: có một tuyến ngắn nhưng chui qua cụm kẹt nặng ở Hàng
- * Xanh, một tuyến dài hơn nhưng thoáng chạy vòng qua Landmark 81, và vài nhánh
- * cụt về phía tây để DFS có chỗ đâm sâu rồi phải quay lui.
+ * The numbers aren't picked at random. They're chosen so the four
+ * algorithms produce four visibly different results: there's a short route
+ * that cuts through the heavy-congestion cluster at Hàng Xanh, a longer but
+ * freer route swinging past Landmark 81, and a few dead-end branches to the
+ * west so DFS has somewhere to plunge deep and then have to backtrack.
  */
 
 interface Row {
@@ -51,7 +54,7 @@ const NODES: Row[] = [
   { label: 'T', name: 'Crescent Mall Q7',     lat: 10.7290, lng: 106.7180 },
 ]
 
-/** [từ, đến, km, mức kẹt xe 1-5, rủi ro 0-1, cấp đường] */
+/** [from, to, km, congestion 1-5, risk 0-1, road class] */
 const EDGES: [string, string, number, number, number, RoadClass][] = [
   ['A', 'C', 0.7, 4, 0.10, 'secondary'],
   ['A', 'D', 1.0, 3, 0.10, 'primary'],
@@ -89,10 +92,7 @@ const EDGES: [string, string, number, number, number, RoadClass][] = [
   ['T', 'H', 6.0, 2, 0.10, 'motorway'],
 ]
 
-export const SAMPLE_NODE_COUNT = NODES.length
-export const SAMPLE_EDGE_COUNT = EDGES.length
-
-/** Nút mặc định khi nạp đồ thị mẫu: từ chợ Bến Thành ra chợ Thủ Đức. */
+/** Default nodes when loading the sample graph: from Chợ Bến Thành to Chợ Thủ Đức. */
 export const SAMPLE_START = 'A'
 export const SAMPLE_GOAL = 'J'
 
@@ -105,8 +105,9 @@ export function buildSampleGraph(): Graph {
   for (const [from, to, km, congestion, risk, roadClass] of EDGES) {
     const a = byLabel.get(from)!, b = byLabel.get(to)!
     const shape: [number, number][] = [[a.lat, a.lng], [b.lat, b.lng]]
-    // Tên cạnh dùng luôn cặp chữ cái, để lời giải thích đọc lên giống hệt đoạn
-    // văn mẫu của đề: "đoạn E–F đang kẹt 5/5".
+    // The edge name just uses the letter pair, so the explanation reads
+    // exactly like the sample paragraph in the assignment: "segment E–F is
+    // congested 5/5".
     const name = `${from}–${to}`
     edges.push({ from, to, km, roadClass, congestion, risk, name, shape })
     edges.push({ from: to, to: from, km, roadClass, congestion, risk, name, shape: [...shape].reverse() })
@@ -116,28 +117,11 @@ export function buildSampleGraph(): Graph {
   for (const id of Object.keys(nodes)) adj[id] = []
   for (const e of edges) adj[e.from].push(e)
 
-  const lats = NODES.map(n => n.lat), lngs = NODES.map(n => n.lng)
-  return {
-    nodes, edges, adj, detail: 'coarse',
-    bounds: [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]],
-  }
+  return { nodes, edges, adj, detail: 'coarse', bounds: boundsOf(NODES) }
 }
 
-/** Địa điểm của một nút mẫu, để đưa thẳng vào ô chọn điểm đi và điểm đến. */
+/** Place data for a sample node, to feed directly into the start-point and destination-point picker. */
 export function samplePlace(label: string) {
   const r = NODES.find(n => n.label === label)!
-  return { name: `${r.label} · ${r.name}`, detail: 'Đồ thị mẫu', lat: r.lat, lng: r.lng }
-}
-
-/** Kiểm tra nhanh: đồ thị có liền mạch không, và có đủ kích thước đề yêu cầu không. */
-export function sampleStats() {
-  const g = buildSampleGraph()
-  const seen = new Set<string>([SAMPLE_START])
-  const queue = [SAMPLE_START]
-  while (queue.length) {
-    const cur = queue.shift()!
-    for (const e of g.adj[cur]) if (!seen.has(e.to)) { seen.add(e.to); queue.push(e.to) }
-  }
-  const span = haversine(g.nodes[SAMPLE_START], g.nodes[SAMPLE_GOAL])
-  return { nodes: SAMPLE_NODE_COUNT, edges: SAMPLE_EDGE_COUNT, reachable: seen.size, spanKm: span }
+  return { name: `${r.label} · ${r.name}`, detail: 'Sample graph', lat: r.lat, lng: r.lng }
 }

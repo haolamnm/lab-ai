@@ -4,6 +4,8 @@ import type { Place } from '../lib/types'
 
 interface Props {
   role: string
+  /** Which endpoint this is, so the field can show the same glyph the map draws. */
+  kind: 'start' | 'stop' | 'goal'
   placeholder: string
   value?: { place: Place; nodeId: string | null; metres: number } | null
   autoFocus?: boolean
@@ -11,7 +13,7 @@ interface Props {
   onClear?: () => void
 }
 
-export function PlaceField({ role, placeholder, value, autoFocus, onPick, onClear }: Props) {
+export function PlaceField({ role, kind, placeholder, value, autoFocus, onPick, onClear }: Props) {
   const [text, setText] = useState(value?.place.name ?? '')
   const [results, setResults] = useState<Place[] | null>(null)
   const [busy, setBusy] = useState(false)
@@ -20,7 +22,7 @@ export function PlaceField({ role, placeholder, value, autoFocus, onPick, onClea
 
   useEffect(() => setText(value?.place.name ?? ''), [value?.place.name])
 
-  // Đóng danh sách khi bấm ra ngoài.
+  // Close the results list on an outside click.
   useEffect(() => {
     const away = (e: MouseEvent) => {
       if (box.current && !box.current.contains(e.target as Node)) setResults(null)
@@ -29,7 +31,7 @@ export function PlaceField({ role, placeholder, value, autoFocus, onPick, onClea
     return () => document.removeEventListener('mousedown', away)
   }, [])
 
-  // Chờ người dùng ngừng gõ rồi mới hỏi, và huỷ lượt hỏi cũ khi có lượt mới.
+  // Wait for the user to stop typing before querying, and cancel the previous query when a new one starts.
   useEffect(() => {
     const q = text.trim()
     if (q.length < 3 || q === value?.place.name) { setResults(null); return }
@@ -50,6 +52,7 @@ export function PlaceField({ role, placeholder, value, autoFocus, onPick, onClea
   return (
     <div className="place" ref={box}>
       <div className="place-shell">
+        <span className="place-pin" data-kind={kind} aria-hidden="true" />
         <span className="place-role">{role}</span>
         <input
           value={text}
@@ -59,23 +62,23 @@ export function PlaceField({ role, placeholder, value, autoFocus, onPick, onClea
           aria-label={placeholder}
         />
         {onClear && value && (
-          <button className="place-clear" onClick={() => { setText(''); onClear() }} aria-label="Bỏ chọn">
-            Xoá
+          <button className="place-clear" onClick={() => { setText(''); onClear() }} aria-label="Clear selection">
+            Clear
           </button>
         )}
       </div>
 
       {value?.nodeId && (
         <p className="place-snap">
-          Ghim vào nút giao gần nhất, cách <span className="num">{value.metres}</span> m
+          Snapped to nearest intersection, <span className="num">{value.metres}</span> m away
         </p>
       )}
 
       {results && (
         <div className="place-results" role="listbox">
-          {busy && <p className="place-empty">Đang tìm…</p>}
-          {!busy && failed && <p className="place-empty">Không tra được địa điểm. Kiểm tra mạng rồi gõ lại.</p>}
-          {!busy && !failed && results.length === 0 && <p className="place-empty">Không có địa điểm nào khớp.</p>}
+          {busy && <p className="place-empty">Searching…</p>}
+          {!busy && failed && <p className="place-empty">Could not look up the location. Check your connection and try again.</p>}
+          {!busy && !failed && results.length === 0 && <p className="place-empty">No matching locations.</p>}
           {results.map((r, i) => (
             <button
               key={`${r.lat},${r.lng},${i}`}

@@ -5,8 +5,8 @@ export interface SegmentOption<T> {
   label: string
   icon?: ReactNode
   title?: string
-  /** Màu nền khi được chọn. Bỏ trống thì dùng mực — mặc định cho mọi bộ chọn
-   *  không cần phân biệt bằng màu. */
+  /** Background color when selected. Leave blank to use ink — the default for
+   *  any selector that doesn't need color to tell options apart. */
   hue?: string
 }
 
@@ -14,20 +14,20 @@ interface Props<T> {
   options: SegmentOption<T>[]
   value: T
   onChange: (v: T) => void
-  /** Số cột. Bỏ trống thì mỗi lựa chọn một cột. */
+  /** Number of columns. Leave blank for one column per option. */
   columns?: number
-  /** Xếp biểu tượng lên trên nhãn thay vì nằm cạnh. */
+  /** Stack the icon above the label instead of beside it. */
   stacked?: boolean
   label: string
 }
 
 /**
- * Bộ chọn dạng nút liền khối.
+ * A segmented button-group selector.
  *
- * Thay cho danh sách thả xuống ở những chỗ chỉ có vài lựa chọn: mọi phương án
- * hiện sẵn nên đọc một lần là biết hết, và đổi chỉ mất một cú bấm thay vì hai.
- * Danh sách thả xuống chỉ đáng dùng khi lựa chọn nhiều tới mức bày ra sẽ chiếm
- * hết chỗ.
+ * Replaces a dropdown wherever there are only a few options: every choice is
+ * visible at once so one glance shows them all, and switching takes one click
+ * instead of two. A dropdown only earns its place once there are so many
+ * options that laying them out would eat all the space.
  */
 export function Segment<T extends string | number>({
   options, value, onChange, columns, stacked, label,

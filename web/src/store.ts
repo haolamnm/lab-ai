@@ -1,18 +1,37 @@
 import { create } from 'zustand'
-import { haversine } from './lib/geo'
+import { boundsOf, haversine } from './lib/geo'
 import { areaProblem, buildGraph, DETAIL_LABEL, GraphBuildError, snap } from './lib/overpass'
 import { buildSampleGraph, SAMPLE_GOAL, SAMPLE_START, samplePlace } from './lib/sampleGraph'
 import { planRoute } from './lib/search'
-import { CRITERIA, passable, type Conditions } from './lib/traffic'
+import { clampCongestion, clampRisk, CRITERIA, passable, type Conditions } from './lib/traffic'
 import type {
   AlgoKey, CriterionKey, Detail, Graph, PeriodKey, Place, RouteResult, VehicleKey, Weights,
 } from './lib/types'
 
-/** Ghim một toạ độ vào nút giao mà loại xe đang chọn thật sự rời đi được. */
-const anchorTo = (graph: Graph, place: Place, vehicle: VehicleKey, period: PeriodKey) =>
-  snap(graph, place, id => (graph.adj[id] ?? []).some(e => passable(e, vehicle, period)))
+/**
+ * Pin a coordinate to the intersection that the given vehicle can actually
+ * leave from.
+ *
+ * This is the single most safety-critical rule in the app, and it is exported
+ * precisely so nobody has to restate it: pinning a truck to an alley mouth it
+ * cannot legally exit makes every route from that point report "unreachable",
+ * and the cause is invisible from the message. With no graph yet there is
+ * nothing to pin to, so the anchor carries a null node rather than the caller
+ * having to spell out that fallback at each site.
+ */
+export function anchorTo(
+  graph: Graph, place: Place, vehicle: VehicleKey, period: PeriodKey,
+): { nodeId: string; metres: number }
+export function anchorTo(
+  graph: Graph | null, place: Place, vehicle: VehicleKey, period: PeriodKey,
+): { nodeId: string | null; metres: number }
+export function anchorTo(graph: Graph | null, place: Place, vehicle: VehicleKey, period: PeriodKey) {
+  return graph
+    ? snap(graph, place, id => (graph.adj[id] ?? []).some(e => passable(e, vehicle, period)))
+    : { nodeId: null, metres: 0 }
+}
 
-/** Hai cách nhìn cùng một kết quả: đặt lên bản đồ thật, hoặc bóc ra thành sơ đồ. */
+/** Two ways of viewing the same result: laid over a real map, or peeled apart into a schematic. */
 export type PaneView = 'map' | 'graph' | 'tree'
 
 export interface Pane {
@@ -22,7 +41,7 @@ export interface Pane {
   result: RouteResult | null
 }
 
-/** Điểm người dùng chọn, cùng nút giao mà nó được ghim vào. */
+/** A point the user picked, together with the intersection it is pinned to. */
 export interface Anchor {
   place: Place
   nodeId: string | null
@@ -38,7 +57,7 @@ interface State {
   graph: Graph | null
   building: boolean
   buildError: string | null
-  /** Ghi chú khi ứng dụng tự đổi mức chi tiết giúp người dùng. */
+  /** Note shown when the app automatically changes the detail level on the user's behalf. */
   buildNote: string | null
 
   period: PeriodKey
@@ -62,7 +81,7 @@ interface State {
   build: () => Promise<void>
   loadSample: () => void
   importGraph: (json: string) => void
-  /** Đúng khi đang dùng đồ thị mẫu tự thiết kế chứ không phải dữ liệu OpenStreetMap. */
+  /** True when using the custom-built sample graph rather than OpenStreetMap data. */
   sample: boolean
 
   setPeriod: (p: PeriodKey) => void
@@ -99,14 +118,14 @@ export const useStore = create<State>((set, get) => ({
   setPlace: (role, place) => {
     const { graph, vehicle, period } = get()
     const anchor: Anchor | null = place
-      ? { place, ...(graph ? anchorTo(graph, place, vehicle, period) : { nodeId: null, metres: 0 }) }
+      ? { place, ...anchorTo(graph, place, vehicle, period) }
       : null
     set({ [role]: anchor } as Pick<State, 'start' | 'goal'>)
     get().clearResults()
   },
   addStop: place => {
     const { graph, vehicle, period } = get()
-    const anchor: Anchor = { place, ...(graph ? anchorTo(graph, place, vehicle, period) : { nodeId: null, metres: 0 }) }
+    const anchor: Anchor = { place, ...anchorTo(graph, place, vehicle, period) }
     set({ stops: [...get().stops, anchor] })
     get().clearResults()
   },
@@ -125,13 +144,14 @@ export const useStore = create<State>((set, get) => ({
     const points = [start.place, ...stops.map(s => s.place), goal.place]
     const asked = get().detail
 
-    // Mạng lưới đứt đoạn thì đổi mức chi tiết giúp người dùng, nhưng đổi theo
-    // hướng nào phụ thuộc độ dài chuyến. Chuyến dài cần mức thô hơn vì hành
-    // lang tải về rộng hơn, đủ ôm trọn quốc lộ đi vòng. Chuyến ngắn thì ngược
-    // lại: thiếu chính là mấy đoạn đường nhỏ nối các trục với nhau.
+    // If the network comes back disconnected, the app changes the detail level on the user's
+    // behalf, but which direction it moves depends on the trip's length. A long trip needs a
+    // coarser level, because the downloaded corridor is wider, wide enough to encompass the
+    // whole looping highway. A short trip is the opposite: what's missing is exactly the small
+    // road segments that connect the trunk roads to each other.
     const long = haversine(start.place, goal.place) > 25
-    // Mức "Cả hẻm" không bao giờ tự chọn giúp: nó nặng và chỉ hợp quãng rất
-    // ngắn, nên phải là quyết định của người dùng.
+    // The "Alleys" level is never auto-selected: it is heavy and only suits very short
+    // distances, so it has to be the user's own decision.
     const order: Detail[] = long
       ? ['coarse', 'medium', 'fine']
       : ['fine', 'medium', 'coarse']
@@ -144,28 +164,29 @@ export const useStore = create<State>((set, get) => ({
       for (;;) {
         try {
           const graph = await buildGraph(points, detail)
-          const { vehicle: v, period: pd } = get()
-          const reanchor = (a: Anchor): Anchor => ({ ...a, ...anchorTo(graph, a.place, v, pd) })
+          // Re-read the full state right before writing. Building the road network is a network
+          // call that runs for several seconds; while it's in flight, the user can still change
+          // the pickup point. Writing back the snapshot taken at the top of this function would
+          // silently discard their new choice — the time period and vehicle here are already
+          // re-read for exactly that reason, it's only the three points that were missed.
+          const fresh = get()
           set({
-            graph, detail, buildNote: note, sample: false,
-            start: reanchor(start),
-            goal: reanchor(goal),
-            stops: stops.map(reanchor),
-            building: false,
+            graph, detail, buildNote: note, sample: false, building: false,
+            ...reanchorAll(fresh, graph, fresh.vehicle, fresh.period),
           })
           get().clearResults()
           return
         } catch (e) {
           const next = fallbacks.shift()
           if (!(e instanceof GraphBuildError) || !e.needsMoreDetail || !next) throw e
-          note = `Mức "${DETAIL_LABEL[asked]}" bị đứt đoạn nên đã tự chuyển sang "${DETAIL_LABEL[next]}".`
+          note = `Level "${DETAIL_LABEL[asked]}" produced a disconnected network, so it was automatically switched to "${DETAIL_LABEL[next]}".`
           detail = next
         }
       }
     } catch (e) {
       set({
         building: false,
-        buildError: e instanceof GraphBuildError ? e.message : `Dựng mạng lưới thất bại: ${(e as Error).message}`,
+        buildError: e instanceof GraphBuildError ? e.message : `Failed to build road network: ${(e as Error).message}`,
       })
     }
   },
@@ -190,54 +211,63 @@ export const useStore = create<State>((set, get) => ({
       const src = raw.mangLuoi ?? raw
       const nodes: Record<string, Graph['nodes'][string]> = {}
       for (const n of src.nut ?? src.nodes ?? []) nodes[n.id] = n
+      // Clamp congestion and risk to the domain the cost model assumes. The file is
+      // user-authored, so nothing about it is guaranteed, and a single edge carrying a
+      // negative congestion value is enough to produce a negative cost — which breaks
+      // optimality for both UCS and A* while both keep stamping "OPTIMAL" on the result.
+      const num = (v: unknown, fallback: number) => {
+        const n = Number(v)
+        return Number.isFinite(n) ? n : fallback
+      }
       const edges = (src.doanDuong ?? src.edges ?? []).map((e: Record<string, unknown>) => ({
         from: e.tu ?? e.from, to: e.den ?? e.to, km: e.km,
         roadClass: e.capDuong ?? e.roadClass ?? 'secondary',
-        congestion: e.mucKetXe ?? e.congestion ?? 3,
-        risk: e.ruiRo ?? e.risk ?? 0.2,
+        congestion: clampCongestion(num(e.mucKetXe ?? e.congestion, 3)),
+        risk: clampRisk(num(e.ruiRo ?? e.risk, 0.2)),
         name: e.ten ?? e.name ?? undefined,
         shape: e.shape ?? [
           [nodes[(e.tu ?? e.from) as string].lat, nodes[(e.tu ?? e.from) as string].lng],
           [nodes[(e.den ?? e.to) as string].lat, nodes[(e.den ?? e.to) as string].lng],
         ],
       })) as Graph['edges']
-      if (!Object.keys(nodes).length || !edges.length) throw new Error('không có nút hoặc cạnh')
+      if (!Object.keys(nodes).length || !edges.length) throw new Error('no nodes or edges')
 
       const adj: Graph['adj'] = {}
       for (const id of Object.keys(nodes)) adj[id] = []
       for (const e of edges) adj[e.from]?.push(e)
-      const lats = Object.values(nodes).map(n => n.lat), lngs = Object.values(nodes).map(n => n.lng)
+      const graph: Graph = {
+        nodes, edges, adj, detail: 'coarse', bounds: boundsOf(Object.values(nodes)),
+      }
+
+      // Re-pin the three trip points onto the new graph, exactly as build() and loadSample() do.
+      // Skip this step and start.nodeId still points at a node ID from the old graph: BFS, DFS,
+      // and UCS silently return "unreachable" because adj[start] is empty, while A* and Greedy
+      // crash outright — haversine reads .lat off a node that no longer exists.
+      const fresh = get()
       set({
-        sample: true, buildError: null, buildNote: `Đã nạp đồ thị từ file: ${Object.keys(nodes).length} nút, ${edges.length} cạnh.`,
-        graph: {
-          nodes, edges, adj, detail: 'coarse',
-          bounds: [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]],
-        },
+        sample: true, buildError: null, graph,
+        buildNote: `Loaded graph from file: ${Object.keys(nodes).length} nodes, ${edges.length} edges.`,
+        ...reanchorAll(fresh, graph, fresh.vehicle, fresh.period),
       })
       get().clearResults()
     } catch (e) {
-      set({ buildError: `File đồ thị không đọc được: ${(e as Error).message}` })
+      set({ buildError: `Could not read graph file: ${(e as Error).message}` })
     }
   },
 
   setPeriod: period => {
-    // Đổi khung giờ cũng phải ghim lại như đổi xe: giờ cấm tải đóng hẳn một cấp
-    // đường, nên chỗ xe tải đỗ được lúc trưa có thể không rời đi được lúc cao điểm.
-    const { graph, vehicle, start, goal, stops } = get()
-    const re = (a: Anchor | null) => (a && graph ? { ...a, ...anchorTo(graph, a.place, vehicle, period) } : a)
-    set({ period, start: re(start), goal: re(goal), stops: stops.map(s => re(s)!) })
+    // Changing the time period must re-pin, just like changing the vehicle: a truck curfew
+    // closes off an entire road class, so a spot a truck could leave from at midday may not be
+    // leaveable during peak hours.
+    const { graph, vehicle } = get()
+    set({ period, ...reanchorAll(get(), graph, vehicle, period) })
     get().clearResults()
   },
   setVehicle: vehicle => {
-    // Đổi xe thì phải ghim lại: chỗ xe máy dừng được chưa chắc xe tải vào được.
-    const { graph, period, start, goal, stops } = get()
-    const re = (a: Anchor | null) => (a && graph ? { ...a, ...anchorTo(graph, a.place, vehicle, period) } : a)
-    set({
-      vehicle,
-      start: re(start),
-      goal: re(goal),
-      stops: stops.map(s => re(s)!),
-    })
+    // Changing the vehicle must re-pin: a spot a motorbike can stop at is not necessarily one a
+    // truck can enter.
+    const { graph, period } = get()
+    set({ vehicle, ...reanchorAll(get(), graph, vehicle, period) })
     get().clearResults()
   },
   setCriterion: criterion => {
@@ -256,10 +286,13 @@ export const useStore = create<State>((set, get) => ({
     if (panes.length >= MAX_PANES) return
     const used = panes.map(p => p.algo)
     const algo = ALGO_ORDER.find(a => !used.includes(a)) ?? 'astar'
-    const pane: Pane = { id: `pane-${++seq}`, algo, view: get().panes[0]?.view ?? 'map', result: null }
+    const s = get()
+    const pane: Pane = {
+      id: `pane-${++seq}`, algo, view: s.panes[0]?.view ?? 'map',
+      result: planForPane(s, algo),
+    }
     set({ panes: [...panes, pane] })
-    // Màn hình thêm giữa chừng chạy ngay để bám vào dòng thời gian chung.
-    if (get().maxStep > 0) get().run()
+    recount(set, get)
   },
   removePane: id => {
     set({ panes: get().panes.filter(p => p.id !== id) })
@@ -269,15 +302,9 @@ export const useStore = create<State>((set, get) => ({
     set({ panes: get().panes.map(p => (p.id === id ? { ...p, view } : p)) })
   },
   setPaneAlgo: (id, algo) => {
-    // Chỉ chạy lại đúng màn hình vừa đổi. Trước đây chỗ này gọi run() cho cả
-    // lưới, kéo theo dòng thời gian nhảy về bước 0 và tự phát lại từ đầu — đang
-    // dừng ở bước 150 để chỉ cho ai đó xem thì mất sạch chỗ đang đứng.
     const s = get()
-    const input = planInput(s)
     set({
-      panes: s.panes.map(p => (p.id === id
-        ? { ...p, algo, result: input ? planRoute({ ...input, algo }) : null }
-        : p)),
+      panes: s.panes.map(p => (p.id === id ? { ...p, algo, result: planForPane(s, algo) } : p)),
     })
     recount(set, get)
   },
@@ -308,7 +335,27 @@ export const useStore = create<State>((set, get) => ({
   toggleSync: () => set({ syncView: !get().syncView }),
 }))
 
-/** Gói mọi thứ một lượt chạy cần, hoặc null nếu chưa đủ điều kiện chạy. */
+/**
+ * Plans one pane's route, or returns null if that pane must not hold one yet.
+ *
+ * Both ways of changing a single pane — adding one, and switching its algorithm
+ * — go through here so a single rule decides when a pane may hold a result.
+ * They used to gate differently: `addPane` waited for the timeline to exist and
+ * `setPaneAlgo` did not, so picking a different algorithm before ever pressing
+ * Run gave that one pane a route and started the shared timeline while every
+ * other pane still read "not run" — exactly the split state the gate exists to
+ * prevent.
+ *
+ * `run()` deliberately does not come through here: it plans every pane and
+ * resets the timeline to step 0, which is a different contract.
+ */
+function planForPane(s: State, algo: AlgoKey): RouteResult | null {
+  if (s.maxStep === 0) return null
+  const input = planInput(s)
+  return input ? planRoute({ ...input, algo }) : null
+}
+
+/** Bundles everything a run needs, or null if the conditions to run haven't been met yet. */
 function planInput(s: State): Omit<Parameters<typeof planRoute>[0], 'algo'> | null {
   if (!s.graph || !s.start?.nodeId || !s.goal?.nodeId) return null
   const conditions: Conditions = { vehicle: s.vehicle, period: s.period, weights: s.weights }
@@ -320,6 +367,26 @@ function planInput(s: State): Omit<Parameters<typeof planRoute>[0], 'algo'> | nu
     optimiseOrder: s.optimiseOrder,
     conditions,
   }
+}
+
+/**
+ * Re-pins all three trip points onto the current road network.
+ *
+ * Changing the vehicle, changing the time period, and rebuilding the network all need exactly
+ * this one operation, and those three call sites used to hand-copy three identical versions of
+ * it — fixing one copy and forgetting the other two is the quietest way to break this, because
+ * the result still runs, it just pins to the wrong place.
+ */
+function reanchorAll(
+  // Only the three trip points matter here. Taking the whole State would invite
+  // a future call site to read `s.graph` instead of the `graph` argument — and
+  // build() and importGraph() both call this before the new graph is in state,
+  // so that reading would silently pin against the graph being replaced.
+  s: Pick<State, 'start' | 'goal' | 'stops'>,
+  graph: Graph | null, vehicle: VehicleKey, period: PeriodKey,
+) {
+  const re = (a: Anchor | null) => (a && graph ? { ...a, ...anchorTo(graph, a.place, vehicle, period) } : a)
+  return { start: re(s.start), goal: re(s.goal), stops: s.stops.map(a => re(a)!) }
 }
 
 function recount(set: (p: Partial<State>) => void, get: () => State) {

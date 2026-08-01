@@ -1,7 +1,7 @@
 import L from 'leaflet'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef } from 'react'
-import { ALGOS } from '../lib/search'
+import { algoOf, ALGOS, edgeBetween } from '../lib/search'
 import { TreeView } from './TreeView'
 import type { AlgoKey, Graph } from '../lib/types'
 import { useStore, type Anchor, type Pane, type PaneView } from '../store'
@@ -14,27 +14,27 @@ const CURRENT = '#16267a'
 const SCHEMA_EDGE = '#cfc7b6'
 
 const VIEWS: PaneView[] = ['map', 'graph', 'tree']
-const VIEW_LABEL: Record<PaneView, string> = { map: 'Bản đồ', graph: 'Sơ đồ', tree: 'Cây' }
+const VIEW_LABEL: Record<PaneView, string> = { map: 'Map', graph: 'Schematic', tree: 'Tree' }
 const VIEW_HINT: Record<PaneView, string> = {
-  map: 'Tuyến đường đặt trên bản đồ thật',
-  graph: 'Mạng lưới bóc khỏi bản đồ, chỉ còn nút giao và đoạn đường',
-  tree: 'Cây tìm kiếm: mỗi nút nối về nút đã dẫn tới nó',
+  map: 'Route drawn on the real map',
+  graph: 'Network stripped from the map, leaving only intersections and road segments',
+  tree: 'Search tree: each node connects to the node that led to it',
 }
-/** Nút mở càng lâu càng nhạt, nhưng chỉ chia bốn nấc để đỡ vẽ lại liên tục. */
+/** The longer a node has been open, the fainter it gets — but only four bands, so we're not restyling on every frame. */
 const FADE = [0.95, 0.74, 0.55, 0.38]
 
 type NodeStyle = { radius: number; color: string; fill: string; opacity: number; weight: number }
 
 const UNTOUCHED: NodeStyle = { radius: 2.4, color: '#b6bcc6', fill: '#b6bcc6', opacity: 0.85, weight: 0 }
-/** Mạng lưới càng dày thì nút chưa chạm càng phải mờ đi, nếu không cả ô chỉ còn
- *  là một mảng lấm tấm và dấu chân của thuật toán chìm nghỉm trong đó. */
+/** The denser the network, the more untouched nodes need to fade, otherwise the whole
+ *  pane is just a speckled mass and the algorithm's exploration footprint disappears into it. */
 const untouchedFor = (n: number): NodeStyle =>
   n > 600 ? { ...UNTOUCHED, radius: 1.6, opacity: 0.5 } : UNTOUCHED
 const styleQueued  = (): NodeStyle => ({ radius: 3.6, color: QUEUED, fill: '#ffffff', opacity: 1, weight: 1.6 })
 const styleCurrent = (): NodeStyle => ({ radius: 5.2, color: CURRENT, fill: '#ffffff', opacity: 1, weight: 2.4 })
 const styleOpened  = (band: number): NodeStyle => ({ radius: 3.2, color: OPENED, fill: OPENED, opacity: FADE[band], weight: 0 })
 
-/* Đồng bộ khung nhìn giữa các bản đồ, có cờ chặn để không dội qua dội lại. */
+/* Syncs the view across maps, with a guard flag so updates don't bounce back and forth. */
 const registry = new Map<string, L.Map>()
 let broadcasting = false
 
@@ -68,7 +68,7 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
   const syncRef = useRef(syncView)
   syncRef.current = syncView
 
-  /* ---- Tạo bản đồ một lần ---- */
+  /* ---- Create the map once ---- */
   useEffect(() => {
     if (!host.current || map.current) return
     const m = L.map(host.current, {
@@ -89,14 +89,14 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
     map.current = m
     registry.set(pane.id, m)
 
-    // Leaflet vẽ hỏng khi khung chứa đổi kích thước, phải báo lại kích thước mới.
+    // Leaflet's rendering breaks when its container is resized, so it needs to be told the new size.
     const ro = new ResizeObserver(() => m.invalidateSize())
     ro.observe(host.current)
 
     return () => { ro.disconnect(); registry.delete(pane.id); m.remove(); map.current = null }
   }, [pane.id])
 
-  /* ---- Vẽ lại mạng lưới khi có mạng lưới mới ---- */
+  /* ---- Redraw the network whenever a new network arrives ---- */
   useEffect(() => {
     const m = map.current
     if (!m) return
@@ -108,7 +108,7 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
     routeCore.current = null
     if (!graph) return
 
-    // Cạnh hai chiều được lưu hai lần, chỉ vẽ một lần cho nhẹ.
+    // Two-way edges are stored twice; draw each one only once to keep it light.
     edges.current = []
     const drawn = new Set<string>()
     for (const e of graph.edges) {
@@ -129,8 +129,8 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
       if (n.name) nodeLayer.current[n.id].bindTooltip(`${n.label ? n.label + ' · ' : ''}${n.name}`,
         { direction: 'top', offset: [0, -4] })
 
-    // Đồ thị nhỏ thì gắn nhãn chữ cái lên từng nút — không có nhãn thì không ai
-    // dò được "tuyến A → C → F → H" như ví dụ mẫu trong đề.
+    // For a small graph, a letter label goes on every node — without labels nobody
+    // could trace a route like "A → C → F → H" the way the sample problem does.
     labels.current.forEach(l => l.remove())
     labels.current = []
     const list = Object.values(graph.nodes)
@@ -149,7 +149,7 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
     m.fitBounds(graph.bounds, { padding: [22, 22] })
   }, [graph])
 
-  /* ---- Đổi giữa bản đồ thật và sơ đồ ---- */
+  /* ---- Switch between the real map and the schematic ---- */
   useEffect(() => {
     const m = map.current
     if (!m || !tiles.current) return
@@ -157,16 +157,16 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
     else tiles.current.remove()
     if (pane.view !== 'tree') requestAnimationFrame(() => m.invalidateSize())
 
-    // Trên bản đồ, cạnh mang màu mức kẹt xe. Trên sơ đồ, cạnh lùi hết về một sắc
-    // trung tính: nền đã sạch thì màu duy nhất còn lại là màu của thuật toán, và
-    // dấu chân khám phá nổi lên không còn gì tranh chấp.
+    // On the map, edges carry the congestion color. On the schematic, edges recede
+    // to a single neutral tone: once the background is clean, the only color left
+    // is the algorithm's, and the exploration footprint stands out uncontested.
     for (const e of edges.current)
       e.line.setStyle(pane.view === 'map'
         ? { color: JAM_COLOR[e.jam], weight: 2.2, opacity: 0.55 }
         : { color: SCHEMA_EDGE, weight: 1.5, opacity: 1 })
   }, [pane.view, graph])
 
-  /* ---- Điểm lấy hàng, điểm giao, điểm ghé ---- */
+  /* ---- Pickup, dropoff, and stop markers ---- */
   useEffect(() => {
     const m = map.current
     if (!m) return
@@ -180,12 +180,12 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
       })
       marks.current.push(L.marker([a.place.lat, a.place.lng], { icon, title }).addTo(m))
     }
-    put(start, 'start', `Lấy hàng: ${start?.place.name ?? ''}`)
-    stops.forEach((s, i) => put(s, 'stop', `Ghé ${i + 1}: ${s.place.name}`))
-    put(goal, 'goal', `Giao: ${goal?.place.name ?? ''}`)
+    put(start, 'start', `Pickup: ${start?.place.name ?? ''}`)
+    stops.forEach((s, i) => put(s, 'stop', `Stop ${i + 1}: ${s.place.name}`))
+    put(goal, 'goal', `Dropoff: ${goal?.place.name ?? ''}`)
   }, [start, goal, stops, graph])
 
-  /* ---- Bảng tra bước mở nút, dựng lại mỗi khi có kết quả mới ---- */
+  /* ---- Lookup table of the step each node opened at, rebuilt whenever a new result arrives ---- */
   const openedAt = useMemo(() => {
     if (!pane.result) return null
     const at = new Int32Array(pane.result.nodeIds.length).fill(-1)
@@ -193,7 +193,7 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
     return at
   }, [pane.result])
 
-  /* ---- Cập nhật theo từng bước ---- */
+  /* ---- Update per step ---- */
   useEffect(() => {
     const m = map.current
     if (!m || !graph) return
@@ -232,10 +232,12 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
     routeCore.current?.setLatLngs(geom.length ? geom : line).setStyle({ opacity: line.length ? 1 : 0 })
   }, [step, pane.result, openedAt, graph])
 
-  const algo = ALGOS.find(a => a.key === pane.algo)!
+  const algo = algoOf(pane.algo)
   const r = pane.result
   const shown = r ? Math.min(step, r.trace.length) : 0
   const done = !!r && shown >= r.trace.length
+  /** The step currently on screen. Read seven times below; indexed once here. */
+  const cur = r ? r.trace[shown - 1] : undefined
 
   return (
     <article
@@ -250,19 +252,19 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
         className="pane-head"
         draggable
         onDragStart={onDragStart}
-        title="Kéo để đổi vị trí"
+        title="Drag to reorder"
       >
         <select
           value={pane.algo}
           onChange={e => setPaneAlgo(pane.id, e.target.value as AlgoKey)}
-          aria-label="Thuật toán"
+          aria-label="Algorithm"
         >
           {ALGOS.map(a => <option key={a.key} value={a.key}>{a.name}</option>)}
         </select>
         <span className="pane-dot" />
-        {/* Ba tab thay cho một nút xoay vòng: muốn sang cây thì bấm thẳng vào
-            cây, không phải đoán còn mấy lần bấm nữa mới tới. */}
-        <div className="pane-tabs" role="tablist" aria-label="Cách xem">
+        {/* Three tabs instead of one cycling button: to jump to the tree, click the
+            tree directly, instead of guessing how many more clicks it takes. */}
+        <div className="pane-tabs" role="tablist" aria-label="View mode">
           {VIEWS.map(v => (
             <button
               key={v}
@@ -281,9 +283,9 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
           data-done={done && !!r?.found}
           data-failed={done && r ? !r.found : false}
         >
-          {!r ? 'chưa chạy' : done ? (r.found ? `xong ở bước ${r.trace.length}` : 'không tới được') : `bước ${shown}`}
+          {!r ? 'not run' : done ? (r.found ? `done at step ${r.trace.length}` : 'unreachable') : `step ${shown}`}
         </span>
-        <button className="pane-close" onClick={() => removePane(pane.id)} aria-label="Đóng màn hình">Đóng</button>
+        <button className="pane-close" onClick={() => removePane(pane.id)} aria-label="Close pane">Close</button>
       </header>
 
       <div className="pane-stage">
@@ -291,63 +293,60 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
         {pane.view === 'tree' && <TreeView result={r} step={step} />}
       </div>
 
-      {step > 0 && r && r.trace[Math.min(step, r.trace.length) - 1] && (
+      {step > 0 && cur && (
         <div className="pane-live">
-          <span>nút thứ <span className="num">{Math.min(step, r.trace.length)}</span></span>
-          <span>g = <span className="num">{r.trace[Math.min(step, r.trace.length) - 1].g.toFixed(2)}</span></span>
-          {r.trace[Math.min(step, r.trace.length) - 1].h !== null && (
+          <span>node <span className="num">{shown}</span></span>
+          <span>g = <span className="num">{cur.g.toFixed(2)}</span></span>
+          {cur.h !== null && (
             <>
-              <span>h = <span className="num">{r.trace[Math.min(step, r.trace.length) - 1].h!.toFixed(2)}</span></span>
-              <span>f = <span className="num">{(
-                r.trace[Math.min(step, r.trace.length) - 1].g +
-                r.trace[Math.min(step, r.trace.length) - 1].h!
-              ).toFixed(2)}</span></span>
+              <span>h = <span className="num">{cur.h.toFixed(2)}</span></span>
+              <span>f = <span className="num">{(cur.g + cur.h).toFixed(2)}</span></span>
             </>
           )}
           <span className="pane-live-q">
-            hàng đợi <span className="num">{r.trace[Math.min(step, r.trace.length) - 1].frontier.length}</span>
+            frontier <span className="num">{cur.frontier.length}</span>
           </span>
         </div>
       )}
 
-      {/* Chân ô nói đúng ba trạng thái khác nhau, không trộn.
-          Đang chạy: chưa có tuyến nào nên chưa có quãng đường, thời gian hay
-          chi phí để mà nói — hiện số của kết quả cuối là kể trước cái kết.
-          Không tới được: ba số ấy bằng không không phải vì tuyến ngắn mà vì
-          chẳng có tuyến nào; chỉ giữ hai con số có thật là số nút đã xét và
-          thời gian chạy trước khi bỏ cuộc. */}
+      {/* The pane footer states exactly three distinct situations, never blended.
+          Running: there's no route yet, so there's no distance, time, or cost to
+          report — showing the final numbers early would spoil the ending.
+          Unreachable: those three numbers would read as zero not because the route
+          is short but because there is no route; keep only the two numbers that are
+          real — nodes expanded and the running time before giving up. */}
       <dl className="pane-foot" data-failed={!!r && done && !r.found}>
         {!r ? (
           <dd>{algo.note}</dd>
         ) : !done ? (
           <>
-            <dd className="running">đang tìm</dd>
-            <dd>đã xét <span className="num">{shown}</span>/<span className="num">{r.metrics.expanded}</span> nút</dd>
-            <dd title="Tổng thời gian thuật toán chạy"><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
+            <dd className="running">searching</dd>
+            <dd>expanded <span className="num">{shown}</span>/<span className="num">{r.metrics.expanded}</span> nodes</dd>
+            <dd title="Total algorithm running time"><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
           </>
         ) : !r.found ? (
           <>
-            <dd className="fail">không có tuyến</dd>
-            <dd>đã xét <span className="num">{r.metrics.expanded}</span> nút</dd>
-            <dd title="Thời gian thuật toán chạy trước khi bỏ cuộc">
+            <dd className="fail">no route</dd>
+            <dd>expanded <span className="num">{r.metrics.expanded}</span> nodes</dd>
+            <dd title="Algorithm running time before giving up">
               <span className="num">{r.metrics.ms.toFixed(1)}</span> ms
             </dd>
           </>
         ) : (
           <>
             <dd><span className="num">{r.metrics.km.toFixed(1)}</span> km</dd>
-            <dd><span className="num">{r.metrics.minutes}</span> phút</dd>
-            <dd title="Tổng chi phí theo hàm chi phí đang đặt">
-              chi phí <span className="num">{r.metrics.cost.toFixed(1)}</span>
+            <dd><span className="num">{r.metrics.minutes}</span> min</dd>
+            <dd title="Total cost under the current cost function">
+              cost <span className="num">{r.metrics.cost.toFixed(1)}</span>
             </dd>
-            <dd><span className="num">{shown}</span>/<span className="num">{r.metrics.expanded}</span> nút</dd>
-            <dd title="Thời gian thuật toán chạy"><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
+            <dd><span className="num">{shown}</span>/<span className="num">{r.metrics.expanded}</span> nodes</dd>
+            <dd title="Algorithm running time"><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
             {r.metrics.turnsBlocked > 0 && (
-              <dd title="Số lần phải bỏ một hướng đi vì gặp biển cấm rẽ lấy từ OpenStreetMap">
-                <span className="num">{r.metrics.turnsBlocked}</span> cấm rẽ
+              <dd title="Number of times a direction was ruled out by a turn restriction sign from OpenStreetMap">
+                <span className="num">{r.metrics.turnsBlocked}</span> turn restrictions
               </dd>
             )}
-            {done && <dd className="verdict">{r.metrics.optimal ? 'tối ưu' : 'xấp xỉ'}</dd>}
+            {done && <dd className="verdict">{r.metrics.optimal ? 'optimal' : 'approximate'}</dd>}
           </>
         )}
       </dl>
@@ -355,7 +354,7 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
   )
 }
 
-/** Đổi style cho những nút thật sự đổi trạng thái, bỏ qua phần còn lại. */
+/** Restyle only the nodes whose state actually changed; skip the rest. */
 function applyAll(
   layers: Record<string, L.CircleMarker>,
   keys: string[],
@@ -377,11 +376,11 @@ function applyAll(
   }
 }
 
-/** Nối hình dạng thật của từng đoạn đường để tuyến bám đúng mặt đường. */
+/** Stitch together each road segment's real shape so the route hugs the actual roads. */
 function densify(graph: Graph, path: string[]): [number, number][] {
   const out: [number, number][] = []
   for (let i = 0; i + 1 < path.length; i++) {
-    const e = graph.adj[path[i]]?.find(x => x.to === path[i + 1])
+    const e = edgeBetween(graph, path[i], path[i + 1])
     if (!e) continue
     const seg = e.shape
     out.push(...(out.length ? seg.slice(1) : seg))

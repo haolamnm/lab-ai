@@ -1,8 +1,9 @@
 /**
- * Xuất cả bộ icon ra một bản SVG rời để soi bằng mắt: mỗi icon hiện hai lần,
- * nét trên nền be và tô đặc trên nền mực, đúng hai trạng thái dùng thật.
+ * Exports the whole icon set to a standalone SVG sheet for visual inspection: each icon
+ * appears twice, outlined on beige and filled solid on ink — the two states actually used in
+ * the app.
  *
- * Chạy:
+ * Run:
  *   npx esbuild src/icons/makeSheet.ts --bundle --platform=node --format=esm \
  *     --outfile=/tmp/sheet.mjs && node /tmp/sheet.mjs src/icons/sheet.svg
  */
@@ -17,7 +18,7 @@ const render = (shapes: Shape[], solid: boolean) => shapes.map(s =>
 
 const names = Object.keys(ICONS) as IconName[]
 const COL = 5, CELL = 108, PAD = 16
-const rows = Math.ceil(names.length / COL) * 2   // hàng trên nét, hàng dưới đặc
+const rows = Math.ceil(names.length / COL) * 2   // top row outlined, bottom row solid
 let body = ''
 names.forEach((n, i) => {
   for (const solid of [false, true]) {
@@ -33,11 +34,11 @@ names.forEach((n, i) => {
         ${render(ICONS[n], solid)}
       </g>
       <text x="${(CELL - 12) / 2}" y="${CELL - 14}" font-family="monospace" font-size="11"
-            fill="#857d6e" text-anchor="middle">${n}${solid ? ' ·chọn' : ''}</text>
+            fill="#857d6e" text-anchor="middle">${n}${solid ? ' ·selected' : ''}</text>
     </g>`
   }
 })
 const w = PAD * 2 + COL * CELL, h = PAD * 2 + rows * CELL
 writeFileSync(process.argv[2], `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
 <rect width="${w}" height="${h}" fill="#f0eadd"/>${body}</svg>`)
-console.log('đã ghi', process.argv[2])
+console.log('wrote', process.argv[2])

@@ -1,26 +1,38 @@
 import type { CSSProperties } from 'react'
+import type { VehicleKey } from '../lib/types'
 import { ICONS, type IconName } from './geometry'
 
 export type { IconName }
 
+/**
+ * Which glyph stands for each vehicle. Lives here rather than in a component
+ * because both the sidebar and the comparison table draw it; two copies means
+ * a fifth vehicle shows up with an icon in one place and nothing in the other.
+ */
+export const VEHICLE_ICON: Record<VehicleKey, IconName> = {
+  bike: 'scooter', van: 'van', car: 'car', truck: 'truck',
+}
+
 interface Props {
   name: IconName
   size?: number
-  /** Tô đặc các đầu mối — dùng cho trạng thái đang chọn. */
+  /** Fills the endpoints in solid — used for the selected state. */
   solid?: boolean
   className?: string
   style?: CSSProperties
 }
 
 /**
- * Bộ icon riêng của Route Lab.
+ * Route Lab's own icon set.
  *
- * Vẽ bằng chính từ vựng của bản đồ: thân xe là một nét liền như một cạnh
- * đường, bánh xe là vòng tròn rỗng như một nút đang chờ xét. Chọn phương tiện
- * thì bánh xe tô đặc, đúng như nút chuyển sang trạng thái đã xét.
+ * Drawn in the map's own vocabulary: the vehicle body is a single continuous stroke, like a
+ * road segment; the wheels are hollow circles, like a node still waiting to be examined.
+ * Selecting a vehicle fills its wheels solid, exactly like a node switching over to the
+ * expanded state.
  *
- * Màu thừa hưởng từ currentColor nên icon tự đổi theo chữ xung quanh, dùng
- * được cả trên nền be lẫn nền mực mà không cần khai báo gì thêm.
+ * Colour is inherited from currentColor, so the icon follows the surrounding text
+ * automatically, and works on both the beige and the ink background without declaring
+ * anything extra.
  */
 export function Icon({ name, size = 20, solid = false, className, style }: Props) {
   return (

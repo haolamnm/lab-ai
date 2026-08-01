@@ -1,32 +1,29 @@
 import { useMemo, useState } from 'react'
-import { Icon, type IconName } from '../icons'
-import { snap } from '../lib/overpass'
+import { Icon, VEHICLE_ICON } from '../icons'
 import { algoOf, planRoute } from '../lib/search'
-import { banReason, passable, periodOf, VEHICLES } from '../lib/traffic'
-import type { VehicleKey } from '../lib/types'
-import { useStore } from '../store'
+import { banReason, periodOf, VEHICLES } from '../lib/traffic'
+import { anchorTo, useStore } from '../store'
 
-const VEHICLE_ICON: Record<VehicleKey, IconName> = {
-  bike: 'scooter', van: 'van', car: 'car', truck: 'truck',
-}
-/** Nhóm tuyến đặt tên bằng chữ cái, để nhìn ra ngay xe nào đi chung đường. */
+/** Route groups are named with letters, so it's obvious at a glance which vehicles share a route. */
 const GROUP = ['A', 'B', 'C', 'D']
 
 /**
- * Bảng so sánh bốn loại xe.
+ * Comparison table across the four vehicle types.
  *
- * Lưới màn hình so sánh **thuật toán**: mỗi ô một thuật toán, cùng một hành
- * trình. Loại xe thì ngược lại — nó là lựa chọn chung của cả lưới, nên trước đây
- * muốn biết xe tải đi khác xe máy chỗ nào thì phải bấm đổi xe rồi tự nhớ lấy con
- * số cũ. Bảng này chạy cả bốn xe một lượt, giữ nguyên thuật toán, khung giờ và
- * trọng số đang đặt.
+ * The pane grid compares **algorithms**: one pane per algorithm, same trip.
+ * Vehicle type is the opposite — it's a setting shared by the whole grid, so
+ * previously, seeing where a truck's route diverges from a motorbike's meant
+ * switching vehicles and remembering the old numbers by hand. This table runs
+ * all four vehicles at once, holding the algorithm, time period, and weights fixed.
  *
- * Không phải đổi xe rồi chạy lại bốn lần là vì mỗi loại xe **ghim vào một nút
- * giao khác nhau**: chỗ xe máy dừng được chưa chắc xe tải rời đi được. Bảng phải
- * tự ghim lại cho từng xe, nếu không nó so hai thứ khác nhau.
+ * It's not just "switch vehicle and rerun four times" because each vehicle
+ * type **snaps to a different intersection**: a spot a motorbike can leave
+ * from might not be reachable by truck. The table has to re-snap separately
+ * for each vehicle, or it would be comparing two different things.
  *
- * Chỉ tính khi người dùng mở ra, vì mỗi lần tính là bốn lượt tìm kiếm đầy đủ —
- * để nó chạy nền theo mỗi cái nhích thanh trọng số thì cả giao diện sẽ giật.
+ * Only computed when the user opens it, since each computation is four full
+ * searches — running it in the background on every weight-slider nudge would
+ * make the whole UI stutter.
  */
 export function Compare() {
   const graph = useStore(s => s.graph)
@@ -46,19 +43,22 @@ export function Compare() {
   const rows = useMemo(() => {
     if (!open || !graph || !start || !goal) return null
     return VEHICLES.map(v => {
-      const usable = (id: string) => (graph.adj[id] ?? []).some(e => passable(e, v.key, period))
-      const from = snap(graph, start.place, usable)
-      const to = snap(graph, goal.place, usable)
+      // Pin through the shared rule, not a local copy of it. Each vehicle needs
+      // its own pin — a truck cannot start where a motorbike can — and getting
+      // that rule subtly different here than in the sidebar would make this
+      // table disagree with the panes it is meant to be compared against.
+      const from = anchorTo(graph, start.place, v.key, period)
+      const to = anchorTo(graph, goal.place, v.key, period)
       const result = planRoute({
         graph, algo,
         start: from.nodeId, goal: to.nodeId,
-        stops: stops.map(x => snap(graph, x.place, usable).nodeId),
+        stops: stops.map(x => anchorTo(graph, x.place, v.key, period).nodeId),
         optimiseOrder,
         conditions: { vehicle: v.key, period, weights },
       })
-      // Đếm cạnh bị cấm để thấy loại xe này bị bó hẹp tới mức nào, và vì sao.
-      // Gom mọi lý do chứ không lấy cái đầu tiên: lệnh cấm cả ngày luôn gặp
-      // trước, nên lấy cái đầu là giờ cấm tải không bao giờ được nhắc tới.
+      // Count blocked edges to see how constrained this vehicle type is, and why.
+      // Collect every reason instead of just the first: an all-day ban is always
+      // encountered first, so taking only the first reason would mean truck curfews never get mentioned.
       let blocked = 0
       const why = new Set<string>()
       for (const e of graph.edges) {
@@ -69,7 +69,7 @@ export function Compare() {
     })
   }, [open, graph, algo, period, weights, start, goal, stops, optimiseOrder])
 
-  // Xe nào đi chung một tuyến thì mang chung một chữ cái.
+  // Vehicles that share a route get the same letter.
   const groupOf = useMemo(() => {
     const seen = new Map<string, number>()
     return (path: string[]) => {
@@ -85,11 +85,11 @@ export function Compare() {
   return (
     <section className="compare">
       <button className="compare-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
-        <span className="compare-title">So sánh phương tiện</span>
+        <span className="compare-title">Compare vehicles</span>
         <span className="compare-sub">
           {algoOf(algo).name} · {periodOf(period).name.toLowerCase()}
         </span>
-        <span className="compare-caret" data-open={open}>{open ? 'Thu lại' : 'Mở ra'}</span>
+        <span className="compare-caret" data-open={open}>{open ? 'Collapse' : 'Expand'}</span>
       </button>
 
       {open && rows && (
@@ -97,14 +97,14 @@ export function Compare() {
           <table className="compare-table">
             <thead>
               <tr>
-                <th>Xe</th>
-                <th className="r">Quãng đường</th>
-                <th className="r">Thời gian</th>
-                <th className="r">Chi phí</th>
-                <th className="r">Cạnh bị cấm</th>
-                <th className="r">Cấm rẽ chặn</th>
-                <th className="r">Ghim xa nhất</th>
-                <th>Tuyến</th>
+                <th>Vehicle</th>
+                <th className="r">Distance</th>
+                <th className="r">Time</th>
+                <th className="r">Cost</th>
+                <th className="r">Blocked edges</th>
+                <th className="r">Turn restrictions</th>
+                <th className="r">Farthest snap</th>
+                <th>Route</th>
               </tr>
             </thead>
             <tbody>
@@ -113,7 +113,7 @@ export function Compare() {
                 return (
                   <tr key={v.key} data-on={v.key === vehicle}>
                     <th scope="row">
-                      <button className="compare-pick" onClick={() => setVehicle(v.key)} title={`Chuyển sang ${v.name}`}>
+                      <button className="compare-pick" onClick={() => setVehicle(v.key)} title={`Switch to ${v.name}`}>
                         <Icon name={VEHICLE_ICON[v.key]} size={17} solid={v.key === vehicle} />
                         {v.name}
                       </button>
@@ -121,9 +121,9 @@ export function Compare() {
                     {result.found ? (
                       <>
                         <td className="r num">{m.km.toFixed(2)} km</td>
-                        <td className="r num">{m.minutes} phút</td>
+                        <td className="r num">{m.minutes} min</td>
                         <td className="r num">{m.cost.toFixed(1)}</td>
-                        <td className="r num" title={reason || 'Không bị cấm cấp đường nào'}>
+                        <td className="r num" title={reason || 'No road-class restrictions apply'}>
                           {blocked ? `${blocked}/${graph.edges.length}` : '—'}
                         </td>
                         <td className="r num">{m.turnsBlocked || '—'}</td>
@@ -131,7 +131,7 @@ export function Compare() {
                         <td><span className="compare-group">{groupOf(result.path)}</span></td>
                       </>
                     ) : (
-                      <td className="fail" colSpan={7}>{result.problem ?? 'không tới được'}</td>
+                      <td className="fail" colSpan={7}>{result.problem ?? 'unreachable'}</td>
                     )}
                   </tr>
                 )
@@ -139,8 +139,8 @@ export function Compare() {
             </tbody>
           </table>
           <p className="note" style={{ marginTop: 9 }}>
-            Cùng chữ cái ở cột <b>Tuyến</b> nghĩa là đi trùng đường. Cột <b>Cạnh bị cấm</b> tính cả
-            giờ cấm tải, nên đổi khung giờ là con số đổi theo. Bấm tên xe để chuyển cả lưới sang xe đó.
+            Same letter in the <b>Route</b> column means the same road. The <b>Blocked edges</b> column
+            includes truck curfews, so changing the time period changes the number too. Click a vehicle name to switch the whole grid to it.
           </p>
         </div>
       )}

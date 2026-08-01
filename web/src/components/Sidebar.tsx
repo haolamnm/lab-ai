@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
-import { Icon, type IconName } from '../icons'
+import { useShallow } from 'zustand/react/shallow'
+import { Icon, VEHICLE_ICON, type IconName } from '../icons'
 import { useStore } from '../store'
 import { areaProblem, DETAIL_LABEL } from '../lib/overpass'
 import { costIsFlat, CRITERIA, PERIODS, traitsOf, VEHICLES, vehicleOf } from '../lib/traffic'
@@ -9,15 +10,12 @@ import { PlaceField } from './PlaceField'
 import { Segment } from './Segment'
 
 const WEIGHT_LABEL: Record<keyof Weights, string> = {
-  distance: 'Quãng đường',
-  time: 'Thời gian',
-  congestion: 'Mức kẹt xe',
-  risk: 'Rủi ro',
+  distance: 'Distance',
+  time: 'Time',
+  congestion: 'Congestion',
+  risk: 'Risk',
 }
 
-const VEHICLE_ICON: Record<VehicleKey, IconName> = {
-  bike: 'scooter', van: 'van', car: 'car', truck: 'truck',
-}
 const PERIOD_ICON: Record<PeriodKey, IconName> = {
   peak: 'peak', offpeak: 'offpeak', night: 'night',
 }
@@ -26,13 +24,28 @@ const DETAIL_ICON: Record<Detail, IconName> = {
 }
 
 export function Sidebar() {
-  const s = useStore()
+  // Pick the fields explicitly rather than subscribing to the whole store. The
+  // sidebar reads none of the timeline state, but a bare useStore() would still
+  // re-render all of it — every section, every segmented control — on each of
+  // the ~3 steps per second the timeline emits while a run plays back.
+  const s = useStore(useShallow(st => ({
+    graph: st.graph, start: st.start, goal: st.goal, stops: st.stops,
+    detail: st.detail, building: st.building, buildError: st.buildError,
+    buildNote: st.buildNote, sample: st.sample, panes: st.panes,
+    period: st.period, vehicle: st.vehicle, criterion: st.criterion,
+    weights: st.weights, optimiseOrder: st.optimiseOrder,
+    setPlace: st.setPlace, addStop: st.addStop, removeStop: st.removeStop,
+    setDetail: st.setDetail, build: st.build, loadSample: st.loadSample,
+    importGraph: st.importGraph, setPeriod: st.setPeriod, setVehicle: st.setVehicle,
+    setCriterion: st.setCriterion, setWeight: st.setWeight,
+    setOptimiseOrder: st.setOptimiseOrder, run: st.run,
+  })))
   const [adding, setAdding] = useState(false)
   const vehicle = vehicleOf(s.vehicle)
   const ready = !!s.start && !!s.goal
   const nodeCount = s.graph ? Object.keys(s.graph.nodes).length : 0
 
-  // Cảnh báo vùng quá rộng ngay khi chọn xong hai điểm, không đợi bấm dựng.
+  // Warn about an oversized area as soon as both points are picked — don't wait for the build click.
   const oversize = ready
     ? areaProblem([s.start!.place, ...s.stops.map(x => x.place), s.goal!.place], s.detail)
     : null
@@ -42,34 +55,34 @@ export function Sidebar() {
       <div className="sidebar-scroll">
 
         <section className="block">
-          <h2>Hành trình</h2>
+          <h2>Trip</h2>
           <PlaceField
-            role="Lấy" placeholder="Điểm lấy hàng" value={s.start}
+            role="Pickup" kind="start" placeholder="Pickup location" value={s.start}
             onPick={p => s.setPlace('start', p)} onClear={() => s.setPlace('start', null)}
           />
           {s.stops.map((stop, i) => (
             <div className="stop-row" key={`${stop.place.lat}-${i}`}>
               <span>{stop.place.name}</span>
-              <button onClick={() => s.removeStop(i)} aria-label="Bỏ điểm giao này">Bỏ</button>
+              <button onClick={() => s.removeStop(i)} aria-label="Remove this stop">Remove</button>
             </div>
           ))}
           {adding ? (
             <PlaceField
-              role="Ghé" placeholder="Điểm giao thêm" autoFocus
+              role="Stop" kind="stop" placeholder="Add a stop" autoFocus
               onPick={p => { s.addStop(p); setAdding(false) }}
               onClear={() => setAdding(false)}
             />
           ) : (
-            <button className="link-button" onClick={() => setAdding(true)}>Thêm điểm giao</button>
+            <button className="link-button" onClick={() => setAdding(true)}>Add a stop</button>
           )}
           <div style={{ height: 8 }} />
           <PlaceField
-            role="Giao" placeholder="Điểm giao cuối" value={s.goal}
+            role="Dropoff" kind="goal" placeholder="Dropoff location" value={s.goal}
             onPick={p => s.setPlace('goal', p)} onClear={() => s.setPlace('goal', null)}
           />
           {s.stops.length > 1 && (
             <label className="field-row" style={{ marginTop: 10 }}>
-              <span>Tự sắp thứ tự ghé</span>
+              <span>Optimize visit order</span>
               <input
                 type="checkbox" checked={s.optimiseOrder}
                 onChange={e => s.setOptimiseOrder(e.target.checked)}
@@ -79,9 +92,9 @@ export function Sidebar() {
         </section>
 
         <section className="block">
-          <h2>Mạng lưới đường</h2>
+          <h2>Road network</h2>
           <Segment
-            label="Mức chi tiết mạng lưới"
+            label="Road network detail level"
             value={s.detail}
             onChange={(d: Detail) => s.setDetail(d)}
             options={(Object.keys(DETAIL_LABEL) as Detail[]).map(d => ({
@@ -95,13 +108,13 @@ export function Sidebar() {
             disabled={!ready || s.building || !!oversize}
             onClick={() => s.build()}
           >
-            {s.building ? 'Đang tải đường từ OpenStreetMap…' : s.graph ? 'Dựng lại mạng lưới' : 'Dựng mạng lưới'}
+            {s.building ? 'Loading roads from OpenStreetMap…' : s.graph ? 'Rebuild network' : 'Build network'}
           </button>
 
           <div className="pair">
-            <button className="button" onClick={() => s.loadSample()}>Đồ thị mẫu</button>
+            <button className="button" onClick={() => s.loadSample()}>Sample graph</button>
             <label className="button as-label">
-              Nhập file
+              Import file
               <input
                 type="file" accept="application/json" hidden
                 onChange={async e => {
@@ -114,17 +127,17 @@ export function Sidebar() {
           </div>
           {s.sample && (
             <p className="note lift" style={{ marginTop: 8 }}>
-              Đang dùng đồ thị tự thiết kế: mỗi nút một chữ cái, đủ nhỏ để dò từng bước bằng mắt.
-              Bấm Dựng mạng lưới để quay lại dữ liệu OpenStreetMap.
+              Using a custom-designed graph: one letter per node, small enough to trace step by step.
+              Click Build network to go back to OpenStreetMap data.
             </p>
           )}
           {s.detail === 'alleys' && (
             <p className="note lift" style={{ marginTop: 8 }}>
-              Nạp thêm mạng hẻm — thứ chỉ xe máy đi được. Đồ thị nặng gấp khoảng ba lần
-              nên chỉ chạy được với quãng dưới ~3 km.
+              Also loads the alley network — passable only by motorbike. The graph gets about
+              three times heavier, so this only works for trips under ~3 km.
             </p>
           )}
-          {!ready && <p className="note" style={{ marginTop: 8 }}>Chọn điểm lấy hàng và điểm giao trước.</p>}
+          {!ready && <p className="note" style={{ marginTop: 8 }}>Pick a pickup and dropoff first.</p>}
           {oversize && <p className="note warn" style={{ marginTop: 8 }}>{oversize}</p>}
           {s.buildError && !oversize && <p className="note warn" style={{ marginTop: 8 }}>{s.buildError}</p>}
           {s.buildNote && !s.building && (
@@ -132,17 +145,17 @@ export function Sidebar() {
           )}
           {s.graph && !s.building && !oversize && (
             <p className="note" style={{ marginTop: 8 }}>
-              <span className="num">{nodeCount}</span> nút giao,{' '}
-              <span className="num">{s.graph.edges.length}</span> đoạn đường.
-              {nodeCount > 900 && ' Mạng lưới lớn nên hoạt ảnh sẽ dài và chạy chậm. Giảm mức chi tiết nếu cần quay video.'}
+              <span className="num">{nodeCount}</span> intersections,{' '}
+              <span className="num">{s.graph.edges.length}</span> road segments.
+              {nodeCount > 900 && ' Large network, so the animation will be long and run slowly. Lower the detail level if you need to record a video.'}
             </p>
           )}
         </section>
 
         <section className="block">
-          <h2>Điều kiện</h2>
+          <h2>Conditions</h2>
           <Segment
-            label="Khung giờ"
+            label="Time period"
             value={s.period}
             onChange={(p: PeriodKey) => s.setPeriod(p)}
             options={PERIODS.map(p => ({
@@ -152,7 +165,7 @@ export function Sidebar() {
           />
           <div style={{ height: 10 }} />
           <Segment
-            label="Phương tiện giao hàng"
+            label="Delivery vehicle"
             value={s.vehicle}
             stacked
             onChange={(v: VehicleKey) => s.setVehicle(v)}
@@ -168,7 +181,7 @@ export function Sidebar() {
               <div className="meter" key={t.name} title={t.hint}>
                 <dt>{t.name}</dt>
                 <dd>
-                  <span className="pips" aria-label={`${t.value} trên 5`}>
+                  <span className="pips" aria-label={`${t.value} of 5`}>
                     {[1, 2, 3, 4, 5].map(i => (
                       <i key={i} data-on={i <= t.value} style={{ background: i <= t.value ? t.hue : undefined }} />
                     ))}
@@ -181,9 +194,9 @@ export function Sidebar() {
         </section>
 
         <section className="block">
-          <h2>Tiêu chí</h2>
+          <h2>Criterion</h2>
           <Segment
-            label="Tiêu chí tối ưu"
+            label="Optimization criterion"
             value={s.criterion}
             columns={2}
             onChange={(c: CriterionKey) => s.setCriterion(c)}
@@ -191,12 +204,12 @@ export function Sidebar() {
               .map(c => ({ value: c as CriterionKey, label: CRITERIA[c].name }))}
           />
           {s.criterion === 'custom' && (
-            <p className="note" style={{ marginTop: 10 }}>Đang dùng trọng số tự chỉnh bên dưới.</p>
+            <p className="note" style={{ marginTop: 10 }}>Using the custom weights below.</p>
           )}
         </section>
 
         <section className="block">
-          <h2>Trọng số chi phí</h2>
+          <h2>Cost weights</h2>
           {(Object.keys(WEIGHT_LABEL) as (keyof Weights)[]).map(k => (
             <div className="weight" data-w={k} key={k}>
               <div className="weight-head">
@@ -213,8 +226,8 @@ export function Sidebar() {
           ))}
           {costIsFlat(s.weights) && (
             <p className="note warn">
-              Cả bốn đang bằng 0, nên mọi tuyến đều có chi phí 0 và không thuật toán nào
-              còn gì để tối ưu. Kéo ít nhất một thanh lên khỏi 0.
+              All four are at 0, so every route costs 0 and there's nothing left for any
+              algorithm to optimize. Drag at least one slider above 0.
             </p>
           )}
         </section>
@@ -226,14 +239,14 @@ export function Sidebar() {
           disabled={!s.graph || !s.panes.length || !s.start?.nodeId || !s.goal?.nodeId}
           onClick={() => s.run()}
         >
-          Chạy thuật toán
+          Run algorithms
         </button>
         <p className="note">
           {!s.graph
-            ? 'Dựng mạng lưới trước khi chạy.'
+            ? 'Build the network before running.'
             : !s.panes.length
-              ? 'Thêm ít nhất một màn hình.'
-              : `${s.panes.length} màn hình đang so sánh.`}
+              ? 'Add at least one pane.'
+              : `${s.panes.length} panes comparing.`}
         </p>
       </div>
     </aside>

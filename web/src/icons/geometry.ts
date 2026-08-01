@@ -1,22 +1,22 @@
 /**
- * Hình học của bộ icon riêng.
+ * Geometry for the custom icon set.
  *
- * Cả bộ dựng trên lưới 24×24, nét 1.6, đầu nét bo tròn, và tuân một luật duy
- * nhất: **icon nói bằng đúng từ vựng của bản đồ.** Thân xe là một nét liền,
- * như một cạnh đường; bánh xe là vòng tròn rỗng, như một nút đang nằm trong
- * hàng đợi biên. Khi phương tiện được chọn, bánh xe tô đặc — đúng lúc nút trên
- * bản đồ chuyển từ "đang chờ xét" sang "đã xét".
+ * The whole set is built on a 24×24 grid, 1.6 stroke, rounded caps, and follows a single rule:
+ * **an icon speaks in the exact vocabulary of the map.** The vehicle body is a single
+ * continuous stroke, like a road segment; the wheels are hollow circles, like a node sitting
+ * in the frontier. When a vehicle is selected, its wheels fill solid — the exact moment a
+ * node on the map switches from "waiting to be examined" to "expanded".
  *
- * Nhờ vậy bộ icon không phải đồ trang trí mượn từ nơi khác, mà là phần kéo dài
- * của chính hệ ký hiệu người dùng đang đọc trên bản đồ.
+ * That keeps the icon set from being decoration borrowed from somewhere else — it is an
+ * extension of the very symbol system the user is already reading on the map.
  *
- * Tách riêng khỏi phần React để vừa vẽ ra giao diện, vừa xuất được thành bản
- * SVG rời đem đi kiểm tra bằng mắt.
+ * Kept separate from the React layer so it can both render into the interface and be exported
+ * as a standalone SVG sheet for visual inspection.
  */
 
 export type Shape =
   | { t: 'path'; d: string }
-  /** node: true nghĩa là bánh xe hoặc đầu mối — tô đặc khi được chọn. */
+  /** node: true means a wheel or an endpoint — fills solid when selected. */
   | { t: 'circle'; cx: number; cy: number; r: number; node?: boolean }
 
 export type IconName =
@@ -25,9 +25,9 @@ export type IconName =
   | 'trunkRoads' | 'midRoads' | 'smallRoads' | 'alleys'
 
 export const ICONS: Record<IconName, Shape[]> = {
-  /* ---------- Phương tiện ---------- */
+  /* ---------- Vehicles ---------- */
 
-  // Xe máy: tay lái, thân dốc xuống sàn để chân, yên nhô lên phía sau.
+  // Motorbike: handlebar, body sloping down to the footrest, seat rising at the back.
   scooter: [
     { t: 'path', d: 'M6.2 7.2h3.4' },
     { t: 'path', d: 'M8.3 7.6 7.3 12.6' },
@@ -38,7 +38,7 @@ export const ICONS: Record<IconName, Shape[]> = {
     { t: 'circle', cx: 17.9, cy: 16.8, r: 2.4, node: true },
   ],
 
-  // Xe van: thùng hàng cao phía sau, ca-bin vát ngắn phía trước.
+  // Van: tall cargo box at the back, short sloped cab at the front.
   van: [
     { t: 'path', d: 'M3 15.3V9.5c0-1.2 1-2.2 2.2-2.2h6.9l4.5 4h1.5c1.2 0 2.2 1 2.2 2.2v1.8' },
     { t: 'path', d: 'M12.1 7.3v4h4.5' },
@@ -47,7 +47,7 @@ export const ICONS: Record<IconName, Shape[]> = {
     { t: 'circle', cx: 17.5, cy: 16.8, r: 2.4, node: true },
   ],
 
-  // Ô tô con: một nét mui liền từ đuôi qua nóc tới mũi.
+  // Car: a single roofline stroke running from the tail, over the roof, to the nose.
   car: [
     { t: 'path', d: 'M2.9 15.1v-2.4l2.7-4.1c.36-.55.9-.83 1.6-.83h6.6c.55 0 1 .2 1.4.62l3.1 3.8 1.6.5c.7.22 1.1.75 1.1 1.5v.95' },
     { t: 'path', d: 'M2.9 15.1h1.4M9.8 15.1h4.1M19.6 15.1h1.4' },
@@ -56,7 +56,7 @@ export const ICONS: Record<IconName, Shape[]> = {
     { t: 'circle', cx: 16.7, cy: 16.4, r: 2.4, node: true },
   ],
 
-  // Xe tải: thùng vuông vức, ca-bin thấp hơn thùng.
+  // Truck: a square-cut cargo box, cab lower than the box.
   truck: [
     { t: 'path', d: 'M2.5 15.2V6.4h9.1v8.8' },
     { t: 'path', d: 'M13.5 15.2v-4.4h3.1l3.2 3.1v1.3' },
@@ -65,16 +65,16 @@ export const ICONS: Record<IconName, Shape[]> = {
     { t: 'circle', cx: 17.5, cy: 16.8, r: 2.4, node: true },
   ],
 
-  /* ---------- Khung giờ ---------- */
+  /* ---------- Time periods ---------- */
 
-  // Cao điểm: mặt trời đứng bóng, tám tia đều.
+  // Peak: the sun straight overhead, eight even rays.
   peak: [
     { t: 'circle', cx: 12, cy: 12, r: 3.9, node: true },
     { t: 'path', d: 'M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2' },
     { t: 'path', d: 'M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6' },
   ],
 
-  // Thấp điểm: mặt trời lặn xuống dưới đường chân trời.
+  // Off-peak: the sun setting below the horizon.
   offpeak: [
     { t: 'path', d: 'M3.4 17.6h17.2' },
     { t: 'path', d: 'M7.6 17.6a4.4 4.4 0 0 1 8.8 0' },
@@ -82,14 +82,14 @@ export const ICONS: Record<IconName, Shape[]> = {
     { t: 'path', d: 'M6.6 20.6h3.1M14.3 20.6h3.1' },
   ],
 
-  // Ban đêm: trăng khuyết cùng một ngôi sao nhỏ.
+  // Night: a crescent moon with one small star.
   night: [
     { t: 'path', d: 'M19.3 14.4a8 8 0 0 1-9.7-9.7 8 8 0 1 0 9.7 9.7Z' },
     { t: 'path', d: 'M17.4 3.6l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7Z' },
   ],
 
-  /* ---------- Mức chi tiết mạng lưới ---------- */
-  /* Ba icon này vẽ thẳng cái mà chúng mô tả: một mạng lưới mỗi lúc một dày. */
+  /* ---------- Network detail levels ---------- */
+  /* These three icons draw exactly what they describe: a network growing denser each time. */
 
   trunkRoads: [
     { t: 'path', d: 'M3.5 12h17M12 3.5v17' },
@@ -108,9 +108,10 @@ export const ICONS: Record<IconName, Shape[]> = {
     { t: 'circle', cx: 12.9, cy: 12.9, r: 1.5, node: true },
   ],
 
-  // Hẻm không phải một lưới dày hơn nữa — dày thêm nữa thì ba icon kia đã nói
-  // hết. Hẻm là những nhánh cụt đâm ra từ mặt phố, nên vẽ đúng thế: hai con phố,
-  // một đường nối, và mấy nhánh ngắn thò vào trong không dẫn đi đâu cả.
+  // Alleys aren't just an even denser grid — the other three icons have already said
+  // everything a denser grid can say. An alley is a dead-end branch poking off a street, so
+  // it's drawn exactly that way: two streets, a connecting road, and a few short branches
+  // poking inward that don't lead anywhere.
   alleys: [
     { t: 'path', d: 'M3.6 7h16.8M3.6 17h16.8' },
     { t: 'path', d: 'M7 3.6v16.8M17 3.6v16.8' },
