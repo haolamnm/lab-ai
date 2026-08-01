@@ -1,0 +1,394 @@
+# Route Lab
+
+An interactive comparison of classical search algorithms, applied to delivery routing on the real
+street network of Ho Chi Minh City.
+
+Pick a pickup point, a dropoff point, and any number of intermediate stops. The app downloads the
+actual roads around your route from OpenStreetMap, builds a weighted graph out of them, and runs up
+to five search algorithms side by side on a shared timeline — so you watch BFS flood outward in
+every direction while A\* drives a narrow wedge straight at the goal, at the same step number, on the
+same map.
+
+The point is not the route. UCS and A\* return the *same* route, always, because both are optimal
+over the same cost function. What differs — and what the interface is built to show — is how much
+work each algorithm did to get there.
+
+![Route Lab running the sample graph: a sidebar of query controls on the left, four algorithm panes comparing A*, UCS, BFS and DFS in the centre, the generated explanation below them, and one shared timeline across the bottom](docs/ui-screenshot.png)
+
+*The real application, paused at step 13 of 19 on the built-in sample graph.*
+
+Reading the picture: the sidebar on the left is the only place a run is defined, so every pane
+provably ran on the same input. Each pane owns one algorithm and can show it as a map, a
+stripped-back schematic, or the search tree itself. The timeline at the bottom drives all of them at
+once — which is what makes the comparison honest.
+
+Look at what that single frozen step reveals. A\* has already finished, at step 11, with an 11.4 km
+route it can guarantee is optimal. UCS is still searching at step 13 and will need 19 — and when it
+arrives it will produce **the identical route**, because both minimise the same cost. BFS is also
+still going and will return a route 1 km longer, because it counts hops rather than cost. DFS
+finished first, at step 9, with a 21.8 km route — nearly twice as long — and the footer marks it
+approximate rather than optimal.
+
+That is the whole argument of the tool in one screen: the route is rarely the interesting part,
+the amount of work spent finding it is.
+
+---
+
+## Requirements
+
+| | |
+|---|---|
+| **Bun** | 1.0 or newer. This project does **not** use npm or yarn — see [Package manager](#package-manager) below. |
+| **A modern browser** | Chrome, Edge, Firefox, or Safari. |
+| **An internet connection** | Road data, geocoding, map tiles, and fonts are all fetched live. Nothing is bundled offline. |
+
+Install Bun if you do not have it:
+
+```bash
+curl -fsSL https://bun.sh/install | bash      # macOS / Linux
+# or: brew install oven-sh/bun/bun
+```
+
+Check it works:
+
+```bash
+bun --version
+```
+
+---
+
+## Install and run
+
+```bash
+cd web
+bun install
+bun run dev
+```
+
+`bun run dev` starts the Vite dev server and **opens your browser automatically** (configured in
+`vite.config.ts`). If it does not, open the URL Vite prints, normally <http://localhost:5173>.
+
+### All commands
+
+Run these from the `web/` directory.
+
+| Command | What it does |
+|---|---|
+| `bun install` | Install dependencies. Reads `bun.lock`. |
+| `bun run dev` | Dev server with hot reload. Your normal workflow. |
+| `bun run build` | Typecheck (`tsc -b`) then produce a production bundle in `web/dist/`. |
+| `bun run preview` | Serve the built `dist/` locally, to check the production build. |
+| `bunx tsc --noEmit` | Typecheck only, without building. Fast. |
+
+There is **no test suite** in this project. Verification is `bunx tsc --noEmit` plus running the app.
+
+### First run, step by step
+
+1. In the sidebar, type a pickup point — try `Chợ Bến Thành`. Pick a result from the dropdown.
+2. Type a dropoff point — try `Landmark 81`.
+3. Press **Build network** (it reads *Rebuild network* once a network is loaded). The app queries
+   Overpass for every road in a corridor between your two
+   points. This takes a few seconds and is the slowest step; there is a hard 75-second cutoff.
+4. Press **Add the first pane**, then **Add pane** for each one after that, up to five. Each pane
+   picks the next unused algorithm.
+5. Press **Run algorithms**. Watch the timeline at the bottom drive every pane at once.
+
+**No internet, or Overpass is down?** Press **Sample graph** instead of *Build network*. That uses
+a hand-built 20-node graph of real HCMC landmarks that needs no network access at all — see
+[Sample graph](#sample-graph).
+
+---
+
+## What you can change
+
+Everything below lives in the sidebar and is the single source of truth for a run. Changing any of
+it clears every pane's result, so you never see half-old, half-new numbers.
+
+**Trip** — pickup, dropoff, and any number of intermediate stops. With stops, the app can also
+optimise the visit order using a nearest-neighbour heuristic measured in real cost, not straight-line
+distance.
+
+**Road network** — the detail level controls which road classes get downloaded:
+
+| Level | Road classes fetched |
+|---|---|
+| Main roads | motorway, trunk, primary |
+| Medium roads | + secondary |
+| Minor roads | + tertiary, residential |
+| With alleys | + alleys |
+
+Higher detail means a better network and a much slower, much larger download. The app enforces a
+corridor-area cap per level and will automatically fall back to a different level if the network
+comes back too fragmented to route through, telling you when it does.
+
+**Conditions** — vehicle and time period:
+
+| Vehicle | Character |
+|---|---|
+| Motorbike | The only vehicle allowed in alleys, weaves through congestion, exempt from most turn restrictions. Banned from motorways. |
+| Van | Can use every street, not subject to the truck curfew. Never the fastest at anything. |
+| Car | Fastest on an open road, safest. Badly hurt by congestion, no alleys. |
+| Truck | Carries the most. Banned from residential roads and alleys, and subject to a peak-hour curfew on inner-city branch and major roads. |
+
+Time period is peak, off-peak, or night. Importantly, the period acts on **congestion**, not on base
+speed — so at night, when congestion nearly vanishes, a car beats a motorbike, exactly as in real
+life. Multiplying base speed instead would make the motorbike's advantage a fixed ratio at every
+hour of the day, which is not true. See the long comment in `lib/traffic.ts` for the measurements
+behind this.
+
+**Criterion and weights** — four sliders (distance, time, congestion, risk) feed the cost function.
+Presets are Balanced, Shortest, Fastest, and Avoid-congestion; touching any slider switches you to
+Custom. Set all four to zero and every route costs the same — the app detects this and withdraws its
+"optimal" claim rather than stamping a meaningless guarantee on the result.
+
+---
+
+## The five algorithms
+
+| Algorithm | Priority | Optimal? | Character |
+|---|---|---|---|
+| **BFS** | insertion order | no | Fewest hops, ignores cost entirely |
+| **DFS** | stack order | no | Plunges down one branch, usually a bad route |
+| **UCS** | `g(n)` | **yes** | Expands evenly in every direction |
+| **A\*** | `g(n) + h(n)` | **yes** | Same route as UCS, far fewer nodes expanded |
+| **Greedy Best-First** | `h(n)` | no | Expands very few nodes, no guarantee |
+
+**Why there is no Dijkstra entry.** On a graph with non-negative edge weights, Dijkstra and UCS are
+the same algorithm — the same priority function `g(n)`, the same expansion order, the same route.
+Listing both would put two identical panes side by side in a tool whose entire purpose is showing
+how algorithms *differ*. UCS is the name used here, and its pane footer says so explicitly.
+
+**The heuristic.** `h(n)` is the straight-line (great-circle) distance to the goal, multiplied by the
+cheapest cost-per-km found anywhere in the network. Using raw kilometres instead would make the
+heuristic far too weak and A\* would degenerate into UCS, destroying the comparison. Scaling by the
+network minimum keeps it admissible — it can never overestimate — while staying tight enough to be
+worth something.
+
+---
+
+## The cost model
+
+```
+cost(edge) = w_distance   · km
+           + w_time       · minutes
+           + w_congestion · congestion · km
+           + w_risk       · risk · vehicleRiskFactor · km
+```
+
+Congestion and risk are multiplied by edge length deliberately. Without that, a route crossing many
+short blocks is penalised for its *number of intersections* rather than for how bad its traffic
+actually is, and the search starts preferring long empty detours.
+
+`minutes` comes from an open-road speed per road class, divided by a jam factor built from the edge's
+congestion level, the vehicle's sensitivity to congestion, and the time period.
+
+---
+
+## Real-world constraints modelled
+
+- **One-way streets** — respected as directed edges.
+- **Vehicle bans by road class** — trucks out of alleys, motorbikes off motorways, and so on.
+- **Truck curfew** — a time-based ban, not a permanent one, so changing the time period can unblock
+  a route that was blocked a moment ago.
+- **Turn restrictions** — parsed from OpenStreetMap turn-restriction relations, including the
+  time-conditional ones and the `except` list that exempts motorbikes. This matters more than it
+  sounds: measured across 757 turn restrictions in central HCMC, 491 are time-conditional and 459
+  exempt motorbikes.
+- **Connectivity repair** — the downloaded network is reduced to its largest strongly connected
+  component, so the search never starts inside a fragment it cannot escape.
+
+When a leg has no route, the app does not just say "unreachable". It runs two extra traversals to
+distinguish *why* — a genuinely disconnected network, a one-way trap, a vehicle ban, or a curfew —
+because those four need four different fixes.
+
+---
+
+## Sample graph
+
+`lib/sampleGraph.ts` holds a hand-built graph: **20 nodes, 34 edges**, each node a real HCMC landmark
+labelled `A` through `T`, so a route can be described as `A → D → E → F → K → J` and traced by eye.
+The numbers were chosen so the algorithms visibly disagree — a short route through the heavy
+congestion at Hàng Xanh, a longer free-flowing route past Landmark 81, and dead-end branches to the
+west for DFS to fall into.
+
+It needs no network access, so it is also the fallback when Overpass is unavailable.
+
+### Importing your own graph
+
+The sidebar accepts a JSON file. Both Vietnamese and English key names are accepted:
+
+```jsonc
+{
+  "nodes": [                              // or "nut"
+    { "id": "A", "lat": 10.7725, "lng": 106.6980, "label": "A", "name": "Chợ Bến Thành" }
+  ],
+  "edges": [                              // or "doanDuong"
+    {
+      "from": "A", "to": "C",             // or "tu" / "den"
+      "km": 0.7,
+      "roadClass": "secondary",           // or "capDuong"
+      "congestion": 4,                    // or "mucKetXe", clamped to 1–5
+      "risk": 0.1,                        // or "ruiRo",    clamped to 0–1
+      "name": "A–C"                       // or "ten"
+    }
+  ]
+}
+```
+
+Congestion and risk are range-clamped on import. This is not fussiness: a negative congestion value
+produces a negative edge cost, and negative edge costs silently break the optimality guarantee that
+UCS and A\* rely on — the app would keep stamping "optimal" on a route that is not.
+
+---
+
+## Project structure
+
+```
+.
+├── README.md
+├── CONVENTIONS.md              naming and coding rules — read before contributing
+├── Lab 1 - Searching.pdf       the assignment brief
+├── docs/
+│   ├── design-spec.md          UI/UX design spec, with the reasoning behind each decision
+├── prototype/
+│   └── index.html              earlier single-file vanilla-JS prototype (see Status below)
+└── web/                        the real application
+    ├── index.html
+    ├── package.json
+    ├── bun.lock
+    ├── vite.config.ts
+    ├── tsconfig.json
+    └── src/
+        ├── main.tsx            entry point
+        ├── App.tsx             shell: topbar, sidebar, pane grid, timeline
+        ├── store.ts            the single Zustand store — all query state lives here
+        ├── styles.css          the whole design system
+        ├── components/
+        │   ├── Sidebar.tsx     every input that defines a run
+        │   ├── MapPane.tsx     one algorithm's pane: map, schematic, and tree views
+        │   ├── TreeView.tsx    radial search-tree layout
+        │   ├── Timeline.tsx    the shared step control
+        │   ├── Compare.tsx     side-by-side vehicle comparison
+        │   ├── Explain.tsx     the generated explanation of the chosen route
+        │   ├── PlaceField.tsx  debounced geocoding search box
+        │   └── Segment.tsx     segmented-control primitive
+        ├── lib/                pure logic — no React, no DOM
+        │   ├── search.ts       all five algorithms, the heap, multi-leg planning
+        │   ├── traffic.ts      vehicles, periods, road classes, the cost model
+        │   ├── overpass.ts     OpenStreetMap fetching and graph construction
+        │   ├── geocode.ts      address lookup
+        │   ├── explain.ts      turns a run's numbers into sentences
+        │   ├── tree.ts         search-tree layout
+        │   ├── sampleGraph.ts  the offline sample network
+        │   ├── geo.ts          haversine and bounds maths
+        │   └── types.ts        shared types
+        └── icons/
+```
+
+`lib/` must stay importable without React. If something there needs a hook, it belongs in a component
+or in the store.
+
+---
+
+## Architecture
+
+**One store, no local copies.** Every value that defines a run lives in `store.ts`. No component owns
+its own copy of the pickup point or the weights. Changing any input clears all results at once.
+
+**Panes are views, not owners.** A pane holds an algorithm choice, a view mode, and a result. It does
+not hold query state. This is what makes the comparison honest — every pane provably ran on the same
+input.
+
+**One timeline drives everything.** Step 128 means step 128 in every pane simultaneously. Per-pane
+playback speed was deliberately *not* implemented: it would destroy comparability, which is the whole
+point of the tool.
+
+**Traces store node indices, not id strings.** A single run over a few-hundred-node network produces
+tens of thousands of frontier entries; times five panes, storing strings would waste a lot of memory
+for nothing. `RouteResult.nodeIds` maps back.
+
+---
+
+## External services
+
+| Service | Used for | Notes |
+|---|---|---|
+| [Overpass API](https://overpass-api.de/) | Road geometry and turn restrictions | Public and rate-limited. Retried with backoff on 429/503/504, hard 75-second cutoff. |
+| [Nominatim](https://nominatim.openstreetmap.org/) | Geocoding the search box | Public, roughly 1 request/second. |
+| CARTO Positron | Map tiles | Light grey basemap, chosen so every saturated colour on screen is one the app drew. |
+| Google Fonts | IBM Plex Sans and Mono | Both have complete Vietnamese coverage with correctly placed tone marks. |
+
+No API keys are needed. No data leaves your machine beyond these queries.
+
+---
+
+## Language
+
+The interface, the code, the comments, and the documentation are in **English**. Vietnamese place
+names in the *data* — `Chợ Bến Thành`, `Hàng Xanh`, street names returned by OpenStreetMap — stay
+in Vietnamese, because they are real geographic names and translating them would make them wrong.
+
+A label reading `Pickup` next to a value reading `Chợ Bến Thành` is the intended result.
+
+---
+
+## Package manager
+
+**This project uses Bun.** Do not run `npm install` or `yarn`. The lockfile is `bun.lock`;
+`package-lock.json` has been removed and should not come back. Two lockfiles in one project is how
+you end up with two different dependency trees and a bug that only reproduces on one machine.
+
+---
+
+## Documentation
+
+| File | What it is |
+|---|---|
+| [`CONVENTIONS.md`](CONVENTIONS.md) | Naming, comment style, TypeScript and React rules, the domain glossary, and the commit/branch conventions. Binding. |
+| [`docs/design-spec.md`](docs/design-spec.md) | The design specification. Argues for each interface decision, cites the measurements behind the constants, and records what was tried and rejected. Read this before changing the interface. |
+| [`docs/ui-screenshot.png`](docs/ui-screenshot.png) | The screenshot at the top of this file. Captured from the running app; regenerate it if the interface changes. |
+| [`docs/ui-overview.svg`](docs/ui-overview.svg) | An annotated schematic of the same layout, with the four regions labelled. Useful where a screenshot's density gets in the way. |
+| `Lab 1 - Searching.pdf` | The assignment brief. |
+| `.github/workflows/ci.yml` | Runs the typecheck and build on every push and pull request. |
+
+## Contributing
+
+Read [`CONVENTIONS.md`](CONVENTIONS.md) first. It is short and binding, and covers naming, comment
+style, TypeScript rules, React and state rules, and the domain glossary that keeps the UI and the
+code speaking the same language.
+
+Two rules worth repeating here:
+
+- **Comment the decision, not the mechanics.** The code already says what it does. A comment earns
+  its place by recording why this approach beat the obvious one, or what breaks if someone
+  "simplifies" it.
+- **Both `bunx tsc --noEmit` and `bun run build` must pass before a commit.**
+
+---
+
+## Status and known limitations
+
+The application in `web/` is the current, maintained implementation.
+
+**Known limitations:**
+
+- **`prototype/index.html` has drifted and is not maintained.** It still uses two models the real app
+  deliberately replaced: a cost function that does not scale congestion and risk by edge length, and
+  a time-of-day multiplier applied to base speed. Treat it as a historical UI reference only.
+- **The JSON export in `lib/explain.ts` uses Vietnamese object keys** (`dieuKien`, `mangLuoi`, …),
+  which contradicts the language policy above. Left alone deliberately, because changing it changes
+  the submission file format.
+- **Nearest-neighbour stop ordering is a heuristic**, so a trip with intermediate stops is never
+  claimed to be optimal even when each leg is. This is by design — solving the visit order exactly
+  is a travelling-salesman problem and out of scope.
+- **No automated tests.** Verification is `bunx tsc --noEmit`, `bun run build`, and running the app.
+
+**Recently fixed, worth knowing about if you read older notes:**
+
+- Turn restrictions could produce a false "no route found". The search state is now
+  `(intersection, arriving segment)` on networks that carry restrictions, so a costlier arrival that
+  is legally turnable is tried instead of being shut out by the cheapest one.
+- Displayed totals could disagree with the search's own cost where two roads join the same pair of
+  intersections. Statistics are now summed over the edge objects the search actually traversed.
+- Importing a graph left the trip pinned to the *previous* graph's node ids, which crashed A\* and
+  Greedy and made the other three silently report "unreachable".

@@ -1,4 +1,88 @@
+# ---------- macOS ----------
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+Icon?
+
+# ---------- Windows / Linux desktop junk ----------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.directory
+.Trash-*
+
+# ---------- Editors and IDEs ----------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.nvim.lua
+
+# ---------- Dependencies ----------
 node_modules/
+.pnp
+.pnp.js
+jspm_packages/
+
+# This project uses bun. bun.lock IS committed; lockfiles from other package
+# managers are not — two lockfiles in one repo means two dependency trees and
+# a bug that only reproduces on one machine.
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ---------- Build output ----------
 dist/
+build/
+out/
 *.tsbuildinfo
+.vite/
+
+# ---------- Environment and secrets ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---------- Logs and debug ----------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.bun-debug.log
+
+# ---------- Caches ----------
+.cache/
+.temp/
+.tmp/
+*.tmp
+.eslintcache
+.parcel-cache/
+
+# ---------- Local tooling ----------
+# Knowledge-graph index built by code-review-graph. Regenerated with
+# `code-review-graph build`, machine-local, and large.
+.code-review-graph/
+
+# MCP server wiring holds absolute paths from whichever machine ran the
+# installer, so it cannot be shared as-is.
+.mcp.json
+
+# Assistant tooling, generated per-machine by whoever installed it. Not part of
+# the project and not useful to a teammate who uses different tools.
+.claude/
+CLAUDE.md
+
+# ---------- Coverage / test output ----------
+coverage/
+*.lcov
+.nyc_output/

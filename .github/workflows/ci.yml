@@ -1,0 +1,36 @@
+name: CI
+
+# CONVENTIONS.md says the typecheck and the build must both pass before a
+# commit. This runs the same two commands so that rule is enforced rather than
+# merely written down.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # --frozen-lockfile fails rather than silently rewriting bun.lock, so a
+      # dependency that drifted from the lockfile shows up here instead of on
+      # someone's machine a week later.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      - name: Build
+        run: bun run build
