@@ -104,8 +104,8 @@ interface State {
   toggleSync: () => void
 }
 
-export const MAX_PANES = 5
-const ALGO_ORDER: AlgoKey[] = ['astar', 'ucs', 'bfs', 'dfs', 'greedy']
+export const MAX_PANES = 6
+const ALGO_ORDER: AlgoKey[] = ['astar', 'ucs', 'bfs', 'dfs', 'greedy', 'nearest']
 let seq = 0
 
 export const useStore = create<State>((set, get) => ({

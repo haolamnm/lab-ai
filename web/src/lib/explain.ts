@@ -150,13 +150,12 @@ export function explain(
       + 'Every route has the same cost, so no algorithm has anything to optimise, and '
       + 'the result returned is simply the first route found. Raise at least one weight above 0.'
 
-  // Turn restrictions weaken the optimality claim, and that has to be
-  // stated clearly here rather than silently ignored.
+  // A blocked direction is useful evidence that road rules affected the
+  // search, but it does not weaken UCS or A*: restricted states include the
+  // incoming road, which is all the history these single-node rules require.
   if (m.turnsBlocked > 0 && !costIsFlat(conditions.weights))
-    optimality += ` Along the way, the algorithm had to abandon a direction ${m.turnsBlocked} times because of a turn restriction sign. `
-      + 'A turn restriction is a constraint on a pair of road segments, while a search over a node graph only remembers one parent '
-      + 'per node, so the handling here is an approximation: the route returned never breaks a rule, but it may not '
-      + 'be the absolute cheapest route.'
+    optimality += ` During the search, the algorithm rejected a direction ${m.turnsBlocked} times because of a turn restriction sign. `
+      + 'Those restrictions are part of the search state, so the route remains legal without changing the algorithm\'s optimality guarantee.'
 
   const order = best.result.order.length > 2
     ? best.result.order.map(nameOf).join(' → ')
