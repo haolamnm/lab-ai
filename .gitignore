@@ -86,3 +86,23 @@ CLAUDE.md
 coverage/
 *.lcov
 .nyc_output/
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.ty_cache/
+.mypy_cache/
+.basedpyright/
+.pyright/
+
+# Build artefacts from a local `pip install`/`hatchling build` of server/.
+*.egg-info/
+.eggs/
+
+# This project uses uv for the backend in server/. uv.lock IS committed, for
+# the same reason bun.lock is above: it is the one file that pins the exact
+# dependency tree CI and every contributor resolve against.
