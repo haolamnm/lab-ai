@@ -254,37 +254,49 @@ UCS and A\* rely on — the app would keep stamping "optimal" on a route that is
 │   └── ui-overview.svg         annotated schematic of the same layout
 ├── prototype/
 │   └── index.html              earlier single-file vanilla-JS prototype (see Status below)
-└── web/                        the real application
-    ├── index.html
-    ├── package.json
-    ├── bun.lock
-    ├── vite.config.ts
-    ├── tsconfig.json
-    └── src/
-        ├── main.tsx            entry point
-        ├── App.tsx             shell: topbar, sidebar, pane grid, timeline
-        ├── store.ts            the single Zustand store — all query state lives here
-        ├── styles.css          the whole design system
-        ├── components/
-        │   ├── Sidebar.tsx     every input that defines a run
-        │   ├── MapPane.tsx     one algorithm's pane: map, schematic, and tree views
-        │   ├── TreeView.tsx    radial search-tree layout
-        │   ├── Timeline.tsx    the shared step control
-        │   ├── Compare.tsx     side-by-side vehicle comparison
-        │   ├── Explain.tsx     the generated explanation of the chosen route
-        │   ├── PlaceField.tsx  debounced geocoding search box
-        │   └── Segment.tsx     segmented-control primitive
-        ├── lib/                pure logic — no React, no DOM
-        │   ├── search.ts       all five algorithms, the heap, multi-leg planning
-        │   ├── traffic.ts      vehicles, periods, road classes, the cost model
-        │   ├── overpass.ts     OpenStreetMap fetching and graph construction
-        │   ├── geocode.ts      address lookup
-        │   ├── explain.ts      turns a run's numbers into sentences
-        │   ├── tree.ts         search-tree layout
-        │   ├── sampleGraph.ts  the offline sample network
-        │   ├── geo.ts          haversine and bounds maths
-        │   └── types.ts        shared types
-        └── icons/
+├── web/                        the real application
+│   ├── index.html
+│   ├── package.json
+│   ├── bun.lock
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   └── src/
+│       ├── main.tsx            entry point
+│       ├── App.tsx             shell: topbar, sidebar, pane grid, timeline
+│       ├── store.ts            the single Zustand store — all query state lives here
+│       ├── styles.css          the whole design system
+│       ├── components/
+│       │   ├── Sidebar.tsx     every input that defines a run
+│       │   ├── MapPane.tsx     one algorithm's pane: map, schematic, and tree views
+│       │   ├── TreeView.tsx    radial search-tree layout
+│       │   ├── Timeline.tsx    the shared step control
+│       │   ├── Compare.tsx     side-by-side vehicle comparison
+│       │   ├── Explain.tsx     the generated explanation of the chosen route
+│       │   ├── PlaceField.tsx  debounced geocoding search box
+│       │   └── Segment.tsx     segmented-control primitive
+│       ├── lib/                pure logic — no React, no DOM
+│       │   ├── search.ts       all five algorithms, the heap, multi-leg planning
+│       │   ├── traffic.ts      vehicles, periods, road classes, the cost model
+│       │   ├── overpass.ts     OpenStreetMap fetching and graph construction
+│       │   ├── geocode.ts      address lookup
+│       │   ├── explain.ts      turns a run's numbers into sentences
+│       │   ├── tree.ts         search-tree layout
+│       │   ├── sampleGraph.ts  the offline sample network
+│       │   ├── geo.ts          haversine and bounds maths
+│       │   └── types.ts        shared types
+│       └── icons/
+└── server/                     the Python planning backend — see Backend below
+    ├── README.md                the algorithms team's playground guide
+    ├── pyproject.toml
+    ├── uv.lock
+    ├── Makefile
+    └── src/route_lab/
+        ├── contract/            Pydantic mirror of web/src/lib/types.ts
+        ├── shared/               cost model, haversine, heap, search harness — ported from lib/
+        ├── algorithms/           one file per algorithm; ucs.py is the reference, the rest are stubs
+        ├── planner.py            builds legs, dispatches algorithms, aggregates a RouteResult
+        ├── diagnostics.py        explains why a leg found no route
+        └── api.py                FastAPI app: POST /plan, GET /health
 ```
 
 `lib/` must stay importable without React. If something there needs a hook, it belongs in a component
@@ -308,6 +320,25 @@ point of the tool.
 **Traces store node indices, not id strings.** A single run over a few-hundred-node network produces
 tens of thousands of frontier entries; times five panes, storing strings would waste a lot of memory
 for nothing. `RouteResult.nodeIds` maps back.
+
+---
+
+## Backend
+
+`server/` is a new Python/FastAPI service, managed with `uv`, that is becoming the real planning
+backend. `web/src/lib/search.ts` was a demo — all five algorithms running in the browser, no server
+involved — that proved the idea and shipped the first version of the app. The Python service speaks
+the identical JSON contract (`POST /plan` in, a `RouteResult` out) so it can replace that in-browser
+search without the frontend's request or response shapes changing. See
+[`server/README.md`](server/README.md) for the full playground guide, including how to implement an
+algorithm.
+
+Running both halves against each other, in two terminals:
+
+```bash
+cd server && uv run uvicorn route_lab.api:app --reload    # backend, http://localhost:8000
+cd web && VITE_API_URL=http://localhost:8000 bun run dev  # frontend, points at it
+```
 
 ---
 
@@ -350,8 +381,9 @@ you end up with two different dependency trees and a bug that only reproduces on
 | [`docs/design-spec.md`](docs/design-spec.md) | The design specification. Argues for each interface decision, cites the measurements behind the constants, and records what was tried and rejected. Read this before changing the interface. |
 | [`docs/ui-screenshot.png`](docs/ui-screenshot.png) | The screenshot at the top of this file. Captured from the running app; regenerate it if the interface changes. |
 | [`docs/ui-overview.svg`](docs/ui-overview.svg) | An annotated schematic of the same layout, with the four regions labelled. Useful where a screenshot's density gets in the way. |
+| [`server/README.md`](server/README.md) | The backend's playground guide: install and run, the layered package architecture, and how to implement an algorithm. |
 | `Lab 1 - Searching.pdf` | The assignment brief. |
-| `.github/workflows/ci.yml` | Runs the typecheck and build on every push and pull request. |
+| `.github/workflows/ci.yml` | Runs the frontend typecheck and build, and the backend lint/typecheck/import-layering/test gate, on every push and pull request. |
 
 ## Contributing
 

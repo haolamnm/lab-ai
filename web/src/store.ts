@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { boundsOf, haversine } from './lib/geo'
 import { areaProblem, buildGraph, DETAIL_LABEL, GraphBuildError, snap } from './lib/overpass'
+import { backendEnabled, planRouteRemote } from './lib/planClient'
 import { buildSampleGraph, SAMPLE_GOAL, SAMPLE_START, samplePlace } from './lib/sampleGraph'
 import { planRoute } from './lib/search'
 import { clampCongestion, clampRisk, CRITERIA, passable, type Conditions } from './lib/traffic'
@@ -72,6 +73,10 @@ interface State {
   playing: boolean
   speed: number
   syncView: boolean
+  /** True while a remote run is in flight, so the Run button can lock like Build does. */
+  running: boolean
+  /** Message from the last failed remote run. Cleared on the next successful run. */
+  runError: string | null
 
   setPlace: (role: 'start' | 'goal', place: Place | null) => void
   addStop: (place: Place) => void
@@ -96,7 +101,7 @@ interface State {
   setPaneView: (id: string, view: PaneView) => void
   reorderPanes: (fromId: string, toId: string) => void
 
-  run: () => void
+  run: () => Promise<void>
   clearResults: () => void
   setStep: (s: number) => void
   setPlaying: (b: boolean) => void
@@ -114,6 +119,7 @@ export const useStore = create<State>((set, get) => ({
   period: 'peak', vehicle: 'bike', criterion: 'balanced',
   weights: { ...CRITERIA.balanced.weights }, optimiseOrder: true,
   panes: [], step: 0, maxStep: 0, playing: false, speed: 1, syncView: true,
+  running: false, runError: null,
 
   setPlace: (role, place) => {
     const { graph, vehicle, period } = get()
@@ -286,13 +292,11 @@ export const useStore = create<State>((set, get) => ({
     if (panes.length >= MAX_PANES) return
     const used = panes.map(p => p.algo)
     const algo = ALGO_ORDER.find(a => !used.includes(a)) ?? 'astar'
-    const s = get()
     const pane: Pane = {
-      id: `pane-${++seq}`, algo, view: s.panes[0]?.view ?? 'map',
-      result: planForPane(s, algo),
+      id: `pane-${++seq}`, algo, view: panes[0]?.view ?? 'map', result: null,
     }
     set({ panes: [...panes, pane] })
-    recount(set, get)
+    planForPane(set, get, pane.id, algo)
   },
   removePane: id => {
     set({ panes: get().panes.filter(p => p.id !== id) })
@@ -302,11 +306,8 @@ export const useStore = create<State>((set, get) => ({
     set({ panes: get().panes.map(p => (p.id === id ? { ...p, view } : p)) })
   },
   setPaneAlgo: (id, algo) => {
-    const s = get()
-    set({
-      panes: s.panes.map(p => (p.id === id ? { ...p, algo, result: planForPane(s, algo) } : p)),
-    })
-    recount(set, get)
+    set({ panes: get().panes.map(p => (p.id === id ? { ...p, algo, result: null } : p)) })
+    planForPane(set, get, id, algo)
   },
   reorderPanes: (fromId, toId) => {
     const panes = [...get().panes]
@@ -318,16 +319,46 @@ export const useStore = create<State>((set, get) => ({
     set({ panes })
   },
 
-  run: () => {
+  run: async () => {
     const s = get()
     const input = planInput(s)
     if (!input || !s.panes.length) return
+
+    // The sample graph is a hand-built teaching aid that only exists in the browser, so it
+    // is never sent to the backend even when one is configured.
+    if (backendEnabled && !s.sample) {
+      // Snapshot which algorithm each pane asked for. The requests run for a
+      // moment, and the user can add, remove, reorder, or re-assign panes while
+      // they are in flight; results are merged back by pane id below rather than
+      // by array position, so a concurrent edit is never clobbered — the same
+      // reason build() re-reads state before writing.
+      const jobs = s.panes.map(p => ({ id: p.id, algo: p.algo }))
+      set({ running: true, runError: null })
+      try {
+        const results = await Promise.all(jobs.map(j => planRouteRemote({ ...input, algo: j.algo })))
+        const done = new Map(jobs.map((j, i) => [j.id, { algo: j.algo, result: results[i] }]))
+        const panes = get().panes.map(p => {
+          const hit = done.get(p.id)
+          // Apply only to a pane that still exists and still asks for that algorithm.
+          return hit && hit.algo === p.algo ? { ...p, result: hit.result } : p
+        })
+        const maxStep = Math.max(0, ...panes.map(p => (p.result ? p.result.trace.length : 0)))
+        set({ panes, maxStep, step: 0, playing: true, running: false, runError: null })
+      } catch (e) {
+        set({ running: false, runError: `Could not reach the planning backend: ${(e as Error).message}` })
+      }
+      return
+    }
+
     const panes = s.panes.map(p => ({ ...p, result: planRoute({ ...input, algo: p.algo }) }))
     const maxStep = Math.max(0, ...panes.map(p => p.result.trace.length))
-    set({ panes, maxStep, step: 0, playing: true })
+    set({ panes, maxStep, step: 0, playing: true, runError: null })
   },
   clearResults: () => {
-    set({ panes: get().panes.map(p => ({ ...p, result: null })), step: 0, maxStep: 0, playing: false })
+    set({
+      panes: get().panes.map(p => ({ ...p, result: null })),
+      step: 0, maxStep: 0, playing: false, runError: null,
+    })
   },
   setStep: step => set({ step, playing: false }),
   setPlaying: playing => set({ playing }),
@@ -336,7 +367,8 @@ export const useStore = create<State>((set, get) => ({
 }))
 
 /**
- * Plans one pane's route, or returns null if that pane must not hold one yet.
+ * Plans one pane's route and writes it in by id, or leaves the pane empty if it
+ * must not hold one yet.
  *
  * Both ways of changing a single pane — adding one, and switching its algorithm
  * — go through here so a single rule decides when a pane may hold a result.
@@ -346,13 +378,36 @@ export const useStore = create<State>((set, get) => ({
  * other pane still read "not run" — exactly the split state the gate exists to
  * prevent.
  *
+ * When a backend is configured it plans through the same remote path `run()`
+ * uses, so a pane added or re-assigned after a run is computed by the backend
+ * exactly like its siblings, never silently by the local planner. The write is
+ * gated on the pane still existing with the same algorithm, since a remote plan
+ * can resolve after the user has moved on.
+ *
  * `run()` deliberately does not come through here: it plans every pane and
  * resets the timeline to step 0, which is a different contract.
  */
-function planForPane(s: State, algo: AlgoKey): RouteResult | null {
-  if (s.maxStep === 0) return null
+function planForPane(
+  set: (p: Partial<State>) => void, get: () => State, id: string, algo: AlgoKey,
+): void {
+  const s = get()
+  if (s.maxStep === 0) { recount(set, get); return }
   const input = planInput(s)
-  return input ? planRoute({ ...input, algo }) : null
+  if (!input) { recount(set, get); return }
+
+  const write = (result: RouteResult) => {
+    set({ panes: get().panes.map(p => (p.id === id && p.algo === algo ? { ...p, result } : p)) })
+    recount(set, get)
+  }
+
+  if (backendEnabled && !s.sample) {
+    planRouteRemote({ ...input, algo })
+      .then(write)
+      .catch((e: unknown) =>
+        set({ runError: `Could not reach the planning backend: ${(e as Error).message}` }))
+    return
+  }
+  write(planRoute({ ...input, algo }))
 }
 
 /** Bundles everything a run needs, or null if the conditions to run haven't been met yet. */

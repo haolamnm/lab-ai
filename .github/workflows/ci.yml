@@ -34,3 +34,45 @@ jobs:
 
       - name: Build
         run: bun run build
+
+  # Mirrors `make check` in server/: the same gate a contributor runs locally
+  # before a commit, so a red build here is reproducible on their machine
+  # rather than being a CI-only surprise.
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      # --frozen fails rather than silently rewriting uv.lock, matching the
+      # frontend's --frozen-lockfile install above.
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check
+
+      - name: Check formatting
+        run: uv run ruff format --check
+
+      - name: Typecheck (ty)
+        run: uv run ty check
+
+      - name: Typecheck (basedpyright)
+        run: uv run basedpyright
+
+      - name: Check import layering
+        run: uv run lint-imports
+
+      - name: Check dependencies
+        run: uv run deptry src
+
+      - name: Test
+        run: uv run pytest

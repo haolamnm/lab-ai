@@ -32,6 +32,7 @@ export function Sidebar() {
     graph: st.graph, start: st.start, goal: st.goal, stops: st.stops,
     detail: st.detail, building: st.building, buildError: st.buildError,
     buildNote: st.buildNote, sample: st.sample, panes: st.panes,
+    running: st.running, runError: st.runError,
     period: st.period, vehicle: st.vehicle, criterion: st.criterion,
     weights: st.weights, optimiseOrder: st.optimiseOrder,
     setPlace: st.setPlace, addStop: st.addStop, removeStop: st.removeStop,
@@ -235,12 +236,13 @@ export function Sidebar() {
 
       <div className="sidebar-foot">
         <button
-          className="button solid wide"
-          disabled={!s.graph || !s.panes.length || !s.start?.nodeId || !s.goal?.nodeId}
+          className={`button solid wide${s.running ? ' busy' : ''}`}
+          disabled={s.running || !s.graph || !s.panes.length || !s.start?.nodeId || !s.goal?.nodeId}
           onClick={() => s.run()}
         >
-          Run algorithms
+          {s.running ? 'Planning on the backend…' : 'Run algorithms'}
         </button>
+        {s.runError && <p className="note warn" style={{ marginTop: 8 }}>{s.runError}</p>}
         <p className="note">
           {!s.graph
             ? 'Build the network before running.'

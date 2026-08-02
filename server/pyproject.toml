@@ -1,0 +1,139 @@
+[project]
+name = "route-lab-server"
+version = "0.1.0"
+description = "The Route Lab planning backend: a pure search-algorithm service over the JSON contract the web frontend already speaks."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "pydantic>=2.9",
+    "uvicorn[standard]>=0.32",
+]
+
+[dependency-groups]
+# Everything needed to lint, type-check, and test, but never to serve a request.
+dev = [
+    "basedpyright>=1.21",
+    "deptry>=0.20",
+    "httpx>=0.27",
+    "import-linter>=2.1",
+    "pytest>=8.3",
+    "ruff>=0.8",
+    "ty>=0.0.1a1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/route_lab"]
+
+# ------------------------------------------------------------------
+# Ruff — lint and format. Line length matches the web side's practical
+# wrapping so a reviewer moving between the two codebases keeps one mental
+# model of "too long".
+# ------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# E/F  pyflakes + pycodestyle    I   import sorting
+# UP   pyupgrade                 B   bugbear
+# SIM  flake8-simplify          RUF  ruff's own rules
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+# ------------------------------------------------------------------
+# ty — Astral's type checker. Pre-1.0/preview: pinned in the dev group so a
+# breaking release cannot silently change what CI enforces. Run in strict mode.
+# ------------------------------------------------------------------
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.rules]
+# Strict: promote the reference/import diagnostics ty reports as warnings by
+# default up to errors, so an unresolved name fails the build like a type error.
+possibly-missing-import = "error"
+possibly-unresolved-reference = "error"
+possibly-missing-attribute = "error"
+
+[tool.ty.src]
+include = ["src", "tests"]
+
+# ------------------------------------------------------------------
+# basedpyright — second, independent strict type checker. Running two means a
+# blind spot in one is caught by the other; the cost is that a tool-specific
+# false positive gets a narrow inline ignore rather than a mode downgrade.
+# ------------------------------------------------------------------
+[tool.basedpyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.12"
+include = ["src", "tests"]
+# basedpyright turns on a few opinions above pyright-strict that fight ordinary,
+# already-type-safe code. Relax only those, never the core strictness.
+reportUnusedCallResult = false
+reportAny = false
+reportExplicitAny = false
+
+# The tests drive the app through Starlette's TestClient, which is built on
+# httpx; under strict mode that call surface resolves to Unknown types we neither
+# own nor gain anything from annotating. Relax only the "unknown type" reports,
+# and only for the tests tree — src stays fully strict.
+[[tool.basedpyright.executionEnvironments]]
+root = "tests"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+
+# ------------------------------------------------------------------
+# import-linter — the mechanical guarantee behind the "clean playground".
+# See the layered contract below.
+# ------------------------------------------------------------------
+[tool.importlinter]
+root_package = "route_lab"
+
+[[tool.importlinter.contracts]]
+name = "Backend is layered; the algorithms folder stays decoupled"
+type = "layers"
+# High to low. A layer may import the ones below it and never the ones above.
+# So algorithms can lean on shared + contract, but can never reach up into the
+# planner or the web-facing api; shared can never import an algorithm; and
+# contract is a pure leaf that depends on nothing in the package.
+layers = [
+    "route_lab.api",
+    "route_lab.planner",
+    "route_lab.diagnostics",
+    "route_lab.algorithms",
+    "route_lab.shared",
+    "route_lab.contract",
+]
+
+[[tool.importlinter.contracts]]
+name = "The contract is a pure leaf"
+type = "forbidden"
+source_modules = ["route_lab.contract"]
+forbidden_modules = [
+    "route_lab.shared",
+    "route_lab.algorithms",
+    "route_lab.planner",
+    "route_lab.api",
+]
+
+# ------------------------------------------------------------------
+# deptry — catches a dependency that is imported but not declared, or declared
+# but never imported, before it becomes a broken install on someone else's
+# machine.
+# ------------------------------------------------------------------
+[tool.deptry]
+known_first_party = ["route_lab"]
+
+# uvicorn is the ASGI server: it is never imported, only invoked from the command
+# line (`uvicorn route_lab.api:app`), so deptry cannot see it is used. It is a
+# genuine runtime dependency all the same.
+[tool.deptry.per_rule_ignores]
+DEP002 = ["uvicorn"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

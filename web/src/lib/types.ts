@@ -122,6 +122,15 @@ export interface Metrics {
   optimal: boolean
   /** Number of times the algorithm had to drop a direction because of a turn restriction. */
   turnsBlocked: number
+  /** Number of road segments in the chosen route (path length in hops).
+   *  Optional: supplied by the Python backend, absent from the local planner. */
+  hops?: number
+  /** Search-effort metrics gathered by the backend harness — states pushed onto
+   *  the frontier, states re-reached more cheaply, and the peak frontier size.
+   *  Optional: the local TypeScript planner does not report them. */
+  generated?: number
+  reopened?: number
+  maxFrontier?: number
 }
 
 export interface RouteResult {
