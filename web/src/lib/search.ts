@@ -583,7 +583,7 @@ export function planRoute(input: PlanInput): RouteResult {
       trace: [],
       reveal: [],
       found: false,
-      problem: 'Held–Karp requires the Python planning backend. Build an OpenStreetMap network with the backend running, rather than using the sample graph.',
+      problem: 'Held–Karp requires the Python planning backend, and none is configured. Set VITE_API_URL, start the server in server/, then reload.',
       nodeIds: indexer(graph).ids,
       metrics: {
         km: 0, minutes: 0, cost: 0, expanded: 0, ms: 0,

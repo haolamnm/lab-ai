@@ -328,9 +328,14 @@ export const useStore = create<State>((set, get) => ({
     const input = planInput(s)
     if (!input || !s.panes.length) return
 
-    // The sample graph is a hand-built teaching aid that only exists in the browser, so it
-    // is never sent to the backend even when one is configured.
-    if (backendEnabled && !s.sample) {
+    // Every graph goes to the backend when one is configured, the hand-built sample
+    // included. The backend is stateless and is handed the whole graph in the request,
+    // so there is nothing about a browser-built graph it cannot plan over, and the
+    // sample is twenty nodes — the round trip is not measurable. Excluding it used to
+    // mean two panes on one screen could be computed by two different planners, which
+    // is a disagreement the user has no way to see the cause of, and it left Held–Karp
+    // unable to run on the small graph that demonstrates it best.
+    if (backendEnabled) {
       // Snapshot which algorithm each pane asked for. The requests run for a
       // moment, and the user can add, remove, reorder, or re-assign panes while
       // they are in flight; results are merged back by pane id below rather than
@@ -404,7 +409,7 @@ function planForPane(
     recount(set, get)
   }
 
-  if (backendEnabled && !s.sample) {
+  if (backendEnabled) {
     planRouteRemote({ ...input, algo })
       .then(write)
       .catch((e: unknown) =>
