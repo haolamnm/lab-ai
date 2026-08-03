@@ -3,7 +3,7 @@ import { boundsOf, haversine } from './lib/geo'
 import { areaProblem, buildGraph, DETAIL_LABEL, GraphBuildError, snap } from './lib/overpass'
 import { backendEnabled, planRouteRemote } from './lib/planClient'
 import { buildSampleGraph, SAMPLE_GOAL, SAMPLE_START, samplePlace } from './lib/sampleGraph'
-import { planRoute } from './lib/search'
+import { ALGOS, planRoute } from './lib/search'
 import { clampCongestion, clampRisk, CRITERIA, passable, type Conditions } from './lib/traffic'
 import type {
   AlgoKey, CriterionKey, Detail, Graph, PeriodKey, Place, RouteResult, VehicleKey, Weights,
@@ -109,11 +109,14 @@ interface State {
   toggleSync: () => void
 }
 
-export const MAX_PANES = 6
-// The order `addPane` hands out algorithms in. There are more algorithms than
-// MAX_PANES allows, so the tail of this list is only ever reached by picking it
-// from a pane's dropdown — which is the right place for Held–Karp, since it
-// needs a closed tour and a running backend rather than any trip at all.
+/** One pane per algorithm, so the full set can be on screen at once.
+ *
+ *  This is a comparison tool, and a cap below the number of things there are to
+ *  compare is an arbitrary limit rather than a design. The grid wraps at two
+ *  columns and scrolls, so the seventh pane costs a row, not a layout. */
+export const MAX_PANES = ALGOS.length
+/** The order `addPane` hands algorithms out in — the useful ones first, so the
+ *  first two panes are the two that produce an optimal route. */
 const ALGO_ORDER: AlgoKey[] = ['astar', 'ucs', 'bfs', 'dfs', 'greedy', 'nearest', 'held_karp']
 let seq = 0
 

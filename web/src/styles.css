@@ -385,6 +385,16 @@ button { cursor: pointer; }
   letter-spacing: 0.05em; text-transform: uppercase;
 }
 
+/* The visit order this pane's algorithm chose. A tour of a dozen stops is longer
+   than a narrow pane, and wrapping it would push the map up, so it scrolls
+   sideways on its own line and the pane keeps its height. */
+.pane-order {
+  flex: none; margin: 0; padding: 6px 11px;
+  border-top: 1px solid var(--rule-soft); background: var(--page);
+  font-family: var(--mono); font-size: 11px; color: var(--ink-soft);
+  white-space: nowrap; overflow-x: auto;
+}
+
 .pane-add {
   width: 132px; height: 350px; border: 1px dashed var(--rule); border-radius: 5px;
   background: none; color: var(--mute);
@@ -484,6 +494,9 @@ button { cursor: pointer; }
 .compare-sub { font-size: 11.5px; color: var(--mute); }
 .compare-caret { margin-left: auto; font-size: 11.5px; color: var(--mute); }
 .compare-body { padding: 0 16px 14px; max-height: 260px; overflow: auto; }
+/* A run is in flight and these numbers describe the previous settings. Dimmed
+   rather than blanked: a stale answer still reads better than an empty table. */
+.compare-body[data-stale='true'] { opacity: 0.55; transition: opacity .15s var(--ease); }
 
 .compare-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .compare-table th, .compare-table td { padding: 5px 9px; text-align: left; font-weight: 400; }

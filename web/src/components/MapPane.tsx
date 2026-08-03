@@ -2,6 +2,7 @@ import L from 'leaflet'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef } from 'react'
 import { algoOf, ALGOS, edgeBetween } from '../lib/search'
+import { tripNames } from '../lib/tripNames'
 import { TreeView } from './TreeView'
 import type { AlgoKey, Graph } from '../lib/types'
 import { useStore, type Anchor, type Pane, type PaneView } from '../store'
@@ -252,6 +253,28 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
   // network that nothing here established, and the node and millisecond counts
   // beside it would be zeros standing for nothing. `Explain` prints the reason.
   const ranNothing = !!r && !r.found && r.trace.length === 0
+
+  /**
+   * The order this pane's algorithm chose to visit the stops in.
+   *
+   * This belongs per pane rather than only in the explanation block below,
+   * because on a multi-stop trip the order *is* the difference between the
+   * algorithms: Nearest Neighbor takes the locally cheapest next stop, Held–Karp
+   * prices every possible tour. The explanation only ever describes the winning
+   * pane, so until this line existed, a Held–Karp run that lost on cost gave the
+   * viewer no way to see the one thing it does differently.
+   *
+   * Held on until the run finishes, for the same reason the footer holds back
+   * the distance and the cost: the order is the answer, and showing it while the
+   * search is still playing gives away the ending.
+   *
+   * A trip with no stops has an order of pickup-then-dropoff, which the map
+   * already shows and which no algorithm had any choice about.
+   */
+  const visitOrder = useMemo(
+    () => (r?.found && r.order.length > 2 ? r.order.map(tripNames(start, goal, stops)) : null),
+    [r, start, goal, stops],
+  )
   /** The step currently on screen. Read seven times below; indexed once here. */
   const cur = r ? r.trace[shown - 1] : undefined
 
@@ -371,6 +394,12 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
           </>
         )}
       </dl>
+
+      {done && visitOrder && (
+        <p className="pane-order" title={`Visit order chosen by ${algo.name}`}>
+          {visitOrder.join(' → ')}
+        </p>
+      )}
     </article>
   )
 }

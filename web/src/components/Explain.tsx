@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { explain, toExportable } from '../lib/explain'
 import { algoOf } from '../lib/search'
 import type { Conditions } from '../lib/traffic'
+import { tripNames } from '../lib/tripNames'
 import { useStore } from '../store'
 
 /**
@@ -46,13 +47,7 @@ export function Explain() {
   )
 
   // Node IDs are coordinate strings that mean nothing to a reader — map them back to the chosen place names.
-  const nameOf = useMemo(() => {
-    const table = new Map<string, string>()
-    if (start?.nodeId) table.set(start.nodeId, start.place.name)
-    if (goal?.nodeId) table.set(goal.nodeId, goal.place.name)
-    stops.forEach(s => { if (s.nodeId) table.set(s.nodeId, s.place.name) })
-    return (id: string) => table.get(id) ?? 'intersection'
-  }, [start, goal, stops])
+  const nameOf = useMemo(() => tripNames(start, goal, stops), [start, goal, stops])
 
   const info = useMemo(
     () => (graph ? explain(graph, results, conditions, nameOf) : null),

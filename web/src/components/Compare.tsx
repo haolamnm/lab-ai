@@ -1,11 +1,27 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Icon, VEHICLE_ICON } from '../icons'
-import { algoOf, planRoute } from '../lib/search'
-import { banReason, periodOf, VEHICLES } from '../lib/traffic'
+import { backendEnabled, planRouteRemote } from '../lib/planClient'
+import { algoOf, planRoute, type PlanInput } from '../lib/search'
+import { banReason, periodOf, VEHICLES, type Vehicle } from '../lib/traffic'
+import type { RouteResult } from '../lib/types'
 import { anchorTo, useStore } from '../store'
 
 /** Route groups are named with letters, so it's obvious at a glance which vehicles share a route. */
 const GROUP = ['A', 'B', 'C', 'D']
+
+/** How long the inputs must hold still before four trips are planned. Long enough
+ *  that dragging a weight slider across its range costs one run, not thirty. */
+const SETTLE_MS = 350
+
+interface Row {
+  v: Vehicle
+  result: RouteResult
+  /** Road segments this vehicle may not use at all, and why. */
+  blocked: number
+  reason: string
+  /** How far this vehicle's pins landed from the places the user picked. */
+  snapped: number
+}
 
 /**
  * Comparison table across the four vehicle types.
@@ -38,41 +54,84 @@ export function Compare() {
   const setVehicle = useStore(s => s.setVehicle)
 
   const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState<Row[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const algo = panes[0]?.algo ?? 'astar'
 
-  // This table runs the planner four times, synchronously, in a `useMemo`.
-  // Held–Karp has no local implementation to run — it needs the backend's
-  // pairwise cost matrix — so it is stated as unavailable rather than called
-  // four times only to get the same "needs the backend" result back each time.
-  const unsupported = algo === 'held_karp'
+  // Held–Karp has no browser implementation, so with no backend configured there
+  // is nothing this table could run for it. With one, it plans like any other.
+  const unsupported = algo === 'held_karp' && !backendEnabled
 
-  const rows = useMemo(() => {
-    if (!open || unsupported || !graph || !start || !goal) return null
-    return VEHICLES.map(v => {
-      // Pin through the shared rule, not a local copy of it. Each vehicle needs
-      // its own pin — a truck cannot start where a motorbike can — and getting
-      // that rule subtly different here than in the sidebar would make this
-      // table disagree with the panes it is meant to be compared against.
-      const from = anchorTo(graph, start.place, v.key, period)
-      const to = anchorTo(graph, goal.place, v.key, period)
-      const result = planRoute({
-        graph, algo,
-        start: from.nodeId, goal: to.nodeId,
-        stops: stops.map(x => anchorTo(graph, x.place, v.key, period).nodeId),
-        optimiseOrder,
-        conditions: { vehicle: v.key, period, weights },
+  useEffect(() => {
+    if (!open || unsupported || !graph || !start || !goal) {
+      setRows(null)
+      setError(null)
+      setBusy(false)
+      return
+    }
+
+    // Every dependency below can change many times a second — the weight sliders
+    // fire on each input event — and one recomputation is four whole trips. While
+    // that ran in the browser it was merely wasteful; against the backend it is
+    // four requests each carrying the entire road network, so the work waits for
+    // the user to stop moving rather than chasing every intermediate value.
+    let live = true
+    setBusy(true)
+    const timer = setTimeout(() => {
+      const jobs = VEHICLES.map(v => {
+        // Pin through the shared rule, not a local copy of it. Each vehicle needs
+        // its own pin — a truck cannot start where a motorbike can — and getting
+        // that rule subtly different here than in the sidebar would make this
+        // table disagree with the panes it is meant to be compared against.
+        const from = anchorTo(graph, start.place, v.key, period)
+        const to = anchorTo(graph, goal.place, v.key, period)
+        // Count blocked edges to see how constrained this vehicle type is, and why.
+        // Collect every reason instead of just the first: an all-day ban is always
+        // encountered first, so taking only the first reason would mean truck curfews never get mentioned.
+        let blocked = 0
+        const why = new Set<string>()
+        for (const e of graph.edges) {
+          const r = banReason(e, v.key, period)
+          if (r) { blocked++; why.add(r) }
+        }
+        return {
+          v, blocked, reason: [...why].join('. '), snapped: Math.max(from.metres, to.metres),
+          input: {
+            graph, algo,
+            start: from.nodeId, goal: to.nodeId,
+            stops: stops.map(x => anchorTo(graph, x.place, v.key, period).nodeId),
+            optimiseOrder,
+            conditions: { vehicle: v.key, period, weights },
+          } satisfies PlanInput,
+        }
       })
-      // Count blocked edges to see how constrained this vehicle type is, and why.
-      // Collect every reason instead of just the first: an all-day ban is always
-      // encountered first, so taking only the first reason would mean truck curfews never get mentioned.
-      let blocked = 0
-      const why = new Set<string>()
-      for (const e of graph.edges) {
-        const r = banReason(e, v.key, period)
-        if (r) { blocked++; why.add(r) }
-      }
-      return { v, result, blocked, reason: [...why].join('. '), snapped: Math.max(from.metres, to.metres) }
-    })
+
+      // Plan through whichever planner the panes are using. The table and the
+      // grid above it are read side by side, so computing one with the backend
+      // and the other in the browser would let them disagree over a difference
+      // the screen gives no way to account for.
+      const plan = (input: PlanInput) =>
+        backendEnabled ? planRouteRemote(input) : Promise.resolve(planRoute(input))
+
+      Promise.all(jobs.map(job => plan(job.input).then(result => ({ ...job, result }))))
+        .then(next => {
+          // A later change already superseded this run; its results describe a
+          // trip the user has moved on from.
+          if (!live) return
+          setRows(next)
+          setError(null)
+          setBusy(false)
+        })
+        .catch((e: unknown) => {
+          if (!live) return
+          setRows(null)
+          setError(`Could not reach the planning backend: ${(e as Error).message}`)
+          setBusy(false)
+        })
+    }, SETTLE_MS)
+
+    return () => { live = false; clearTimeout(timer) }
   }, [open, unsupported, graph, algo, period, weights, start, goal, stops, optimiseOrder])
 
   // Vehicles that share a route get the same letter.
@@ -101,14 +160,30 @@ export function Compare() {
       {open && unsupported && (
         <div className="compare-body">
           <p className="note warn">
-            This table compares vehicles in the browser, and Held–Karp only runs on the
-            Python backend. Switch the first pane to another algorithm to compare vehicles.
+            Held–Karp runs only on the Python backend, and none is configured, so this table
+            cannot plan for it. Set <code>VITE_API_URL</code>, or switch the first pane to
+            another algorithm.
           </p>
         </div>
       )}
 
-      {open && rows && (
+      {open && error && (
         <div className="compare-body">
+          <p className="note warn">{error}</p>
+        </div>
+      )}
+
+      {open && !unsupported && !error && !rows && (
+        <div className="compare-body">
+          <p className="note">Planning four trips, one per vehicle…</p>
+        </div>
+      )}
+
+      {open && rows && (
+        // While a fresh run is in flight the previous numbers stay on screen and
+        // fade, rather than blanking the table on every slider nudge — the last
+        // settled answer is still the closest thing to the truth there is.
+        <div className="compare-body" data-stale={busy}>
           <table className="compare-table">
             <thead>
               <tr>
