@@ -10,7 +10,9 @@ algorithms are still stubs.
 
 from __future__ import annotations
 
+from route_lab.algorithms.astar import a_star_search
 from route_lab.algorithms.base import AlgorithmNotImplemented
+from route_lab.algorithms.held_karp import held_karp
 from route_lab.algorithms.registry import ALGO_OPTIMAL, POINT_SEARCHES, guided
 from route_lab.contract.conditions import Conditions
 from route_lab.contract.graph import GraphEdge
@@ -19,10 +21,13 @@ from route_lab.contract.result import Metrics, Reveal, RouteResult, TraceStep
 from route_lab.diagnostics import why_blocked
 from route_lab.shared.graph import Graph, build_graph
 from route_lab.shared.ordering import nearest_neighbor_order
+from route_lab.shared.pairwise import build_pairwise
 from route_lab.shared.problem import build_problem
 from route_lab.shared.rounding import js_round
-from route_lab.shared.search import node_ids
+from route_lab.shared.search import SearchLegResult, node_ids
 from route_lab.shared.traffic import cost_is_flat, edge_cost, edge_minutes
+
+MAX_HELD_KARP_STOPS = 12
 
 
 def _leg_sequence(request: PlanRequest, graph: Graph) -> list[str]:
@@ -79,6 +84,135 @@ def _stopped(algo: AlgoKey, order: list[str], ids: list[str], problem: str) -> R
     )
 
 
+def _plan_held_karp(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteResult:
+    """Plan a closed warehouse tour using Pairwise A* and Held-Karp ordering."""
+    warehouse = request.start
+    stops = request.stops
+
+    if request.goal != warehouse:
+        return _stopped(
+            request.algo,
+            [warehouse],
+            ids,
+            "Held-Karp requires start and goal to be the same warehouse.",
+        )
+    if len(stops) > MAX_HELD_KARP_STOPS:
+        return _stopped(
+            request.algo,
+            [warehouse],
+            ids,
+            f"Held-Karp supports at most {MAX_HELD_KARP_STOPS} stops; received {len(stops)}.",
+        )
+    if warehouse in stops:
+        return _stopped(
+            request.algo,
+            [warehouse],
+            ids,
+            "The Held-Karp warehouse must not appear in stops.",
+        )
+    if len(set(stops)) != len(stops):
+        return _stopped(
+            request.algo,
+            [warehouse],
+            ids,
+            "Held-Karp stops must not contain duplicates.",
+        )
+
+    if not stops:
+        return RouteResult(
+            algo=request.algo,
+            problem=None,
+            order=[warehouse],
+            path=[warehouse],
+            trace=[],
+            node_ids=ids,
+            reveal=[],
+            found=True,
+            metrics=_zero_metrics(optimal=True),
+        )
+
+    pairwise = build_pairwise(
+        graph=graph,
+        locations=[warehouse, *stops],
+        conditions=request.conditions,
+        search=a_star_search,
+    )
+    try:
+        tour = held_karp(
+            warehouse=warehouse,
+            stops=stops,
+            costs=pairwise.costs,
+        )
+    except ValueError as exc:
+        return _stopped(request.algo, [warehouse], ids, f"Held-Karp input is invalid: {exc}")
+
+    if not tour.found:
+        return _stopped(
+            request.algo,
+            [warehouse],
+            ids,
+            "No directed route can visit every Held-Karp stop and return to the warehouse.",
+        )
+
+    selected_legs: list[SearchLegResult] = []
+    for source, target in zip(tour.order, tour.order[1:]):
+        leg = pairwise.paths.get((source, target))
+        if leg is None:
+            return _stopped(
+                request.algo,
+                [warehouse],
+                ids,
+                f"The cached Pairwise route for {source} -> {target} is missing.",
+            )
+        selected_legs.append(leg)
+
+    trace: list[TraceStep] = []
+    reveal: list[Reveal] = []
+    path: list[str] = []
+    km = minutes = cost = ms = 0.0
+    expanded = generated = reopened = max_frontier = turns_blocked = 0
+
+    for leg in selected_legs:
+        ms += leg.ms
+        expanded += leg.stats.expanded
+        generated += leg.stats.generated
+        reopened += leg.stats.reopened
+        max_frontier = max(max_frontier, leg.stats.max_frontier)
+        turns_blocked += leg.stats.turns_blocked
+        trace.extend(leg.trace)
+
+        leg_km, leg_minutes, leg_cost = _edge_totals(leg.edges, request.conditions)
+        km += leg_km
+        minutes += leg_minutes
+        cost += leg_cost
+        path.extend(leg.path if not path else leg.path[1:])
+        reveal.append(Reveal(upto=len(trace), path=list(path)))
+
+    return RouteResult(
+        algo=request.algo,
+        problem=None,
+        order=list(tour.order),
+        path=path,
+        trace=trace,
+        node_ids=ids,
+        reveal=reveal,
+        found=True,
+        metrics=Metrics(
+            km=js_round(km, 2),
+            minutes=js_round(minutes),
+            cost=js_round(cost, 1),
+            hops=max(0, len(path) - 1),
+            expanded=expanded,
+            generated=generated,
+            reopened=reopened,
+            max_frontier=max_frontier,
+            ms=js_round(ms, 1),
+            optimal=ALGO_OPTIMAL[request.algo],
+            turns_blocked=turns_blocked,
+        ),
+    )
+
+
 def plan_route(request: PlanRequest) -> RouteResult:
     """Plan ``request.algo`` across the whole trip and return its full result."""
     graph = build_graph(request.graph)
@@ -101,6 +235,9 @@ def plan_route(request: PlanRequest) -> RouteResult:
             f"These points are not intersections in this graph: {', '.join(unknown)}. "
             "Rebuild the network or re-pin the trip.",
         )
+
+    if algo == "held_karp":
+        return _plan_held_karp(request, graph, ids)
 
     sequence = _leg_sequence(request, graph)
     if len(sequence) < 2:
