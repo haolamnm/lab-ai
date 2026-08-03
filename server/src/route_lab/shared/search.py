@@ -135,8 +135,16 @@ def create_search_memory(graph: Graph, start: str, conditions: Conditions) -> Se
     return memory
 
 
-def next_states(memory: SearchMemory, current: str) -> list[tuple[GraphEdge, str]]:
-    """Legal outgoing ``(edge, key)`` pairs, counting directions a turn rule bans."""
+def next_states(
+    memory: SearchMemory, current: str, *, include_closed: bool = False
+) -> list[tuple[GraphEdge, str]]:
+    """Legal outgoing ``(edge, key)`` pairs, counting directions a turn rule bans.
+
+    Blind searches leave ``include_closed`` false. A* enables it so an improved
+    route may reopen a state after an expansion when used with an inconsistent
+    heuristic; the algorithm removes that state from ``closed`` before requeueing
+    it. Keeping this policy at the call site leaves UCS's behaviour unchanged.
+    """
     at = memory.node_at[current]
     incoming = memory.via[current]
     result: list[tuple[GraphEdge, str]] = []
@@ -150,7 +158,7 @@ def next_states(memory: SearchMemory, current: str) -> list[tuple[GraphEdge, str
             memory.stats.turns_blocked += 1
             continue
         key = memory.key_of(edge.to, edge)
-        if key not in memory.closed:
+        if include_closed or key not in memory.closed:
             result.append((edge, key))
     return result
 

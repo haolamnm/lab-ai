@@ -19,7 +19,7 @@ from .fixtures import diamond_json, diamond_payload, diamond_request
 
 client = TestClient(app)
 
-STUBS = ["bfs", "dfs", "astar", "greedy"]
+STUBS = ["bfs", "dfs", "greedy"]
 
 
 @pytest.mark.parametrize("algo", STUBS)
