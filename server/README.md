@@ -85,22 +85,20 @@ server/
     │   ├── graph.py     and lib/geo.ts, plus the reusable search building blocks:
     │   ├── traffic.py   the cost model (edge_cost, passable, turn_allowed, min_cost_per_km),
     │   ├── geo.py       haversine, a min-heap, the frontier kit, the heuristic kit, the
-    │   ├── heap.py      SearchMemory harness, and the nearest-neighbour ordering helpers.
+    │   ├── heap.py      binary min-heap shared by priority-based algorithms.
     │   ├── frontier.py  Stack / Queue / PriorityQueue — the three frontiers.
     │   ├── heuristics.py zero / haversine / euclidean / manhattan, selectable by name.
     │   ├── problem.py   SearchProblem: one leg plus its plug-n-play cost and heuristic.
     │   ├── search.py    SearchMemory + next_states/remember/record_expansion/complete_leg.
-    │   └── ordering.py  nearest_neighbour ordering (UCS sweeps).
     ├── algorithms/      One file per algorithm, uniform signature. The playground.
     │   ├── base.py      The Algorithm type and the AlgorithmNotImplemented exception.
     │   ├── registry.py  Maps an AlgoKey ('bfs', 'ucs', …) to its function.
-    │   ├── ucs.py       Complete worked reference implementation.
+    │   ├── ucs.py       Uniform Cost Search implementation.
+    │   ├── nearest_neighbor.py  Traffic-aware stop-ordering heuristic.
     │   ├── bfs.py       )
     │   ├── dfs.py       ) Stubs — raise AlgorithmNotImplemented until the algorithms team fills
     │   ├── astar.py     ) each one in.
     │   └── greedy.py    )
-    │   (nearest-neighbour stop ordering needs no file of its own: it is UCS plus the shared
-    │    ordering helper in shared/, exactly as on the frontend.)
     ├── planner.py       plan_route(request) -> RouteResult: builds the leg sequence, dispatches
     │                   each leg through the registry, applies nearest-neighbour ordering,
     │                   aggregates metrics, and produces failure explanations.

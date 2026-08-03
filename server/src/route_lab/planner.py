@@ -11,6 +11,7 @@ algorithms are still stubs.
 from __future__ import annotations
 
 from route_lab.algorithms.base import AlgorithmNotImplemented
+from route_lab.algorithms.nearest_neighbor import nearest_neighbor_order
 from route_lab.algorithms.registry import ALGO_OPTIMAL, POINT_SEARCHES, guided
 from route_lab.contract.conditions import Conditions
 from route_lab.contract.graph import GraphEdge
@@ -18,7 +19,6 @@ from route_lab.contract.request import AlgoKey, PlanRequest
 from route_lab.contract.result import Metrics, Reveal, RouteResult, TraceStep
 from route_lab.diagnostics import why_blocked
 from route_lab.shared.graph import Graph, build_graph
-from route_lab.shared.ordering import nearest_neighbor_order
 from route_lab.shared.problem import build_problem
 from route_lab.shared.rounding import js_round
 from route_lab.shared.search import node_ids
