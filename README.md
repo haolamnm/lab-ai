@@ -293,7 +293,7 @@ UCS and A\* rely on — the app would keep stamping "optimal" on a route that is
     └── src/route_lab/
         ├── contract/            Pydantic mirror of web/src/lib/types.ts
         ├── shared/               cost model, haversine, heap, search harness — ported from lib/
-        ├── algorithms/           one file per algorithm; ucs.py is the reference, the rest are stubs
+        ├── algorithms/           one file per algorithm; ucs.py is the worked reference
         ├── planner.py            builds legs, dispatches algorithms, aggregates a RouteResult
         ├── diagnostics.py        explains why a leg found no route
         └── api.py                FastAPI app: POST /plan, GET /health

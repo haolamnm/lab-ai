@@ -1,8 +1,8 @@
 """Nearest-neighbour stop ordering: cheapest-first, and unreachable stops kept."""
 
+from route_lab.algorithms.nearest_neighbor import nearest_neighbor_order
 from route_lab.contract.conditions import Conditions
 from route_lab.shared.graph import build_graph
-from route_lab.shared.ordering import nearest_neighbor_order
 
 from .fixtures import diamond_payload, shortest_weights
 
@@ -25,3 +25,22 @@ def test_unreachable_stop_is_kept_at_the_end_not_dropped() -> None:
     order = nearest_neighbor_order(graph, "A", ["GHOST", "B"], _conditions())
     assert set(order) == {"B", "GHOST"}
     assert order[-1] == "GHOST"
+
+
+def test_equal_cost_stops_keep_their_request_order() -> None:
+    payload = diamond_payload()
+    edges = [
+        edge.model_copy(update={"km": 1.0}) if edge.from_ == "A" and edge.to == "C" else edge
+        for edge in payload.edges
+    ]
+    graph = build_graph(payload.model_copy(update={"edges": edges}))
+
+    # B and C now both cost 1.0 from A, so the first requested stop wins.
+    order = nearest_neighbor_order(graph, "A", ["C", "B"], _conditions())
+    assert order == ["C", "B"]
+
+
+def test_current_location_is_selected_with_zero_cost() -> None:
+    graph = build_graph(diamond_payload())
+    order = nearest_neighbor_order(graph, "A", ["C", "A", "B"], _conditions())
+    assert order[0] == "A"

@@ -4,10 +4,10 @@ This is the Python side of ``planRoute`` in web/src/lib/search.ts. It orders the
 stops (optionally), splits the trip into legs, dispatches each leg to the chosen
 algorithm through the registry, joins the results, and aggregates the metrics.
 Two of the seven keys are not point searches and are resolved here rather than in
-the registry: ``nearest`` becomes a UCS point search plus the shared
-nearest-neighbour ordering, and ``held_karp`` takes its own branch entirely,
-because it needs a directed cost matrix over the trip points before any leg can
-be routed.
+the registry: ``nearest`` becomes a UCS point search plus the stop ordering in
+``algorithms/nearest_neighbor.py``, and ``held_karp`` takes its own branch
+entirely, because it needs a directed cost matrix over the trip points before any
+leg can be routed.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from __future__ import annotations
 from route_lab.algorithms.astar import a_star_search
 from route_lab.algorithms.base import AlgorithmNotImplemented
 from route_lab.algorithms.held_karp import held_karp
+from route_lab.algorithms.nearest_neighbor import nearest_neighbor_order
 from route_lab.algorithms.registry import ALGO_OPTIMAL, POINT_SEARCHES, guided
 from route_lab.contract.conditions import Conditions
 from route_lab.contract.graph import GraphEdge
@@ -22,7 +23,6 @@ from route_lab.contract.request import AlgoKey, PlanRequest
 from route_lab.contract.result import Metrics, Reveal, RouteResult, TraceStep
 from route_lab.diagnostics import why_blocked
 from route_lab.shared.graph import Graph, build_graph
-from route_lab.shared.ordering import nearest_neighbor_order
 from route_lab.shared.pairwise import build_pairwise
 from route_lab.shared.problem import build_problem
 from route_lab.shared.rounding import js_round
