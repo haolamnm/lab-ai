@@ -4,8 +4,9 @@ Two endpoints, no state: ``POST /plan`` runs one algorithm across one trip and
 returns a ``RouteResult``; ``GET /health`` is for readiness checks. The planner
 is pure, so the api layer only handles transport concerns — CORS for the Vite dev
 server, and turning an unimplemented algorithm into a normal 200 response whose
-``problem`` explains the gap, rather than a 500 that would read as a server crash
-while the algorithms team is still filling stubs in.
+``problem`` explains the gap, rather than a 500 that would read as a server
+crash. Every algorithm in the registry is written now; that guarantee stays for
+the next one, which starts life as a stub like all of these did.
 """
 
 from __future__ import annotations

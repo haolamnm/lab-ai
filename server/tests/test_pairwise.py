@@ -75,11 +75,7 @@ def _complete_graph() -> Graph:
 
 
 def _direct_search(problem: SearchProblem) -> SearchLegResult:
-    edge = next(
-        edge
-        for edge in problem.graph.adj[problem.start]
-        if edge.to == problem.goal
-    )
+    edge = next(edge for edge in problem.graph.adj[problem.start] if edge.to == problem.goal)
     return SearchLegResult(
         path=[problem.start, problem.goal],
         edges=[edge],
@@ -126,9 +122,7 @@ def test_build_pairwise_searches_all_ordered_non_diagonal_pairs() -> None:
         calls.append((problem.start, problem.goal))
         return _direct_search(problem)
 
-    result = build_pairwise(
-        _complete_graph(), ["W", "A", "B"], _conditions(), search
-    )
+    result = build_pairwise(_complete_graph(), ["W", "A", "B"], _conditions(), search)
 
     assert calls == [
         ("W", "A"),
@@ -222,9 +216,7 @@ def test_build_pairwise_does_not_add_heuristic_to_cost() -> None:
 
     assert forward.heuristic(forward.start) > 0.0
     assert result.costs[("W", "A")] == pytest.approx(1.0)
-    assert result.costs[("W", "A")] != pytest.approx(
-        1.0 + forward.heuristic(forward.start)
-    )
+    assert result.costs[("W", "A")] != pytest.approx(1.0 + forward.heuristic(forward.start))
 
 
 def test_build_pairwise_caches_complete_result_by_identity() -> None:
@@ -232,9 +224,7 @@ def test_build_pairwise_caches_complete_result_by_identity() -> None:
 
     def search(problem: SearchProblem) -> SearchLegResult:
         result = _direct_search(problem)
-        result.trace.append(
-            TraceStep(expanded=0, frontier=[1], g=7.0, h=2.0, parent=None)
-        )
+        result.trace.append(TraceStep(expanded=0, frontier=[1], g=7.0, h=2.0, parent=None))
         returned[(problem.start, problem.goal)] = result
         return result
 
@@ -290,9 +280,7 @@ def test_build_pairwise_omits_unreachable_pair_and_continues() -> None:
             return _not_found()
         return _direct_search(problem)
 
-    result = build_pairwise(
-        _complete_graph(), ["W", "A", "B"], _conditions(), search
-    )
+    result = build_pairwise(_complete_graph(), ["W", "A", "B"], _conditions(), search)
 
     assert ("A", "B") not in result.costs
     assert ("A", "B") not in result.paths
@@ -304,9 +292,7 @@ def test_build_pairwise_does_not_mutate_inputs() -> None:
     graph = _complete_graph()
     locations = ["W", "A"]
     original_locations = locations.copy()
-    original_adjacency = {
-        node: tuple(edges) for node, edges in graph.adj.items()
-    }
+    original_adjacency = {node: tuple(edges) for node, edges in graph.adj.items()}
 
     build_pairwise(graph, locations, _conditions(), _direct_search)
 
@@ -315,7 +301,7 @@ def test_build_pairwise_does_not_mutate_inputs() -> None:
 
 
 def test_build_pairwise_rejects_duplicate_locations() -> None:
-    with pytest.raises(ValueError, match="duplicate location.*A"):
+    with pytest.raises(ValueError, match=r"duplicate location.*A"):
         build_pairwise(_complete_graph(), ["A", "W", "A"], _conditions(), _never_search)
 
 

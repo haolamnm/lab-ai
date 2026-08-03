@@ -85,9 +85,7 @@ def test_contract_and_registry_accept_held_karp_without_point_search_registratio
 def test_plan_endpoint_accepts_held_karp() -> None:
     request = _request()
 
-    response = TestClient(app).post(
-        "/plan", json=request.model_dump(mode="json", by_alias=True)
-    )
+    response = TestClient(app).post("/plan", json=request.model_dump(mode="json", by_alias=True))
 
     assert response.status_code == 200
     assert response.json()["algo"] == "held_karp"
@@ -190,10 +188,7 @@ def test_held_karp_rejects_stop_limit_before_pairwise(
 ) -> None:
     request = _request(stops=[f"S{index}" for index in range(planner.MAX_HELD_KARP_STOPS + 1)])
     request.graph.nodes.update(
-        {
-            stop: request.graph.nodes["A"].model_copy(update={"id": stop})
-            for stop in request.stops
-        }
+        {stop: request.graph.nodes["A"].model_copy(update={"id": stop}) for stop in request.stops}
     )
 
     def fail_pairwise(**kwargs: object) -> PairwiseResult:
@@ -218,9 +213,7 @@ def test_held_karp_invalid_stops_return_failure(stops: list[str], message: str) 
 
 
 def test_held_karp_no_hamiltonian_cycle_is_finite_failure() -> None:
-    result = planner.plan_route(
-        _request(stops=["A"], edges=[("W", "A", 1.0)])
-    )
+    result = planner.plan_route(_request(stops=["A"], edges=[("W", "A", 1.0)]))
 
     assert result.found is False
     assert result.problem is not None and "return" in result.problem

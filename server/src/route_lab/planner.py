@@ -3,9 +3,11 @@
 This is the Python side of ``planRoute`` in web/src/lib/search.ts. It orders the
 stops (optionally), splits the trip into legs, dispatches each leg to the chosen
 algorithm through the registry, joins the results, and aggregates the metrics.
-The ``nearest`` algorithm is resolved here to a UCS point search plus the shared
-nearest-neighbour ordering, so it works today even while the other four
-algorithms are still stubs.
+Two of the seven keys are not point searches and are resolved here rather than in
+the registry: ``nearest`` becomes a UCS point search plus the shared
+nearest-neighbour ordering, and ``held_karp`` takes its own branch entirely,
+because it needs a directed cost matrix over the trip points before any leg can
+be routed.
 """
 
 from __future__ import annotations
@@ -155,7 +157,7 @@ def _plan_held_karp(request: PlanRequest, graph: Graph, ids: list[str]) -> Route
         )
 
     selected_legs: list[SearchLegResult] = []
-    for source, target in zip(tour.order, tour.order[1:]):
+    for source, target in zip(tour.order, tour.order[1:], strict=False):
         leg = pairwise.paths.get((source, target))
         if leg is None:
             return _stopped(
