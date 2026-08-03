@@ -110,7 +110,11 @@ interface State {
 }
 
 export const MAX_PANES = 6
-const ALGO_ORDER: AlgoKey[] = ['astar', 'ucs', 'bfs', 'dfs', 'greedy', 'nearest']
+// The order `addPane` hands out algorithms in. There are more algorithms than
+// MAX_PANES allows, so the tail of this list is only ever reached by picking it
+// from a pane's dropdown — which is the right place for Held–Karp, since it
+// needs a closed tour and a running backend rather than any trip at all.
+const ALGO_ORDER: AlgoKey[] = ['astar', 'ucs', 'bfs', 'dfs', 'greedy', 'nearest', 'held_karp']
 let seq = 0
 
 export const useStore = create<State>((set, get) => ({

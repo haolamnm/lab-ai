@@ -233,9 +233,25 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
   }, [step, pane.result, openedAt, graph])
 
   const algo = algoOf(pane.algo)
+  // Held–Karp reports `ms` as the runtime of the A* legs it ended up choosing.
+  // That is neither the full pairwise search — which routes every ordered pair
+  // of trip points, most of which the winning tour never uses — nor the DP,
+  // which the backend does not time at all. Labelling it "total running time"
+  // would claim the algorithm did far less work than it did.
+  const msTitle = pane.algo === 'held_karp'
+    ? 'Runtime of the A* legs on the chosen tour — not the full pairwise search, and not the DP'
+    : 'Algorithm running time'
   const r = pane.result
   const shown = r ? Math.min(step, r.trace.length) : 0
   const done = !!r && shown >= r.trace.length
+  // A failed result splits in two, and the pane must not blur them. A route
+  // that is genuinely unreachable was searched for: the algorithm expanded
+  // nodes, exhausted them, and found nothing. A query that never ran at all —
+  // Held–Karp without a backend, a pickup and dropoff on one intersection —
+  // produced no trace, so "unreachable" would state a fact about the road
+  // network that nothing here established, and the node and millisecond counts
+  // beside it would be zeros standing for nothing. `Explain` prints the reason.
+  const ranNothing = !!r && !r.found && r.trace.length === 0
   /** The step currently on screen. Read seven times below; indexed once here. */
   const cur = r ? r.trace[shown - 1] : undefined
 
@@ -283,7 +299,10 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
           data-done={done && !!r?.found}
           data-failed={done && r ? !r.found : false}
         >
-          {!r ? 'not run' : done ? (r.found ? `done at step ${r.trace.length}` : 'unreachable') : `step ${shown}`}
+          {!r ? 'not run'
+            : ranNothing ? 'did not run'
+              : done ? (r.found ? `done at step ${r.trace.length}` : 'unreachable')
+                : `step ${shown}`}
         </span>
         <button className="pane-close" onClick={() => removePane(pane.id)} aria-label="Close pane">Close</button>
       </header>
@@ -322,8 +341,10 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
           <>
             <dd className="running">searching</dd>
             <dd>expanded <span className="num">{shown}</span>/<span className="num">{r.metrics.expanded}</span> nodes</dd>
-            <dd title="Total algorithm running time"><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
+            <dd title={msTitle}><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
           </>
+        ) : ranNothing ? (
+          <dd className="fail">did not run — see the reason below</dd>
         ) : !r.found ? (
           <>
             <dd className="fail">no route</dd>
@@ -340,7 +361,7 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
               cost <span className="num">{r.metrics.cost.toFixed(1)}</span>
             </dd>
             <dd><span className="num">{shown}</span>/<span className="num">{r.metrics.expanded}</span> nodes</dd>
-            <dd title="Algorithm running time"><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
+            <dd title={msTitle}><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
             {r.metrics.turnsBlocked > 0 && (
               <dd title="Number of times a direction was ruled out by a turn restriction sign from OpenStreetMap">
                 <span className="num">{r.metrics.turnsBlocked}</span> turn restrictions

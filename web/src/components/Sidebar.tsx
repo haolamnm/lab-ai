@@ -6,6 +6,7 @@ import { useStore } from '../store'
 import { areaProblem, DETAIL_LABEL } from '../lib/overpass'
 import { costIsFlat, CRITERIA, PERIODS, traitsOf, VEHICLES, vehicleOf } from '../lib/traffic'
 import type { CriterionKey, Detail, PeriodKey, VehicleKey, Weights } from '../lib/types'
+import { HeldKarpNotice } from './HeldKarpNotice'
 import { PlaceField } from './PlaceField'
 import { Segment } from './Segment'
 
@@ -90,6 +91,7 @@ export function Sidebar() {
               />
             </label>
           )}
+          <HeldKarpNotice />
         </section>
 
         <section className="block">

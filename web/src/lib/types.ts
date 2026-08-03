@@ -84,7 +84,7 @@ export interface Graph {
 }
 
 export type Detail = 'coarse' | 'medium' | 'fine' | 'alleys'
-export type AlgoKey = 'bfs' | 'dfs' | 'ucs' | 'astar' | 'greedy' | 'nearest'
+export type AlgoKey = 'bfs' | 'dfs' | 'ucs' | 'astar' | 'greedy' | 'nearest' | 'held_karp'
 export type VehicleKey = 'bike' | 'van' | 'car' | 'truck'
 export type PeriodKey = 'peak' | 'offpeak' | 'night'
 export type CriterionKey = 'balanced' | 'distance' | 'time' | 'avoid' | 'custom'
@@ -137,7 +137,10 @@ export interface RouteResult {
   algo: AlgoKey
   /** Reason it could not run, when the query itself is meaningless. */
   problem?: string
-  /** Order of the stops to visit, after optimising if the user enabled it. */
+  /** Order of the stops to visit, after optimising if the user enabled it.
+   *  For Held–Karp this is the closed tour, so it opens and closes on the
+   *  warehouse. Always read the visit order from here — never re-derive it from
+   *  `path`, which is the road-by-road route and knows nothing about stops. */
   order: string[]
   path: string[]
   trace: TraceStep[]
