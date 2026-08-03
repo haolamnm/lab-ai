@@ -40,8 +40,14 @@ export function Compare() {
   const [open, setOpen] = useState(false)
   const algo = panes[0]?.algo ?? 'astar'
 
+  // This table runs the planner four times, synchronously, in a `useMemo`.
+  // Held–Karp has no local implementation to run — it needs the backend's
+  // pairwise cost matrix — so it is stated as unavailable rather than called
+  // four times only to get the same "needs the backend" result back each time.
+  const unsupported = algo === 'held_karp'
+
   const rows = useMemo(() => {
-    if (!open || !graph || !start || !goal) return null
+    if (!open || unsupported || !graph || !start || !goal) return null
     return VEHICLES.map(v => {
       // Pin through the shared rule, not a local copy of it. Each vehicle needs
       // its own pin — a truck cannot start where a motorbike can — and getting
@@ -67,7 +73,7 @@ export function Compare() {
       }
       return { v, result, blocked, reason: [...why].join('. '), snapped: Math.max(from.metres, to.metres) }
     })
-  }, [open, graph, algo, period, weights, start, goal, stops, optimiseOrder])
+  }, [open, unsupported, graph, algo, period, weights, start, goal, stops, optimiseOrder])
 
   // Vehicles that share a route get the same letter.
   const groupOf = useMemo(() => {
@@ -91,6 +97,15 @@ export function Compare() {
         </span>
         <span className="compare-caret" data-open={open}>{open ? 'Collapse' : 'Expand'}</span>
       </button>
+
+      {open && unsupported && (
+        <div className="compare-body">
+          <p className="note warn">
+            This table compares vehicles in the browser, and Held–Karp only runs on the
+            Python backend. Switch the first pane to another algorithm to compare vehicles.
+          </p>
+        </div>
+      )}
 
       {open && rows && (
         <div className="compare-body">
