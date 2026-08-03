@@ -32,7 +32,6 @@ export function HeldKarpNotice() {
   const start = useStore(s => s.start)
   const goal = useStore(s => s.goal)
   const stops = useStore(s => s.stops)
-  const sample = useStore(s => s.sample)
   const setPlace = useStore(s => s.setPlace)
 
   if (!panes.some(p => p.algo === 'held_karp')) return null
@@ -66,15 +65,10 @@ export function HeldKarpNotice() {
         </p>
       )}
 
-      {sample ? (
+      {!backendEnabled && (
         <p className="note warn" style={{ marginTop: 8 }}>
-          Held–Karp runs only on the Python backend, and the sample graph never leaves the
-          browser. Build an OpenStreetMap network to use it.
-        </p>
-      ) : !backendEnabled && (
-        <p className="note warn" style={{ marginTop: 8 }}>
-          Held–Karp runs only on the Python backend. Set <code>VITE_API_URL</code> and start
-          the server, then reload.
+          Held–Karp runs only on the Python backend, and none is configured. Set{' '}
+          <code>VITE_API_URL</code>, start the server in <code>server/</code>, then reload.
         </p>
       )}
     </>
