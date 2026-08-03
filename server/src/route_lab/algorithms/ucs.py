@@ -1,6 +1,10 @@
-"""Uniform Cost Search — the worked reference every other algorithm copies.
+"""Uniform Cost Search for one route leg.
 
-This is the whole pattern in one file. Read it before writing a new algorithm:
+UCS expands the state with the lowest accumulated cost first. Because Route Lab's
+edge costs are non-negative, the first settled state at the goal is an optimal
+path for the configured distance, time, congestion, and risk weights.
+
+It is also the whole pattern in one file. Read it before writing a new algorithm:
 
 1.  Start the clock and build a :class:`SearchMemory` from the problem.
 2.  Pick a frontier. UCS orders by ``g`` (cost so far), so a ``PriorityQueue``.
@@ -23,43 +27,42 @@ from __future__ import annotations
 
 from time import perf_counter
 
-from route_lab.shared.frontier import PriorityQueue
+from route_lab.shared.heap import Heap
 from route_lab.shared.problem import SearchProblem
 from route_lab.shared.search import (
     SearchLegResult,
     complete_leg,
     create_search_memory,
     next_states,
+    pop_fresh,
     record_expansion,
     remember,
 )
 
 
 def uniform_cost_search(problem: SearchProblem) -> SearchLegResult:
-    """Expand states cheapest-first; the first time the goal is popped is optimal."""
+    """Return the cheapest reachable path from ``problem.start`` to its goal."""
     started_at = perf_counter()
     memory = create_search_memory(problem.graph, problem.start, problem.conditions)
+    frontier = Heap()
+    frontier.push(memory.start_key, priority=0.0, cost=0.0)
 
-    frontier = PriorityQueue()
-    frontier.push(memory.start_key, 0.0)
-
-    while frontier:
-        current = frontier.pop()
-        # A cheaper route to `current` was found after this entry was queued, so
-        # this one is stale — the fresh expansion already closed the state.
-        if current in memory.closed:
-            continue
-
+    current = pop_fresh(frontier, memory)
+    while current is not None:
         record_expansion(memory, current)
         if memory.node_at[current] == problem.goal:
             return complete_leg(memory, current, started_at)
 
-        g = memory.cost[current]
-        for edge, key in next_states(memory, current):
-            candidate = g + problem.cost(edge)
-            if key in memory.cost and candidate >= memory.cost[key]:
+        current_cost = memory.cost[current]
+        for edge, successor in next_states(memory, current):
+            candidate_cost = current_cost + problem.cost(edge)
+            known_cost = memory.cost.get(successor)
+            if known_cost is not None and candidate_cost >= known_cost:
                 continue
-            remember(memory, key, current, edge, candidate)
-            frontier.push(key, candidate)
+
+            remember(memory, successor, current, edge, candidate_cost)
+            frontier.push(successor, priority=candidate_cost, cost=candidate_cost)
+
+        current = pop_fresh(frontier, memory)
 
     return complete_leg(memory, None, started_at)
