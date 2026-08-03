@@ -1,6 +1,6 @@
 """Uniform Cost Search — the worked reference every other algorithm copies.
 
-This is the whole pattern in one file. Read it before writing a stub:
+This is the whole pattern in one file. Read it before writing a new algorithm:
 
 1.  Start the clock and build a :class:`SearchMemory` from the problem.
 2.  Pick a frontier. UCS orders by ``g`` (cost so far), so a ``PriorityQueue``.

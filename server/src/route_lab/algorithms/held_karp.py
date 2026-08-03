@@ -121,10 +121,7 @@ def held_karp(
                 known_cost = dp.get(next_state)
                 if known_cost is not None and (
                     candidate_cost > known_cost
-                    or (
-                        candidate_cost == known_cost
-                        and candidate_lex >= lex_key[next_state]
-                    )
+                    or (candidate_cost == known_cost and candidate_lex >= lex_key[next_state])
                 ):
                     continue
 

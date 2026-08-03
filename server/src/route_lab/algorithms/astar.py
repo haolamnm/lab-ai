@@ -1,4 +1,3 @@
-
 """A* graph search over the backend's shared state and result harness.
 
 The route cost remains the accumulated edge cost ``g``. The heuristic is used

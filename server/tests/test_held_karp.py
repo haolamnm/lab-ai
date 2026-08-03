@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from itertools import permutations
+from itertools import pairwise, permutations
 from typing import cast
 
 import pytest
 
 from route_lab.algorithms.held_karp import HeldKarpResult, held_karp
-
 
 SAMPLE_COSTS: dict[tuple[str, str], float] = {
     ("W", "A"): 4.0,
@@ -42,14 +41,16 @@ def _brute_force(
     for indices in permutations(range(len(stops))):
         order = (warehouse, *(stops[index] for index in indices), warehouse)
         total = 0.0
-        for source, target in zip(order, order[1:], strict=False):
+        for source, target in pairwise(order):
             transition = costs.get((source, target))
             if transition is None:
                 break
             total += transition
         else:
-            if best_cost is None or total < best_cost or (
-                total == best_cost and best_indices is not None and indices < best_indices
+            if (
+                best_cost is None
+                or total < best_cost
+                or (total == best_cost and best_indices is not None and indices < best_indices)
             ):
                 best_order = order
                 best_indices = indices
@@ -86,17 +87,13 @@ def test_held_karp_asymmetric_matrix() -> None:
         ("A", "W"): 10.0,
     }
 
-    assert held_karp("W", ["A", "B"], costs) == HeldKarpResult(
-        True, ("W", "A", "B", "W"), 3.0
-    )
+    assert held_karp("W", ["A", "B"], costs) == HeldKarpResult(True, ("W", "A", "B", "W"), 3.0)
 
 
 def test_held_karp_unreachable_pair_but_cycle_exists() -> None:
     costs = {("W", "A"): 1.0, ("A", "B"): 2.0, ("B", "W"): 3.0}
 
-    assert held_karp("W", ["A", "B"], costs) == HeldKarpResult(
-        True, ("W", "A", "B", "W"), 6.0
-    )
+    assert held_karp("W", ["A", "B"], costs) == HeldKarpResult(True, ("W", "A", "B", "W"), 6.0)
 
 
 def test_held_karp_no_hamiltonian_cycle() -> None:
@@ -109,10 +106,7 @@ def test_held_karp_deterministic_tie_break() -> None:
     stops = ["B", "A", "C"]
     locations = ["W", *stops]
     costs = {
-        (source, target): 1.0
-        for source in locations
-        for target in locations
-        if source != target
+        (source, target): 1.0 for source in locations for target in locations if source != target
     }
 
     result = held_karp("W", stops, costs)

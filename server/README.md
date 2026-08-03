@@ -96,9 +96,11 @@ server/
     │   ├── registry.py  Maps an AlgoKey ('bfs', 'ucs', …) to its function.
     │   ├── ucs.py       Complete worked reference implementation.
     │   ├── bfs.py       )
-    │   ├── dfs.py       ) Stubs — raise AlgorithmNotImplemented until the algorithms team fills
-    │   ├── astar.py     ) each one in.
-    │   └── greedy.py    )
+    │   ├── dfs.py       ) The other four point searches. Each differs from ucs.py only in its
+    │   ├── astar.py     ) frontier and the priority it pushes with.
+    │   ├── greedy.py    )
+    │   └── held_karp.py Trip-level, not a point search: consumes a directed cost matrix and
+    │                    returns the cheapest closed tour. Not in POINT_SEARCHES.
     │   (nearest-neighbour stop ordering needs no file of its own: it is UCS plus the shared
     │    ordering helper in shared/, exactly as on the frontend.)
     ├── planner.py       plan_route(request) -> RouteResult: builds the leg sequence, dispatches
@@ -241,10 +243,11 @@ Algorithm = Callable[[SearchProblem], SearchLegResult]
 
 Steps:
 
-1. Open the stub for your algorithm, e.g. `src/route_lab/algorithms/bfs.py`. Its docstring gives the
-   exact recipe (which frontier, how to compute the cost, whether to pass a heuristic). It currently
-   raises `AlgorithmNotImplemented` — that is what lets `api.py` return a normal `RouteResult` with
-   the `problem` field set, rather than a 500, while the algorithm is still unwritten.
+1. Create the file, e.g. `src/route_lab/algorithms/beam.py`, and start it as a stub that raises
+   `AlgorithmNotImplemented("beam")`. That is what lets `api.py` return a normal `RouteResult` with
+   the `problem` field set, rather than a 500, while the algorithm is still unwritten — its pane in
+   the browser shows a message instead of a crash. `tests/test_unimplemented_algorithm.py` pins that
+   guarantee down. Register it in `registry.py` and add its key to `AlgoKey` on both sides.
 2. Read `src/route_lab/algorithms/ucs.py` first. It is the complete worked reference: copy its shape,
    change only the frontier and the priority you push with.
 3. Build a `SearchMemory` with `create_search_memory(problem.graph, problem.start, problem.conditions)`,
