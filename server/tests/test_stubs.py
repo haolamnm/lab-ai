@@ -8,8 +8,8 @@ unimplemented pane shows a message instead of a crash while the team fills stubs
 import pytest
 from fastapi.testclient import TestClient
 
+from route_lab.algorithms.astar import a_star_search
 from route_lab.algorithms.base import AlgorithmNotImplemented
-from route_lab.algorithms.bfs import breadth_first_search
 from route_lab.api import app
 from route_lab.planner import plan_route
 from route_lab.shared.graph import build_graph
@@ -19,7 +19,7 @@ from .fixtures import diamond_json, diamond_payload, diamond_request
 
 client = TestClient(app)
 
-STUBS = ["bfs", "dfs", "astar", "greedy"]
+STUBS = ["astar", "greedy"]
 
 
 @pytest.mark.parametrize("algo", STUBS)
@@ -42,7 +42,7 @@ def test_stub_endpoint_stays_200(algo: str) -> None:
 
 def test_calling_a_stub_directly_raises() -> None:
     graph = build_graph(diamond_payload())
-    conditions = diamond_request("bfs").conditions
+    conditions = diamond_request("astar").conditions
     problem = build_problem(graph, "A", "D", conditions, guided=False)
     with pytest.raises(AlgorithmNotImplemented):
-        breadth_first_search(problem)
+        a_star_search(problem)
