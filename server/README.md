@@ -85,22 +85,22 @@ server/
     │   ├── graph.py     and lib/geo.ts, plus the reusable search building blocks:
     │   ├── traffic.py   the cost model (edge_cost, passable, turn_allowed, min_cost_per_km),
     │   ├── geo.py       haversine, a min-heap, the frontier kit, the heuristic kit, the
-    │   ├── heap.py      SearchMemory harness, and the nearest-neighbour ordering helpers.
+    │   ├── heap.py      binary min-heap shared by priority-based algorithms.
     │   ├── frontier.py  Stack / Queue / PriorityQueue — the three frontiers.
     │   ├── heuristics.py zero / haversine / euclidean / manhattan, selectable by name.
     │   ├── problem.py   SearchProblem: one leg plus its plug-n-play cost and heuristic.
     │   ├── search.py    SearchMemory + next_states/remember/record_expansion/complete_leg.
-    │   └── ordering.py  nearest_neighbour ordering (UCS sweeps).
     ├── algorithms/      One file per algorithm, uniform signature. The playground.
     │   ├── base.py      The Algorithm type and the AlgorithmNotImplemented exception.
     │   ├── registry.py  Maps an AlgoKey ('bfs', 'ucs', …) to its function.
-    │   ├── ucs.py       Complete worked reference implementation.
+    │   ├── ucs.py       Uniform Cost Search implementation.
+    │   ├── nearest_neighbor.py  Traffic-aware stop-ordering heuristic.
     │   ├── bfs.py       )
-    │   ├── dfs.py       ) Stubs — raise AlgorithmNotImplemented until the algorithms team fills
-    │   ├── astar.py     ) each one in.
-    │   └── greedy.py    )
-    │   (nearest-neighbour stop ordering needs no file of its own: it is UCS plus the shared
-    │    ordering helper in shared/, exactly as on the frontend.)
+    │   ├── dfs.py       ) The other four point searches. Each differs from ucs.py only in its
+    │   ├── astar.py     ) frontier and the priority it pushes with.
+    │   ├── greedy.py    )
+    │   └── held_karp.py Trip-level, not a point search: consumes a directed cost matrix and
+    │                    returns the cheapest closed tour. Not in POINT_SEARCHES.
     ├── planner.py       plan_route(request) -> RouteResult: builds the leg sequence, dispatches
     │                   each leg through the registry, applies nearest-neighbour ordering,
     │                   aggregates metrics, and produces failure explanations.
@@ -121,9 +121,9 @@ A layer may import the ones below it and never the ones above. Concretely: an al
 `shared` and `contract`, but can never reach up into `planner` or `api`; `shared` can never import an
 algorithm; `contract` is a pure leaf that depends on nothing else in the package.
 
-This is what mechanically keeps the algorithms folder decoupled and reviewable. Several people are
-implementing `bfs.py`, `dfs.py`, `astar.py`, and `greedy.py` at the same time, in parallel with the
-planner and API being built. Without an enforced boundary, one algorithm quietly importing another,
+This is what mechanically keeps the algorithms folder decoupled and reviewable. Several people wrote
+`bfs.py`, `dfs.py`, `astar.py`, `greedy.py`, and `held_karp.py` at the same time, in parallel with
+the planner and API being built. Without an enforced boundary, one algorithm quietly importing another,
 or reaching into the planner for a shortcut, turns every pull request into a review of the whole
 package. With it, a change confined to `algorithms/*.py` is mechanically guaranteed not to touch
 anything else, so a reviewer only has to read the one file that changed.
@@ -241,10 +241,11 @@ Algorithm = Callable[[SearchProblem], SearchLegResult]
 
 Steps:
 
-1. Open the stub for your algorithm, e.g. `src/route_lab/algorithms/bfs.py`. Its docstring gives the
-   exact recipe (which frontier, how to compute the cost, whether to pass a heuristic). It currently
-   raises `AlgorithmNotImplemented` — that is what lets `api.py` return a normal `RouteResult` with
-   the `problem` field set, rather than a 500, while the algorithm is still unwritten.
+1. Create the file, e.g. `src/route_lab/algorithms/beam.py`, and start it as a stub that raises
+   `AlgorithmNotImplemented("beam")`. That is what lets `api.py` return a normal `RouteResult` with
+   the `problem` field set, rather than a 500, while the algorithm is still unwritten — its pane in
+   the browser shows a message instead of a crash. `tests/test_unimplemented_algorithm.py` pins that
+   guarantee down. Register it in `registry.py` and add its key to `AlgoKey` on both sides.
 2. Read `src/route_lab/algorithms/ucs.py` first. It is the complete worked reference: copy its shape,
    change only the frontier and the priority you push with.
 3. Build a `SearchMemory` with `create_search_memory(problem.graph, problem.start, problem.conditions)`,

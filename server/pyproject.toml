@@ -45,6 +45,13 @@ src = ["src", "tests"]
 # SIM  flake8-simplify          RUF  ruff's own rules
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
+# RUF002 flags the en dash as confusable with a hyphen. The project spells
+# "Held–Karp" with one throughout, frontend included, because that is the
+# algorithm's name; hyphenating it in Python only would make the two halves of
+# the codebase disagree, and a `noqa` on every mention is worse than saying once
+# that this character is deliberate.
+allowed-confusables = ["–"]
+
 # ------------------------------------------------------------------
 # ty — Astral's type checker. Pre-1.0/preview: pinned in the dev group so a
 # breaking release cannot silently change what CI enforces. Run in strict mode.

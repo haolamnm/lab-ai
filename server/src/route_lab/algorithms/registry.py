@@ -32,6 +32,7 @@ ALGO_OPTIMAL: dict[AlgoKey, bool] = {
     "astar": True,
     "greedy": False,
     "nearest": False,
+    "held_karp": True,
 }
 
 

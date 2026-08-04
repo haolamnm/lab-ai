@@ -139,11 +139,20 @@ export function explain(
     }
   }
 
-  let optimality = m.optimal
-    ? `${best.algo} guarantees optimality: every other route on this road network has a cost greater than or equal to this one.`
-    : best.result.order.length > 2
-      ? `This result is approximate. The visit order was set by the nearest-neighbour heuristic, which does not guarantee the cheapest order.`
-      : `${best.algo} does not guarantee optimality — a cheaper route the algorithm never considered may exist.`
+  // Held–Karp is optimal in a different sense from UCS and A*, and that
+  // difference is the whole reason to run it: those two return the cheapest
+  // route between two points and say nothing about what order to visit stops
+  // in, while Held–Karp returns the cheapest order and leaves each leg to A*.
+  // The bare word "optimal" would let a reader assume whichever one they came
+  // in expecting, so this branch names the guarantee outright — and names what
+  // the timeline is showing, which is the chosen leg searches, not the DP.
+  let optimality = best.result.algo === 'held_karp'
+    ? `${best.algo} is exact over the visit order: it costs every ordered pair of trip points with A*, then evaluates every possible tour through them, so no closed tour over these stops is cheaper than this one. Each leg of the tour is itself an optimal A* route. The timeline replays those chosen leg searches — the bitmask DP table is not part of the result.`
+    : m.optimal
+      ? `${best.algo} guarantees optimality: every other route on this road network has a cost greater than or equal to this one.`
+      : best.result.order.length > 2
+        ? `This result is approximate. The visit order was set by the nearest-neighbour heuristic, which does not guarantee the cheapest order.`
+        : `${best.algo} does not guarantee optimality — a cheaper route the algorithm never considered may exist.`
 
   if (costIsFlat(conditions.weights))
     optimality = 'All four weights are currently 0, so the cost function returns 0 for every road segment. '

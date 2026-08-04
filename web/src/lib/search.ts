@@ -22,6 +22,7 @@ export const ALGOS: AlgorithmInfo[] = [
   { key: 'astar', name: 'A*', optimal: true, hue: '#0a736f', note: 'Optimal, guided by a lower-bound heuristic' },
   { key: 'greedy', name: 'Greedy Best-First', optimal: false, hue: '#6d4aa8', note: 'Guided only by the heuristic; not optimal' },
   { key: 'nearest', name: 'Nearest Neighbor', optimal: false, hue: '#527326', note: 'Orders stops greedily by UCS route cost; each leg uses UCS' },
+  { key: 'held_karp', name: 'Held–Karp DP', optimal: true, hue: '#b45309', note: 'Exact cheapest closed tour, from Pairwise A* costs and bitmask DP. Backend only' },
 ]
 
 export function algoOf(key: AlgoKey): AlgorithmInfo {
@@ -363,7 +364,17 @@ export function greedyBestFirstSearch(
   return completeLeg(memory, null, startedAt)
 }
 
-type PointSearchKey = Exclude<AlgoKey, 'nearest'>
+/**
+ * The algorithms that route a single leg.
+ *
+ * Two keys are excluded because neither is a point-to-point search: `nearest`
+ * only chooses a stop order and leaves the routing to UCS, and `held_karp` only
+ * chooses a closed tour and leaves the routing to A*. Keeping them out of the
+ * type is what makes the `switch` below exhaustive without a `default`, so
+ * adding a trip-level algorithm to `AlgoKey` and forgetting it here is a
+ * compile error rather than a leg silently planned by the wrong algorithm.
+ */
+type PointSearchKey = Exclude<AlgoKey, 'nearest' | 'held_karp'>
 
 /** Dispatches one trip leg without mixing algorithm control flow. */
 function runPointSearch(
@@ -558,6 +569,29 @@ export interface PlanInput {
 /** Runs one selected algorithm across every leg of the requested trip. */
 export function planRoute(input: PlanInput): RouteResult {
   const { graph, algo, start, goal, stops, optimiseOrder, conditions } = input
+
+  // Held–Karp is a trip-level optimiser that exists only in the Python backend.
+  // It needs an exact directed cost matrix over every pair of trip points, which
+  // this local planner has no equivalent of, so the honest answer is to state
+  // what did not run. Anything else here would be a silent substitution: the
+  // pane would show a route the user never asked for, labelled "Held–Karp DP".
+  if (algo === 'held_karp') {
+    return {
+      algo,
+      order: [start],
+      path: [],
+      trace: [],
+      reveal: [],
+      found: false,
+      problem: 'Held–Karp requires the Python planning backend, and none is configured. Set VITE_API_URL, start the server in server/, then reload.',
+      nodeIds: indexer(graph).ids,
+      metrics: {
+        km: 0, minutes: 0, cost: 0, expanded: 0, ms: 0,
+        optimal: false, turnsBlocked: 0,
+      },
+    }
+  }
+
   const conditionsKey = conditionKey(conditions)
   const heuristicScale = algo === 'astar' || algo === 'greedy'
     ? shared(graph, `heuristic:${conditionsKey}`, () => minCostPerKm(graph, conditions))
