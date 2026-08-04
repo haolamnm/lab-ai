@@ -228,6 +228,10 @@ button { cursor: pointer; }
 .segment button[aria-checked='true'] {
   background: var(--opt-hue, var(--ink)); color: var(--paper); font-weight: 500;
 }
+/* Icon beside label: align the pair left so the icons form one straight column.
+   `flex: none` on the icon keeps that column true when a label runs long. */
+.segment[data-rows] button { justify-content: flex-start; padding-left: 13px; }
+.segment[data-rows] button > svg { flex: none; }
 .segment[data-stacked] button { flex-direction: column; gap: 5px; padding: 10px 4px; }
 .segment[data-stacked] button > span { font-size: 11.5px; }
 .segment button svg { transition: transform .16s var(--ease); }

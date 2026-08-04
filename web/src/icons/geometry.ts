@@ -89,7 +89,10 @@ export const ICONS: Record<IconName, Shape[]> = {
   ],
 
   /* ---------- Network detail levels ---------- */
-  /* These three icons draw exactly what they describe: a network growing denser each time. */
+  /* Four icons drawing exactly what they name: the same network, each step denser than the
+     last, with the centre node shrinking as the mesh closes in around it. The ramp is the
+     whole message — read side by side they say which level fetches more road, which is the
+     one thing the user is choosing between. */
 
   trunkRoads: [
     { t: 'path', d: 'M3.5 12h17M12 3.5v17' },
@@ -108,16 +111,18 @@ export const ICONS: Record<IconName, Shape[]> = {
     { t: 'circle', cx: 12.9, cy: 12.9, r: 1.5, node: true },
   ],
 
-  // Alleys aren't just an even denser grid — the other three icons have already said
-  // everything a denser grid can say. An alley is a dead-end branch poking off a street, so
-  // it's drawn exactly that way: two streets, a connecting road, and a few short branches
-  // poking inward that don't lead anywhere.
+  // The fourth and finest step. This was drawn as an actual alley once — two streets and a
+  // few dead-end branches poking off them — which says more about what an alley *is* than a
+  // grid can. It was replaced because of the size it is used at: at 17px the branches merged
+  // with the centre node into a blob, and what survived was a two-by-two frame, the sparsest
+  // glyph of the four, sitting under the label for the level that loads the most road.
+  //
+  // These four icons rank four levels, and ranking needs one variable that only moves one
+  // way. Density is that variable here, so the alley level gets the densest mesh and lets the
+  // label carry what kind of roads they are.
   alleys: [
-    { t: 'path', d: 'M3.6 7h16.8M3.6 17h16.8' },
-    { t: 'path', d: 'M7 3.6v16.8M17 3.6v16.8' },
-    { t: 'path', d: 'M11 7v4.4' },
-    { t: 'path', d: 'M14.6 17v-3.1' },
-    { t: 'path', d: 'M7 13.4h3.1' },
-    { t: 'circle', cx: 12, cy: 12, r: 1.5, node: true },
+    { t: 'path', d: 'M3.4 4.2h17.2M3.4 8.1h17.2M3.4 12h17.2M3.4 15.9h17.2M3.4 19.8h17.2' },
+    { t: 'path', d: 'M4.2 3.4v17.2M8.1 3.4v17.2M12 3.4v17.2M15.9 3.4v17.2M19.8 3.4v17.2' },
+    { t: 'circle', cx: 12, cy: 12, r: 1.3, node: true },
   ],
 }
