@@ -38,7 +38,14 @@ export function Segment<T extends string | number>({
       role="radiogroup"
       aria-label={label}
       data-stacked={stacked || undefined}
-      style={{ gridTemplateColumns: `repeat(${columns ?? options.length}, 1fr)` }}
+      // `minmax(0, 1fr)` rather than `1fr`, which is `minmax(auto, 1fr)` and so
+      // refuses to size a column below its label. With the labels set to nowrap
+      // that made the row wider than the group, and the `overflow: hidden` that
+      // rounds the corners then swallowed the last option whole — a radio the
+      // keyboard could reach and the mouse could not see. Now the columns share
+      // the width they actually have, and a label too long for its share is
+      // truncated inside a button that is still there to click.
+      style={{ gridTemplateColumns: `repeat(${columns ?? options.length}, minmax(0, 1fr))` }}
     >
       {options.map(o => (
         <button
