@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { findPlaces } from '../lib/geocode'
+import { forgetPlaces, recentPlaces, rememberPlace } from '../lib/recentPlaces'
 import type { Place } from '../lib/types'
 
 interface Props {
@@ -18,14 +19,31 @@ export function PlaceField({ role, kind, placeholder, value, autoFocus, onPick, 
   const [results, setResults] = useState<Place[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
+  /** The recently picked places, shown instead of results while the box is empty. */
+  const [recent, setRecent] = useState<Place[] | null>(null)
   const box = useRef<HTMLDivElement>(null)
+
+  /**
+   * Take a place, and remember it for next time.
+   *
+   * Only picks are recorded, never what was typed: the query is what somebody
+   * guessed the place was called, the pick is the place. Storing queries would
+   * hand back the misspelling that took three attempts to get right.
+   */
+  const take = (place: Place) => {
+    setText(place.name)
+    setResults(null)
+    setRecent(null)
+    rememberPlace(place)
+    onPick(place)
+  }
 
   useEffect(() => setText(value?.place.name ?? ''), [value?.place.name])
 
-  // Close the results list on an outside click.
+  // Close whichever list is open on an outside click.
   useEffect(() => {
     const away = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) setResults(null)
+      if (box.current && !box.current.contains(e.target as Node)) { setResults(null); setRecent(null) }
     }
     document.addEventListener('mousedown', away)
     return () => document.removeEventListener('mousedown', away)
@@ -58,11 +76,24 @@ export function PlaceField({ role, kind, placeholder, value, autoFocus, onPick, 
           value={text}
           placeholder={placeholder}
           autoFocus={autoFocus}
-          onChange={e => setText(e.target.value)}
+          // Tied to the box being empty, not to the focus event. Emptying a box
+          // that already has the caret in it fires no focus of its own, so
+          // hanging this off `onFocus` alone meant that clearing a field — the
+          // most likely moment of all to want the history — showed nothing until
+          // you clicked away and back again.
+          onChange={e => {
+            setText(e.target.value)
+            setRecent(e.target.value.trim() ? null : recentPlaces())
+          }}
+          onFocus={() => { if (!text.trim()) setRecent(recentPlaces()) }}
           aria-label={placeholder}
         />
         {onClear && value && (
-          <button className="place-clear" onClick={() => { setText(''); onClear() }} aria-label="Clear selection">
+          <button
+            className="place-clear"
+            onClick={() => { setText(''); onClear(); setRecent(recentPlaces()) }}
+            aria-label="Clear selection"
+          >
             Clear
           </button>
         )}
@@ -83,7 +114,33 @@ export function PlaceField({ role, kind, placeholder, value, autoFocus, onPick, 
             <button
               key={`${r.lat},${r.lng},${i}`}
               className="place-result"
-              onClick={() => { setText(r.name); setResults(null); onPick(r) }}
+              onClick={() => take(r)}
+            >
+              <b>{r.name}</b>
+              {r.detail && <small>{r.detail}</small>}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Never both at once: a live search always wins over the history. */}
+      {!results && recent && recent.length > 0 && (
+        <div className="place-results" role="listbox">
+          <p className="place-recent-head">
+            Recent
+            <button
+              className="place-forget"
+              onClick={() => { forgetPlaces(); setRecent(null) }}
+              title="Forget every place picked so far"
+            >
+              Clear
+            </button>
+          </p>
+          {recent.map((r, i) => (
+            <button
+              key={`${r.lat},${r.lng},${i}`}
+              className="place-result"
+              onClick={() => take(r)}
             >
               <b>{r.name}</b>
               {r.detail && <small>{r.detail}</small>}

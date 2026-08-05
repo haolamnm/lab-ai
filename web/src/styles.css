@@ -206,6 +206,20 @@ button { cursor: pointer; }
 .place-result b { font-weight: 500; }
 .place-result small { display: block; color: var(--mute); font-size: 11px; margin-top: 1px; }
 .place-empty { padding: 9px 11px; color: var(--mute); font-size: 12px; }
+/* Names the list as history, so a place that was never searched for in this
+   session is not mistaken for a match on what was just typed. */
+.place-recent-head {
+  display: flex; align-items: center; margin: 0;
+  padding: 7px 11px 5px; border-bottom: 1px solid var(--rule-soft);
+  font-family: var(--mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.09em; text-transform: uppercase; color: var(--mute);
+}
+.place-forget {
+  margin-left: auto; border: none; background: none; padding: 0;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--mute);
+}
+.place-forget:hover { color: var(--w-risk); }
 
 .stop-row {
   display: flex; align-items: center; gap: 9px; padding: 7px 10px; margin-bottom: 7px;
