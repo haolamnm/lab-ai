@@ -1,7 +1,7 @@
 """Planner ownership of optional and algorithm-intrinsic stop ordering."""
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -179,7 +179,7 @@ def test_optional_ordering_does_not_change_leg_search(
         calls += 1
         return selected_search(problem)
 
-    assert selected_search.__name__ == search_name
+    assert cast(Any, selected_search).__name__ == search_name
     monkeypatch.setitem(planner.POINT_SEARCHES, algo, search)
 
     result = planner.plan_route(_request(algo, optimise_order=True))
