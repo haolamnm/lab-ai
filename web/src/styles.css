@@ -441,6 +441,28 @@ button { cursor: pointer; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
 .button.as-label { display: inline-flex; align-items: center; justify-content: center; }
 
+/* Marks a button that opens something rather than doing something. Muted and
+   set apart from the label, so it reads as state and not as part of the name. */
+.button-caret { margin-left: 6px; font-size: 9px; color: var(--mute); }
+.button:hover:not(:disabled) .button-caret { color: inherit; }
+
+/* ---------- Sample scenarios ---------- */
+/* Stacked rather than a grid of chips: each one carries a sentence saying what
+   it demonstrates, and that sentence is the reason to pick it. A row of bare
+   names would fit in less height and tell a reader nothing. */
+.cases { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.case {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  padding: 7px 9px; border: 1px solid transparent; border-radius: 6px;
+  background: none; color: var(--ink-soft);
+}
+.case b { display: block; font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+.case small { display: block; margin-top: 2px; font-size: 11px; line-height: 1.45; color: var(--mute); }
+.case:hover { background: var(--page); }
+.case:hover b { color: var(--ink); }
+.case[aria-pressed='true'] { background: var(--page); border-color: var(--rule); }
+.case[aria-pressed='true'] b { color: var(--ink); }
+
 /* The letter labels of the sample graph — enough to name a node when explaining a route. */
 .node-label {
   font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--ink);

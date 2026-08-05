@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { Icon, VEHICLE_ICON, type IconName } from '../icons'
 import { useStore } from '../store'
 import { areaProblem, DETAIL_LABEL } from '../lib/overpass'
+import { SAMPLE_CASES } from '../lib/sampleCases'
 import { costIsFlat, CRITERIA, PERIODS, traitsOf, VEHICLES, vehicleOf } from '../lib/traffic'
 import type { CriterionKey, Detail, PeriodKey, VehicleKey, Weights } from '../lib/types'
 import { HeldKarpNotice } from './HeldKarpNotice'
@@ -32,7 +33,7 @@ export function Sidebar() {
   const s = useStore(useShallow(st => ({
     graph: st.graph, start: st.start, goal: st.goal, stops: st.stops,
     detail: st.detail, building: st.building, buildError: st.buildError,
-    buildNote: st.buildNote, sample: st.sample, panes: st.panes,
+    buildNote: st.buildNote, sample: st.sample, sampleCase: st.sampleCase, panes: st.panes,
     running: st.running, runError: st.runError,
     period: st.period, vehicle: st.vehicle, criterion: st.criterion,
     weights: st.weights, optimiseOrder: st.optimiseOrder,
@@ -43,6 +44,7 @@ export function Sidebar() {
     setOptimiseOrder: st.setOptimiseOrder, run: st.run,
   })))
   const [adding, setAdding] = useState(false)
+  const [cases, setCases] = useState(false)
   const vehicle = vehicleOf(s.vehicle)
   const ready = !!s.start && !!s.goal
   const nodeCount = s.graph ? Object.keys(s.graph.nodes).length : 0
@@ -121,7 +123,25 @@ export function Sidebar() {
           </button>
 
           <div className="pair">
-            <button className="button" onClick={() => s.loadSample()}>Sample graph</button>
+            {/* A disclosure, not a plain action. The list of scenarios is seven
+                paragraphs tall — long enough that leaving it open permanently
+                would push the conditions and the weight sliders below the fold
+                for the whole session, and it is only read when you are choosing
+                a scenario. So the button that reveals it also puts it away.
+                Pressing it with no sample loaded loads the first scenario as
+                well, since an empty list would be nothing to open. */}
+            <button
+              className="button"
+              aria-expanded={cases}
+              aria-controls="sample-cases"
+              onClick={() => {
+                if (!s.sample) s.loadSample()
+                setCases(o => !o)
+              }}
+            >
+              Sample graph
+              <span className="button-caret" aria-hidden="true">{cases ? '▴' : '▾'}</span>
+            </button>
             <label className="button as-label">
               Import file
               <input
@@ -134,11 +154,25 @@ export function Sidebar() {
               />
             </label>
           </div>
-          {s.sample && (
-            <p className="note lift" style={{ marginTop: 8 }}>
-              Using a custom-designed graph: one letter per node, small enough to trace step by step.
-              Click Build network to go back to OpenStreetMap data.
-            </p>
+          {/* Each scenario sets the whole situation — trip, vehicle, hour and
+              criterion — and says what it is there to show. Gated on the sample
+              network being loaded as well as on the disclosure: every case is a
+              trip across that particular network, so none of them means anything
+              once Build network has replaced it with OpenStreetMap data. */}
+          {cases && s.sample && (
+            <div className="cases" id="sample-cases" role="group" aria-label="Sample scenario">
+              {SAMPLE_CASES.map(c => (
+                <button
+                  key={c.key}
+                  className="case"
+                  aria-pressed={s.sampleCase === c.key}
+                  onClick={() => s.loadSample(c.key)}
+                >
+                  <b>{c.name}</b>
+                  <small>{c.about}</small>
+                </button>
+              ))}
+            </div>
           )}
           {s.detail === 'alleys' && (
             <p className="note lift" style={{ marginTop: 8 }}>

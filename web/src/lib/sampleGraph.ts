@@ -1,5 +1,5 @@
 import { boundsOf } from './geo'
-import type { Graph, GraphEdge, GraphNode, RoadClass } from './types'
+import type { Graph, GraphEdge, GraphNode, Place, RoadClass } from './types'
 
 /**
  * Sample graph designed by the team.
@@ -11,9 +11,9 @@ import type { Graph, GraphEdge, GraphNode, RoadClass } from './types'
  * strings, nobody can trace it by eye. An explanatory example needs the
  * opposite — small, named, controllable.
  *
- * Twenty nodes named after twenty real places in HCMC, each node tagged with
+ * Twenty-one nodes named after real places in HCMC, each node tagged with
  * a letter so a route can be described as "route A -> C -> F -> H", exactly
- * like the sample paragraph in the assignment. Thirty-four edges, above the
+ * like the sample paragraph in the assignment. Thirty-six edges, above the
  * assignment's minimum of twenty nodes and thirty edges, so this dataset can
  * be submitted as-is.
  *
@@ -22,6 +22,10 @@ import type { Graph, GraphEdge, GraphNode, RoadClass } from './types'
  * that cuts through the heavy-congestion cluster at Hàng Xanh, a longer but
  * freer route swinging past Landmark 81, and a few dead-end branches to the
  * west so DFS has somewhere to plunge deep and then have to backtrack.
+ *
+ * Every scenario in `sampleCases.ts` is a trip across this one network — the
+ * network is the constant, and each case changes only where you are going and
+ * under what conditions. Anything added here has to keep all of them working.
  */
 
 interface Row {
@@ -52,6 +56,16 @@ const NODES: Row[] = [
   { label: 'R', name: 'Công viên Đầm Sen',    lat: 10.7680, lng: 106.6350 },
   { label: 'S', name: 'Cầu Chữ Y',            lat: 10.7480, lng: 106.6870 },
   { label: 'T', name: 'Crescent Mall Q7',     lat: 10.7290, lng: 106.7180 },
+  // The one node that is not a landmark. It exists so the network has a stretch
+  // only a motorbike can use, which is the single most Vietnamese thing about
+  // this problem and was otherwise unrepresented: every edge in the original
+  // twenty was a road every vehicle could legally drive. Its two legs run
+  // C -> U -> L alongside the C-L major road, 100 m shorter end to end and less
+  // than half the speed — so a motorbike takes it under every criterion except
+  // Fastest, and no other vehicle can take it at all. Placed on the real Đinh
+  // Tiên Hoàng corridor between Đa Kao and Bà Chiểu, so the detour it draws on
+  // the map is where those alleys actually are.
+  { label: 'U', name: 'Hẻm Đinh Tiên Hoàng',  lat: 10.7930, lng: 106.6923 },
 ]
 
 /** [from, to, km, congestion 1-5, risk 0-1, road class] */
@@ -90,11 +104,13 @@ const EDGES: [string, string, number, number, number, RoadClass][] = [
   ['Q', 'S', 4.3, 3, 0.30, 'secondary'],
   ['S', 'T', 4.0, 2, 0.10, 'primary'],
   ['T', 'H', 6.0, 2, 0.10, 'motorway'],
+  // The alley cut-through. Congestion 1 because alleys do not queue, risk high
+  // because they are narrow and full of parked bikes — so it is cheap on the
+  // congestion term and dear on the risk term, and which way that lands is
+  // exactly what the cost-function comparison is for.
+  ['C', 'U', 1.80, 1, 0.35, 'alley'],
+  ['U', 'L', 1.10, 1, 0.35, 'alley'],
 ]
-
-/** Default nodes when loading the sample graph: from Chợ Bến Thành to Chợ Thủ Đức. */
-export const SAMPLE_START = 'A'
-export const SAMPLE_GOAL = 'J'
 
 export function buildSampleGraph(): Graph {
   const byLabel = new Map(NODES.map(r => [r.label, r]))
@@ -103,7 +119,8 @@ export function buildSampleGraph(): Graph {
 
   const edges: GraphEdge[] = []
   for (const [from, to, km, congestion, risk, roadClass] of EDGES) {
-    const a = byLabel.get(from)!, b = byLabel.get(to)!
+    const a = byLabel.get(from)!
+    const b = byLabel.get(to)!
     const shape: [number, number][] = [[a.lat, a.lng], [b.lat, b.lng]]
     // The edge name just uses the letter pair, so the explanation reads
     // exactly like the sample paragraph in the assignment: "segment E–F is
@@ -121,7 +138,7 @@ export function buildSampleGraph(): Graph {
 }
 
 /** Place data for a sample node, to feed directly into the start-point and destination-point picker. */
-export function samplePlace(label: string) {
+export function samplePlace(label: string): Place {
   const r = NODES.find(n => n.label === label)!
   return { name: `${r.label} · ${r.name}`, detail: 'Sample graph', lat: r.lat, lng: r.lng }
 }
