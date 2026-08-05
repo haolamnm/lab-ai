@@ -103,7 +103,7 @@ def test_optional_ordering_does_not_change_leg_search(
         calls += 1
         return selected_search(problem)
 
-    assert selected_search.__name__ == search_name
+    assert planner.POINT_SEARCHES[algo] is getattr(planner, search_name)
     monkeypatch.setitem(planner.POINT_SEARCHES, algo, search)
 
     result = planner.plan_route(_request(algo, optimise_order=True))
