@@ -3,6 +3,7 @@
 from fastapi.testclient import TestClient
 
 from route_lab.api import app
+from route_lab.contract.request import PlanRequest
 
 from .fixtures import diamond_json
 
@@ -40,6 +41,17 @@ def test_plan_accepts_a_graph_that_still_carries_adj() -> None:
     response = client.post("/plan", json=payload)
     assert response.status_code == 200
     assert response.json()["found"] is True
+
+
+def test_optimise_order_defaults_to_false() -> None:
+    payload = diamond_json("ucs")
+    payload.pop("optimiseOrder")
+
+    assert PlanRequest.model_validate(payload).optimise_order is False
+
+
+def test_greedy_algorithm_is_rejected() -> None:
+    assert client.post("/plan", json=diamond_json("greedy")).status_code == 422
 
 
 def test_negative_weight_is_rejected_at_the_boundary() -> None:

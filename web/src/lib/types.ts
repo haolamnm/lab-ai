@@ -84,7 +84,7 @@ export interface Graph {
 }
 
 export type Detail = 'coarse' | 'medium' | 'fine' | 'alleys'
-export type AlgoKey = 'bfs' | 'dfs' | 'ucs' | 'astar' | 'greedy' | 'nearest' | 'held_karp'
+export type AlgoKey = 'bfs' | 'dfs' | 'ucs' | 'astar' | 'nearest' | 'held_karp'
 export type VehicleKey = 'bike' | 'van' | 'car' | 'truck'
 export type PeriodKey = 'peak' | 'offpeak' | 'night'
 export type CriterionKey = 'balanced' | 'distance' | 'time' | 'avoid' | 'custom'

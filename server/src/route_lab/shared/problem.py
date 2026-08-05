@@ -59,7 +59,7 @@ def build_problem(
     """Assemble the default problem for a leg.
 
     ``cost`` defaults to the traffic cost model. ``guided`` decides the
-    heuristic: a guided search (A*, Greedy) gets the named distance heuristic
+    heuristic: a guided search (A*) gets the named distance heuristic
     (``haversine`` by default; see :data:`route_lab.shared.heuristics.HEURISTICS`),
     scaled to be an admissible lower bound; a blind one (BFS, DFS, UCS) gets the
     zero heuristic, so it is handed a valid function it simply never consults.

@@ -113,18 +113,18 @@ interface State {
  *
  *  This is a comparison tool, and a cap below the number of things there are to
  *  compare is an arbitrary limit rather than a design. The grid wraps at two
- *  columns and scrolls, so the seventh pane costs a row, not a layout. */
+ *  columns and scrolls, so the fifth pane costs a row, not a layout. */
 export const MAX_PANES = ALGOS.length
 /** The order `addPane` hands algorithms out in — the useful ones first, so the
  *  first two panes are the two that produce an optimal route. */
-const ALGO_ORDER: AlgoKey[] = ['astar', 'ucs', 'bfs', 'dfs', 'greedy', 'nearest', 'held_karp']
+const ALGO_ORDER: AlgoKey[] = ['astar', 'ucs', 'bfs', 'dfs', 'nearest', 'held_karp']
 let seq = 0
 
 export const useStore = create<State>((set, get) => ({
   start: null, goal: null, stops: [],
   detail: 'medium', graph: null, building: false, buildError: null, buildNote: null, sample: false,
   period: 'peak', vehicle: 'bike', criterion: 'balanced',
-  weights: { ...CRITERIA.balanced.weights }, optimiseOrder: true,
+  weights: { ...CRITERIA.balanced.weights }, optimiseOrder: false,
   panes: [], step: 0, maxStep: 0, playing: false, speed: 1, syncView: true,
   running: false, runError: null,
 
@@ -254,7 +254,7 @@ export const useStore = create<State>((set, get) => ({
 
       // Re-pin the three trip points onto the new graph, exactly as build() and loadSample() do.
       // Skip this step and start.nodeId still points at a node ID from the old graph: BFS, DFS,
-      // and UCS silently return "unreachable" because adj[start] is empty, while A* and Greedy
+      // and UCS silently return "unreachable" because adj[start] is empty, while A*
       // crash outright — haversine reads .lat off a node that no longer exists.
       const fresh = get()
       set({

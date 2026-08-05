@@ -92,7 +92,7 @@ def test_plan_endpoint_accepts_held_karp() -> None:
     assert response.json()["found"] is True
 
 
-def test_held_karp_plans_closed_multi_stop_route_with_pairwise_astar(
+def test_held_karp_follows_entered_order_when_optimisation_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls = 0
@@ -106,12 +106,12 @@ def test_held_karp_plans_closed_multi_stop_route_with_pairwise_astar(
     result = planner.plan_route(_request(stops=["B", "A"], optimise_order=False))
 
     assert result.found is True
-    assert result.order == ["W", "A", "B", "W"]
-    assert result.path == ["W", "A", "B", "W"]
-    assert result.metrics.km == 3.0
-    assert result.metrics.cost == 3.0
-    assert result.metrics.optimal is True
-    assert calls == 6
+    assert result.order == ["W", "B", "A", "W"]
+    assert result.path == ["W", "B", "A", "W"]
+    assert result.metrics.km == 4.5
+    assert result.metrics.cost == 4.5
+    assert result.metrics.optimal is False
+    assert calls == 3
 
 
 def test_held_karp_assembles_only_selected_cached_legs(

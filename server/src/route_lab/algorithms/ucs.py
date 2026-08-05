@@ -18,8 +18,8 @@ It is also the whole pattern in one file. Read it before writing a new algorithm
     the frontier empties without reaching it.
 
 To write A*, change one line: push with ``candidate + problem.heuristic(...)``
-and pass that estimate to ``record_expansion``. Greedy pushes with the heuristic
-alone. BFS/DFS swap the ``PriorityQueue`` for a ``Queue``/``Stack`` and count
+and pass that estimate to ``record_expansion``. BFS/DFS swap the
+``PriorityQueue`` for a ``Queue``/``Stack`` and count
 cost in hops. That is the entire difference between the algorithms.
 """
 

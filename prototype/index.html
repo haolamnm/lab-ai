@@ -340,7 +340,7 @@ const CRITERIA = {
 };
 
 const query = {
-  start:'n1', goal:'n10', stops:[], optimizeOrder:true,
+  start:'n1', goal:'n10', stops:[], optimizeOrder:false,
   timeOfDay:'peak', vehicle:'bike',
   weights:{ ...CRITERIA.balanced },
 };
@@ -361,7 +361,7 @@ function haversine(a, b) {
 /* ============================================================
    3. ALGORITHMS  —  the real version lives in the FastAPI backend
    ============================================================ */
-const ALGOS = { bfs:'BFS', dfs:'DFS', ucs:'UCS', astar:'A*', greedy:'Greedy Best-First' };
+const ALGOS = { bfs:'BFS', dfs:'DFS', ucs:'UCS', astar:'A*' };
 
 // The lowest cost per km in the road network. Multiplying it by the straight-line
 // distance gives a lower bound on the real cost, so the heuristic stays admissible
@@ -377,7 +377,7 @@ function search(algo, start, goal) {
   const parent = { [start]:null }, gScore = { [start]:0 };
   const closed = new Set(), trace = [];
   let frontier = [start], found = false;
-  const priority = { ucs:i=>gScore[i], astar:i=>gScore[i]+h(i), greedy:i=>h(i) }[algo];
+  const priority = { ucs:i=>gScore[i], astar:i=>gScore[i]+h(i) }[algo];
 
   while (frontier.length) {
     let cur;
@@ -394,7 +394,7 @@ function search(algo, start, goal) {
     trace.push({
       expanded:cur, frontier:[...frontier],
       g:+(gScore[cur] ?? 0).toFixed(2),
-      h:(algo === 'astar' || algo === 'greedy') ? +h(cur).toFixed(2) : null,
+      h:algo === 'astar' ? +h(cur).toFixed(2) : null,
       parent:parent[cur],
     });
     if (cur === goal) { found = true; break; }
@@ -425,9 +425,9 @@ function legStats(path) {
 }
 
 // Multiple stops: order the visits by real UCS-cost nearest neighbor
-function nearestNeighborOrder(start, stops, goal) {
+function nearestNeighborOrder(start, destinations) {
   const costTo = (a,b) => { const r = search('ucs',a,b); return r.found ? legStats(r.path).cost : Infinity; };
-  const left = [...stops], order = [];
+  const left = [...destinations], order = [];
   let cur = start;
   while (left.length) {
     let bi = 0;
@@ -439,10 +439,11 @@ function nearestNeighborOrder(start, stops, goal) {
 
 // Run the whole trip (possibly multiple legs) for one algorithm, joining the traces into a single timeline
 function planRoute(algo) {
-  const stops = query.optimizeOrder && query.stops.length > 1
-    ? nearestNeighborOrder(query.start, query.stops, query.goal)
-    : [...query.stops];
-  const seq = [query.start, ...stops, query.goal].filter((v,i,a) => i === 0 || v !== a[i-1]);
+  const destinations = [...query.stops, query.goal];
+  const ordered = query.optimizeOrder && destinations.length > 1
+    ? nearestNeighborOrder(query.start, destinations)
+    : destinations;
+  const seq = [query.start, ...ordered].filter((v,i,a) => i === 0 || v !== a[i-1]);
 
   const trace = [], reveal = [], fullPath = [];
   let km = 0, min = 0, cost = 0, ms = 0, ok = true;
