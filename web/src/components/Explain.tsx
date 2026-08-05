@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { explain, toExportable } from '../lib/explain'
 import { algoOf } from '../lib/search'
 import type { Conditions } from '../lib/traffic'
@@ -25,6 +25,7 @@ export function Explain() {
   const vehicle = useStore(s => s.vehicle)
   const period = useStore(s => s.period)
   const weights = useStore(s => s.weights)
+  const [open, setOpen] = useState(true)
 
   const conditions: Conditions = { vehicle, period, weights }
 
@@ -71,15 +72,39 @@ export function Explain() {
   }
 
   return (
-    <section className="explain">
-      <header className="explain-head">
+    <section className="explain" data-open={open}>
+      {/* Folds away like the two comparison tables below it. This block is the
+          tallest fixed thing on the screen — it was taking a quarter of the
+          stage's height and handing what was left to the panes, which are the
+          part you actually watch. Same header, same wording, same place as its
+          neighbours, so there is no new control to learn. */}
+      {/* The whole row is the button, exactly as the two comparison headers are.
+          Wrapping only the words left the rest of the row dead to the pointer —
+          it looked identical to its neighbours and did not behave like them.
+          Export data cannot live inside it (a button inside a button is not
+          valid), so it moved down into the body, which is where the data it
+          exports is described anyway, and where it is hidden along with
+          everything else while this is folded away. */}
+      <button
+        className="explain-head"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        title={open ? 'Fold this away and give the panes the height' : 'Read why this route was chosen'}
+      >
         <h2>Why this route was chosen</h2>
-        <button className="button" onClick={download} title="Save the network and results to a JSON file">
-          Export data
-        </button>
-      </header>
+        <span className="explain-caret">{open ? 'Collapse' : 'Expand'}</span>
+      </button>
 
-      <div className="explain-body">
+      <div className="explain-body" hidden={!open}>
+        {/* At the top of the body, not the bottom. The body scrolls once the
+            explanation runs past its ceiling, and at the bottom the button spent
+            most of its life below the fold, half-clipped by the section edge. */}
+        <div className="explain-foot">
+          <button className="button" onClick={download} title="Save the network and results to a JSON file">
+            Export data
+          </button>
+        </div>
+
         <p className="explain-lead">
           {info.headline}
           {info.titles.length > 0 && <> Among the algorithms currently running, this is the {info.titles.join(', ')} route.</>}

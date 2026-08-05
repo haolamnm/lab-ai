@@ -3,6 +3,8 @@ import { MapPane } from './components/MapPane'
 import { Sidebar } from './components/Sidebar'
 import { Explain } from './components/Explain'
 import { Compare } from './components/Compare'
+import { CompareAlgos } from './components/CompareAlgos'
+import { CompareCriteria } from './components/CompareCriteria'
 import { Timeline } from './components/Timeline'
 import { MAX_PANES, useStore } from './store'
 
@@ -65,8 +67,21 @@ export default function App() {
             )}
           </div>
 
-          <Explain />
-          <Compare />
+          {/* The three read-outs share one bounded, scrolling region. Each is a
+              fixed-height block that refuses to shrink, so with all three open
+              they used to add up to more than the stage had and simply ran off
+              the bottom of it. Capping them together means the grid keeps its
+              floor, the timeline keeps its place, and any excess becomes a
+              scrollbar on the read-outs — which are text, and scroll fine. */}
+          <div className="readouts">
+            {/* One table per axis the app can vary, in the order the trip is
+                set up: which algorithm, then what it is optimising for, then
+                what is doing the driving. */}
+            <Explain />
+            <CompareAlgos />
+            <CompareCriteria />
+            <Compare />
+          </div>
           <Timeline />
         </main>
       </div>

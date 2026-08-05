@@ -459,17 +459,36 @@ button { cursor: pointer; }
 .pane-live-q { margin-left: auto; }
 
 /* ---------- Route explanation block ---------- */
+/* No padding on the section: it belongs to the header and the body separately,
+   so the header's hit area reaches the edges instead of stopping 16px short of
+   them. `.compare` is built the same way, which is the point — the two sit one
+   above the other and have to behave identically. */
 .explain {
   flex: none; max-height: 190px; overflow-y: auto;
   background: var(--paper); border-top: 1px solid var(--rule);
-  padding: 12px 16px 14px;
 }
-.explain-head { display: flex; align-items: center; gap: 12px; margin-bottom: 9px; }
+/* Folded away it is just its own header, the same height as the two comparison
+   headers under it — the overflow has to go too, or the box keeps the scroll
+   gutter it no longer has anything to scroll. */
+.explain[data-open='false'] { max-height: none; overflow: visible; }
+/* The header IS the button, edge to edge, so the whole row responds. */
+.explain-head {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  margin: 0; padding: 10px 16px; border: none; background: none; text-align: left;
+}
+.explain-body { padding: 2px 16px 14px; }
+.explain-head:hover h2 { color: var(--ink); }
 .explain-head h2 {
   margin: 0; font-family: var(--mono); font-size: 10.5px; font-weight: 500;
   letter-spacing: 0.11em; text-transform: uppercase; color: var(--mute);
+  transition: color .16s var(--ease);
 }
-.explain-head .button { margin-left: auto; padding: 4px 10px; font-size: 12px; }
+.explain-caret { margin-left: auto; font-size: 11.5px; color: var(--mute); }
+/* Floated so the explanation's first line runs alongside it rather than starting
+   underneath — the button is an aside, and a full row of its own would push the
+   sentence people actually read further down the scroll. */
+.explain-foot { float: right; margin: 0 0 6px 12px; }
+.explain-foot .button { padding: 4px 10px; font-size: 12px; }
 .explain-lead { margin: 0 0 8px; font-size: 13.5px; line-height: 1.5; }
 .explain-row { margin: 0 0 6px; font-size: 12.5px; line-height: 1.55; color: var(--ink-soft); }
 .explain-row:last-child { margin-bottom: 0; }
@@ -553,6 +572,40 @@ button { cursor: pointer; }
 }
 tr[data-on='true'] .compare-pick { color: var(--ink); font-weight: 600; }
 .compare-pick:hover { color: var(--ink); }
+/* ---------- Algorithm comparison table ---------- */
+/* Eleven columns of numbers do not fit a narrow window, and wrapping them would
+   destroy the column alignment that is the whole point of the table — so it
+   scrolls sideways inside its own box instead. */
+.compare-table.algos { min-width: 900px; }
+.compare-table.criteria { min-width: 720px; }
+/* The four weights, in the order the sliders are stacked. Muted because they are
+   the input to the row, not one of its results. */
+.weights-cell { color: var(--mute); font-size: 11px; white-space: nowrap; }
+.compare-body { overflow-x: auto; }
+.algo-name { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+/* The same hue the pane carries, so a row and its pane are recognisably the same run. */
+.algo-swatch {
+  width: 8px; height: 8px; border-radius: 50%; flex: none;
+}
+/* The best value in a column. Underlined rather than coloured: colour in this app
+   already means congestion, and a green "best" cell would read as a clear road. */
+.compare-table td[data-best='true'] {
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 -1px var(--ink);
+}
+.compare-order {
+  font-size: 11.5px; color: var(--ink); max-width: 260px;
+}
+/* A stop the algorithms disagreed on. Bold as well as red, so the difference
+   survives for a reader who cannot separate the two colours. */
+.compare-order [data-differs='true'],
+.order-differs { color: var(--w-risk); font-weight: 600; }
+.verdict-cell {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--mute);
+}
+.verdict-cell[data-optimal='true'] { color: var(--ink); }
+
 /* Route group letter: matching letters mean the routes overlap. */
 .compare-group {
   display: inline-block; min-width: 18px; text-align: center;
