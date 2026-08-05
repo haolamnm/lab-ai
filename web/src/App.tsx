@@ -1,4 +1,5 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Icon } from './icons'
 import { MapPane } from './components/MapPane'
 import { Sidebar } from './components/Sidebar'
 import { Explain } from './components/Explain'
@@ -8,6 +9,11 @@ import { CompareCriteria } from './components/CompareCriteria'
 import { Timeline } from './components/Timeline'
 import { MAX_PANES, useStore } from './store'
 
+/** ⌘ on a Mac, Ctrl everywhere else — so the tooltip names the key actually pressed. */
+const shortcutKey = typeof navigator !== 'undefined' && /Mac|iP(hone|ad)/.test(navigator.platform)
+  ? '⌘'
+  : 'Ctrl+'
+
 export default function App() {
   const panes = useStore(s => s.panes)
   const graph = useStore(s => s.graph)
@@ -16,26 +22,89 @@ export default function App() {
   const syncView = useStore(s => s.syncView)
   const toggleSync = useStore(s => s.toggleSync)
   const dragging = useRef<string | null>(null)
+  // Local, not in the store: nothing outside this component reacts to it, and
+  // the sidebar stays mounted either way — so everything typed into it survives
+  // being folded away and comes back untouched.
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+
+  // Cmd/Ctrl+B, the shortcut every editor and shadcn's own sidebar use for this.
+  // Guarded on a text field having focus: the sidebar is mostly text fields, and
+  // swallowing a keystroke someone meant for the pickup box would be worse than
+  // not having the shortcut at all.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'b' || !(e.metaKey || e.ctrlKey)) return
+      const el = document.activeElement
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return
+      e.preventDefault()
+      setSidebarOpen(o => !o)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
     <div className="app">
       <header className="topbar">
-        <span className="wordmark">Route <b>Lab</b> <em>· delivery</em></span>
-        <button className="button" onClick={toggleSync} aria-pressed={syncView}>
-          {syncView ? 'Synced view' : 'Independent view'}
+        {/* A quiet icon at the edge of the header, not a labelled toggle beside
+            the Maps one. Those two do different kinds of work: the Maps button
+            names a mode you have to reason about, so it says which mode it is
+            in; this one just folds a column away, and you can see whether the
+            column is there. Giving it the same weight would put a second thing
+            in the header competing to be read. */}
+        <button
+          className="icon-button"
+          onClick={() => setSidebarOpen(o => !o)}
+          aria-expanded={sidebarOpen}
+          aria-controls="sidebar"
+          aria-label={sidebarOpen ? 'Hide the sidebar' : 'Show the sidebar'}
+          title={`${sidebarOpen ? 'Hide' : 'Show'} the trip and conditions column  (${shortcutKey}B)`}
+        >
+          <Icon name="panelLeft" size={17} />
         </button>
+        <span className="wordmark">Route <b>Lab</b> <em>· delivery</em></span>
+        {/* The label used to read "Synced view" / "Independent view", which states
+            the mode but not what pressing it would do — and on a filled button
+            that reads just as easily as the action itself. Naming the thing being
+            synced, and spelling out both the current state and the consequence in
+            the tooltip, leaves nothing to infer from the styling. */}
+        <button
+          className="button"
+          onClick={toggleSync}
+          aria-pressed={syncView}
+          title={syncView
+            ? 'Maps are synced: pan or zoom one and every other map follows. Click to let each pane move on its own. The Tree view always keeps its own zoom.'
+            : 'Maps move independently. Click to sync them — every pane will jump to the leftmost pane\'s view, and then follow each other.'}
+        >
+          Maps: {syncView ? 'synced' : 'independent'}
+        </button>
+        {/* Grouped by when each mark is on screen, because they are not all on
+            screen at once. The frontier ring and the expanded dot exist only
+            while a search is playing — they are cleared the moment it finishes —
+            so listing all seven flat described two of them as though they were
+            always there, and left a reader hunting for marks that had already
+            done their job and gone. */}
         <div className="legend">
-          <span><i className="swatch pin-start" /> pickup</span>
-          <span><i className="swatch pin-goal" /> dropoff</span>
-          <span><i className="swatch" style={{ background: '#1f9d55' }} /> clear road</span>
-          <span><i className="swatch" style={{ background: '#d4342c' }} /> congested road</span>
-          <span><i className="swatch hollow" /> frontier</span>
-          <span><i className="swatch" style={{ background: '#3b5bdb' }} /> expanded</span>
-          <span><i className="swatch ink" /> chosen route</span>
+          <span className="legend-group">
+            <b>network</b>
+            <span><i className="swatch pin-start" /> pickup</span>
+            <span><i className="swatch pin-goal" /> dropoff</span>
+            <span><i className="swatch" style={{ background: '#1f9d55' }} /> clear road</span>
+            <span><i className="swatch" style={{ background: '#d4342c' }} /> congested road</span>
+          </span>
+          <span className="legend-group">
+            <b>while searching</b>
+            <span><i className="swatch hollow" /> frontier</span>
+            <span><i className="swatch" style={{ background: '#3b5bdb' }} /> expanded</span>
+          </span>
+          <span className="legend-group">
+            <b>result</b>
+            <span><i className="swatch route" /> chosen route</span>
+          </span>
         </div>
       </header>
 
-      <div className="shell">
+      <div className="shell" data-sidebar={sidebarOpen ? 'open' : 'closed'}>
         <Sidebar />
 
         <main className="stage">

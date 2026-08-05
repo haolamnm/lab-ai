@@ -23,6 +23,7 @@ export type IconName =
   | 'scooter' | 'van' | 'car' | 'truck'
   | 'peak' | 'offpeak' | 'night'
   | 'trunkRoads' | 'midRoads' | 'smallRoads' | 'alleys'
+  | 'panelLeft'
 
 export const ICONS: Record<IconName, Shape[]> = {
   /* ---------- Vehicles ---------- */
@@ -124,5 +125,16 @@ export const ICONS: Record<IconName, Shape[]> = {
     { t: 'path', d: 'M3.4 4.2h17.2M3.4 8.1h17.2M3.4 12h17.2M3.4 15.9h17.2M3.4 19.8h17.2' },
     { t: 'path', d: 'M4.2 3.4v17.2M8.1 3.4v17.2M12 3.4v17.2M15.9 3.4v17.2M19.8 3.4v17.2' },
     { t: 'circle', cx: 12, cy: 12, r: 1.3, node: true },
+  ],
+
+  /* ---------- Interface ---------- */
+
+  // Folds the left-hand column away. The frame is the window and the rule inside it is the
+  // column's edge, which is the same picture every desktop app draws for this — the one place
+  // in the set where being recognisable beats being drawn in the map's own vocabulary, since
+  // nobody should have to learn a private glyph to find the sidebar.
+  panelLeft: [
+    { t: 'path', d: 'M5 3.4h14a1.6 1.6 0 0 1 1.6 1.6v14a1.6 1.6 0 0 1-1.6 1.6H5a1.6 1.6 0 0 1-1.6-1.6V5A1.6 1.6 0 0 1 5 3.4z' },
+    { t: 'path', d: 'M9.4 3.4v17.2' },
   ],
 }

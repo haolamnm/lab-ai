@@ -91,12 +91,33 @@ button { cursor: pointer; }
   padding: 0 18px; height: 48px;
   background: var(--paper); border-bottom: 1px solid var(--rule);
 }
+/* The sidebar trigger. A ghost button: no border, no fill, until you reach for
+   it — it belongs to the window frame rather than to the controls, so it should
+   not read as one more thing to decide about. */
+.icon-button {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; margin-left: -4px;
+  border: none; border-radius: 5px; background: none; color: var(--mute);
+  transition: background .16s var(--ease), color .16s var(--ease);
+}
+.icon-button:hover { background: var(--page); color: var(--ink); }
+.icon-button[aria-expanded='false'] { color: var(--ink); }
+
 .wordmark { font-weight: 600; letter-spacing: -0.01em; }
 .wordmark b { font-weight: 600; }
 .wordmark em { font-style: normal; font-family: var(--mono); font-weight: 400; color: var(--mute); }
 
-.legend { display: flex; gap: 15px; margin-left: auto; color: var(--mute); font-size: 11px; }
+.legend { display: flex; gap: 18px; margin-left: auto; color: var(--mute); font-size: 11px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
+/* A rule before each group rather than a box around it: the header bar already
+   has a border under it, and three more boxes up there would be louder than the
+   swatches they are meant to be organising. */
+.legend-group { gap: 12px; padding-left: 18px; border-left: 1px solid var(--rule); }
+.legend-group:first-child { padding-left: 0; border-left: none; }
+.legend-group > b {
+  font-family: var(--mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--rule-strong, #c3bba8);
+}
 .swatch { width: 8px; height: 8px; border-radius: 50%; }
 .swatch.hollow { background: var(--paper); box-shadow: inset 0 0 0 2px var(--queued); }
 .swatch.ink { background: var(--ink); }
@@ -114,6 +135,15 @@ button { cursor: pointer; }
 .sidebar {
   flex: none; width: 344px; display: flex; flex-direction: column;
   background: var(--paper); border-right: 1px solid var(--rule); min-height: 0;
+  /* Folding it away is a width change, so the column has to clip rather than
+     spill its contents across the panes on the way in and out. */
+  overflow: hidden; transition: width .22s var(--ease);
+}
+/* Folded away. The sidebar stays mounted — every place, weight and toggle in it
+   is preserved — but `visibility` takes it out of the tab order and off the
+   accessibility tree, so nothing invisible can still be reached by keyboard. */
+.shell[data-sidebar='closed'] .sidebar {
+  width: 0; border-right-width: 0; visibility: hidden;
 }
 .sidebar-scroll { flex: 1; overflow-y: auto; }
 
@@ -308,8 +338,21 @@ button { cursor: pointer; }
 .grid {
   flex: 1; overflow: auto; padding: 16px; display: flex; flex-wrap: wrap;
   gap: 16px; align-content: flex-start; background: var(--page);
+  /* The panes are the part being watched, so they get a floor no amount of
+     explanation below them can push through. Without it, opening every block
+     under the grid squeezed the maps into a strip. */
+  min-height: 46%;
 }
+/* The read-outs together take at most the rest, and scroll inside that. Their
+   ceiling and the grid's floor are set against each other on purpose: 46 + 45
+   leaves room for the timeline strip, so nothing can be pushed off the stage. */
+.readouts { flex: none; max-height: 45%; overflow-y: auto; }
 
+/* The empty state is the only thing in the grid, so it sits in the middle of it.
+   This has to be scoped to that case: `align-content: flex-start` above is what
+   keeps the panes themselves packed against the top, and centring those would
+   leave a growing gap over the first row as panes are added. */
+.grid:has(> .blank) { align-content: center; }
 .blank { margin: auto; max-width: 380px; text-align: center; padding: 40px 20px; animation: rise .3s var(--ease); }
 .blank h1 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
 .blank p { margin: 0 0 20px; color: var(--mute); }

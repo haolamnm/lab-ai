@@ -55,7 +55,7 @@ export function Sidebar() {
     : null
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" id="sidebar">
       <div className="sidebar-scroll">
 
         <section className="block">
