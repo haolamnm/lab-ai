@@ -11,6 +11,7 @@ and cached legs, then apply their own trip-level ordering strategy.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from itertools import pairwise
 
 from route_lab.algorithms.astar import a_star_search
 from route_lab.algorithms.base import AlgorithmNotImplemented
@@ -112,7 +113,7 @@ def _assemble_cached_legs(
     runtime. Reported metrics describe only the cached legs in ``order``.
     """
     selected_legs: list[SearchLegResult] = []
-    for source, target in zip(order, order[1:], strict=False):
+    for source, target in pairwise(order):
         if source == target:
             continue
         leg = paths.get((source, target))
