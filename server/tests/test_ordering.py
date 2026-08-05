@@ -59,12 +59,14 @@ def _multi_destination_request(algo: str, *, optimise_order: bool) -> PlanReques
         *edges,
         *[{**edge, "from": edge["to"], "to": edge["from"]} for edge in edges],
     ]
-    request.update({
-        "start": "A",
-        "stops": ["C"],
-        "goal": "B",
-        "optimiseOrder": optimise_order,
-    })
+    request.update(
+        {
+            "start": "A",
+            "stops": ["C"],
+            "goal": "B",
+            "optimiseOrder": optimise_order,
+        }
+    )
     return PlanRequest.model_validate(request)
 
 
