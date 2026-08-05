@@ -32,8 +32,19 @@ export function anchorTo(graph: Graph | null, place: Place, vehicle: VehicleKey,
     : { nodeId: null, metres: 0 }
 }
 
-/** Two ways of viewing the same result: laid over a real map, or peeled apart into a schematic. */
-export type PaneView = 'map' | 'graph' | 'tree'
+/**
+ * Two ways of viewing the same result: laid over the real city, or as the search
+ * tree the algorithm actually built.
+ *
+ * There was a third, "Schematic" — the same map with the basemap tiles taken
+ * away and the roads flattened to one neutral tone. It existed to strip the
+ * clutter away from the exploration footprint, but it kept every node at its
+ * true geographic position, so it answered the same question the map does and
+ * only looked quieter doing it. Once the tree view became a readable node-link
+ * diagram, that was the view for reading structure, and the schematic sat
+ * between the two answering neither.
+ */
+export type PaneView = 'map' | 'tree'
 
 export interface Pane {
   id: string

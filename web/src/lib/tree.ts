@@ -1,20 +1,39 @@
 import type { RouteResult } from './types'
 
 /**
- * Lays the search tree out on the plane in a radial layout.
+ * Lays the search tree out as a layered diagram: depth downwards, siblings
+ * side by side.
  *
  * Every expanded node has a parent — the node that led to it. That set of
  * parent-child pairs is a genuine tree, and **the shape of the tree is a
  * portrait of the algorithm**: DFS produces one long, almost unbranched
  * chain; BFS produces a fan spreading evenly layer by layer; A* produces a
- * teardrop shape skewed hard toward the goal; Greedy produces a single thin
- * branch. Put four trees side by side and the difference is obvious without
- * a word of explanation.
+ * teardrop shape skewed hard toward the goal. Put four trees side by side and
+ * the difference is obvious without a word of explanation.
  *
- * This uses a radial layout by depth rather than a force-directed
- * simulation: the result is computed once and stays identical across runs,
- * so comparisons stay meaningful, and it costs no physics loop per frame.
+ * The layout was radial until it became clear that radial hides the two things
+ * a reader actually wants. Depth was the radius, and nobody reads a radius —
+ * level four and level five look alike. Worse, an arrow from parent to child
+ * pointed in an arbitrary direction, so "which node did this one lead to" had
+ * no consistent answer anywhere on screen. Laying depth out as rows fixes both:
+ * depth is a row, every arrow points down, and the diagram reads top to bottom
+ * like any other search tree.
+ *
+ * This is the classic tidy layout — leaves take consecutive slots, a parent
+ * centres over its children — not a force-directed simulation: the result is
+ * computed once and stays identical across runs, so comparisons stay
+ * meaningful, and it costs no physics loop per frame.
  */
+
+/**
+ * Vertical distance between one depth and the next, in leaf-slot widths.
+ *
+ * Kept tight on purpose. A pane is roughly twice as wide as it is tall, so
+ * height is the scarce dimension: every unit of vertical spacing costs more
+ * on-screen size than a unit of horizontal spacing does. Room for one line of
+ * arithmetic under each node is all this needs to buy.
+ */
+export const LEVEL_GAP = 1.8
 
 export interface TreeNode {
   /** Node index into RouteResult.nodeIds. */
@@ -25,12 +44,18 @@ export interface TreeNode {
   x: number
   y: number
   parent: number | null
+  /** Cost of the route that reached this node, as of the step that expanded it. */
+  g: number
+  /** Heuristic estimate at that step, or null for the blind searches (BFS/DFS/UCS). */
+  h: number | null
 }
 
 export interface Tree {
   nodes: TreeNode[]
   /** Looks up array position in nodes from node index. */
   at: Map<number, number>
+  /** Children of each node, in expansion order — the arrows out of it. */
+  kids: Map<number, number[]>
   maxDepth: number
   /** Tight bounding box around the nodes: [xMin, yMin, xMax, yMax]. */
   bounds: [number, number, number, number]
@@ -54,8 +79,8 @@ export function buildTree(result: RouteResult): Tree {
     // sitting between two consecutive legs gets expanded once per leg, each
     // time with a different parent. Accepting both would put that node into
     // the kids of both parents, walking it twice and producing a ghost
-    // duplicate in `nodes` — skewing the fan angle of every ancestor along
-    // with it.
+    // duplicate in `nodes` — which in a tidy layout would hand the same node
+    // two different columns.
     if (orderOf.get(s.expanded) !== i) return
     const p = s.parent
     const valid = p != null && orderOf.has(p) && orderOf.get(p)! < i
@@ -68,58 +93,65 @@ export function buildTree(result: RouteResult): Tree {
     }
   })
 
-  // Count each branch's leaves so the angle is divided fairly.
-  const leaves = new Map<number, number>()
-  const countLeaves = (n: number): number => {
-    const c = kids.get(n)
-    if (!c || !c.length) { leaves.set(n, 1); return 1 }
-    const total = c.reduce((s, k) => s + countLeaves(k), 0)
-    leaves.set(n, total)
-    return total
+  // Walk with an explicit stack: a DFS tree can run hundreds of levels deep,
+  // and recursion there would overflow the call stack. Two passes are folded
+  // into the one walk — depth is known on the way down, but a parent's column
+  // is the midpoint of its children's, so it can only be set on the way back up.
+  const depthOf = new Map<number, number>()
+  const xOf = new Map<number, number>()
+  let maxDepth = 0
+  let slot = 0
+
+  for (const root of roots) {
+    depthOf.set(root, 0)
+    const stack: { n: number; up: boolean }[] = [{ n: root, up: false }]
+    while (stack.length) {
+      const frame = stack[stack.length - 1]
+      const children = kids.get(frame.n) ?? []
+      if (!frame.up) {
+        frame.up = true
+        const depth = depthOf.get(frame.n)!
+        if (depth > maxDepth) maxDepth = depth
+        // Pushed in reverse so the first child ends up on top of the stack and
+        // therefore takes the leftmost slot — the tree reads in expansion order.
+        for (let i = children.length - 1; i >= 0; i--) {
+          depthOf.set(children[i], depth + 1)
+          stack.push({ n: children[i], up: false })
+        }
+        continue
+      }
+      stack.pop()
+      if (!children.length) {
+        xOf.set(frame.n, slot)
+        slot += 1
+      } else {
+        const first = xOf.get(children[0])!
+        const last = xOf.get(children[children.length - 1])!
+        xOf.set(frame.n, (first + last) / 2)
+      }
+    }
+    // A blank column between two roots, so the legs of a multi-stop trip read
+    // as separate trees rather than one tree with a strangely wide fork.
+    slot += 1
   }
-  const totalLeaves = roots.reduce((s, r) => s + countLeaves(r), 0) || 1
 
   const nodes: TreeNode[] = []
   const at = new Map<number, number>()
-  let maxDepth = 0
-
-  // Walk with an explicit stack: a DFS tree can run hundreds of levels
-  // deep, and recursion there would overflow the call stack.
-  const stack: { n: number; depth: number; from: number; span: number }[] = []
-  let cursor = 0
-  for (const r of roots) {
-    const span = (leaves.get(r) ?? 1) / totalLeaves
-    stack.push({ n: r, depth: 0, from: cursor, span })
-    cursor += span
-  }
-
-  while (stack.length) {
-    const { n, depth, from, span } = stack.pop()!
-    const angle = (from + span / 2) * Math.PI * 2 - Math.PI / 2
-    const radius = depth
-    maxDepth = Math.max(maxDepth, depth)
-    at.set(n, nodes.length)
+  for (const [idx, depth] of depthOf) {
+    const step = orderOf.get(idx) ?? 0
+    at.set(idx, nodes.length)
     nodes.push({
-      idx: n,
-      order: orderOf.get(n) ?? 0,
+      idx,
+      order: step,
       depth,
-      x: Math.cos(angle) * radius,
-      y: Math.sin(angle) * radius,
-      parent: parentOf.get(n) ?? null,
+      x: xOf.get(idx) ?? 0,
+      y: depth * LEVEL_GAP,
+      parent: parentOf.get(idx) ?? null,
+      g: trace[step]?.g ?? 0,
+      h: trace[step]?.h ?? null,
     })
-
-    let acc = from
-    for (const k of kids.get(n) ?? []) {
-      const kSpan = span * ((leaves.get(k) ?? 1) / (leaves.get(n) ?? 1))
-      stack.push({ n: k, depth: depth + 1, from: acc, span: kSpan })
-      acc += kSpan
-    }
   }
 
-  // A radial tree rarely fills the whole circle — branches bunching toward
-  // one side is normal, especially for A*. Use a tight bounding box instead
-  // of a radius-based square so the tree fills the pane instead of huddling
-  // in the middle of empty space.
   let xMin = 0, yMin = 0, xMax = 0, yMax = 0
   for (const n of nodes) {
     if (n.x < xMin) xMin = n.x
@@ -128,5 +160,5 @@ export function buildTree(result: RouteResult): Tree {
     if (n.y > yMax) yMax = n.y
   }
 
-  return { nodes, at, maxDepth, bounds: [xMin, yMin, xMax, yMax] }
+  return { nodes, at, kids, maxDepth, bounds: [xMin, yMin, xMax, yMax] }
 }

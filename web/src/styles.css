@@ -100,6 +100,10 @@ button { cursor: pointer; }
 .swatch { width: 8px; height: 8px; border-radius: 50%; }
 .swatch.hollow { background: var(--paper); box-shadow: inset 0 0 0 2px var(--queued); }
 .swatch.ink { background: var(--ink); }
+/* Matches ROUTE/ROUTE_EDGE in MapPane and PATH in TreeView. The ring is what
+   tells it apart from the congestion ramp's orange, which is the one other warm
+   thing on the pane. */
+.swatch.route { background: #f59e0b; box-shadow: 0 0 0 1.5px #7a4405; }
 /* Mirrors the map pins, shape included — the legend has to look like the thing. */
 .swatch.pin-start { background: var(--pin-start); }
 .swatch.pin-goal { background: var(--pin-goal); border-radius: 2px; }
@@ -197,10 +201,20 @@ button { cursor: pointer; }
 .button:hover:not(:disabled) { background: var(--page); border-color: var(--track); }
 .button:active:not(:disabled) { transform: translateY(1px); }
 .button.solid { background: var(--ink); border-color: var(--ink); color: var(--paper); }
-.button.solid:hover:not(:disabled) { background: #3a352d; border-color: #3a352d; }
 .button:disabled { border-color: var(--rule-soft); color: var(--mute); background: var(--paper); cursor: default; }
 .button.wide { width: 100%; }
 .button[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+/* A pressed toggle is a filled button, so it has to hover like one — the same
+   lift `.solid` gets, which is why they share this rule.
+   Without the second selector, the plain `.button:hover` above won this match:
+   it carries a `:not()`, which outscores `[aria-pressed]` on specificity. And it
+   sets only the background, not the colour — so the pressed button dropped to a
+   pale background while keeping its near-white label, and the text disappeared
+   for exactly as long as the pointer stayed on it. */
+.button.solid:hover:not(:disabled),
+.button[aria-pressed='true']:hover:not(:disabled) {
+  background: #3a352d; border-color: #3a352d; color: var(--paper);
+}
 
 /* Loading the road network: a streak of light sweeps across, just enough to show it's still alive. */
 .button.busy {
@@ -342,8 +356,15 @@ button { cursor: pointer; }
 .tree {
   position: absolute; inset: 0; width: 100%; height: 100%;
   cursor: grab; touch-action: none;
+  /* Every glyph in the diagram is a number or a node letter, and both are read
+     in columns against the node above and below. Monospace keeps those columns
+     aligned; it also matches the numbers in the pane footer and the sidebar. */
+  font-family: var(--mono);
 }
 .tree:active { cursor: grabbing; }
+/* Hovering a node is how its numbers are read on a dense tree, so the circles
+   have to advertise that they are targets. */
+.tree circle { cursor: pointer; }
 /* The tree's zoom bar: tucked into the corner, only visible when the pane is hovered. */
 .tree-zoom {
   position: absolute; right: 8px; bottom: 8px; display: flex; align-items: center; gap: 2px;
@@ -359,13 +380,19 @@ button { cursor: pointer; }
   font-family: var(--mono); font-size: 10px; color: var(--ink);
   min-width: 30px; text-align: center;
 }
+/* Names the triple under each node, once, instead of lettering every number on
+   every node. Sits opposite the zoom bar so the two corner controls do not meet. */
+.tree-key {
+  position: absolute; left: 8px; top: 7px; z-index: 1; pointer-events: none;
+  font-family: var(--mono); font-size: 10.5px; color: var(--mute);
+  background: var(--paper); border: 1px solid var(--rule-soft); border-radius: 4px;
+  padding: 1px 6px;
+}
 .tree-empty {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: var(--paper); color: var(--mute); font-size: 12px; text-align: center; padding: 20px;
 }
 /* The schematic drops the map background entirely: just the road network on paper. */
-.pane-map[data-view='graph'] { background: var(--paper); }
-.pane-map[data-view='graph'] .leaflet-container { background: var(--paper); }
 /* The three views sit side by side, the active one filled solid — the same visual language as
    the vehicle and time-period pickers in the left column. */
 .pane-tabs {
