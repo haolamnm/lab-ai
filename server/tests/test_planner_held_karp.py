@@ -92,8 +92,10 @@ def test_plan_endpoint_accepts_held_karp() -> None:
     assert response.json()["found"] is True
 
 
-def test_held_karp_follows_entered_order_when_optimisation_is_disabled(
+@pytest.mark.parametrize("optimise_order", [False, True])
+def test_held_karp_always_runs_dp(
     monkeypatch: pytest.MonkeyPatch,
+    optimise_order: bool,
 ) -> None:
     calls = 0
 
@@ -103,15 +105,15 @@ def test_held_karp_follows_entered_order_when_optimisation_is_disabled(
         return a_star_search(problem)
 
     monkeypatch.setattr(planner, "a_star_search", search)
-    result = planner.plan_route(_request(stops=["B", "A"], optimise_order=False))
+    result = planner.plan_route(_request(stops=["B", "A"], optimise_order=optimise_order))
 
     assert result.found is True
-    assert result.order == ["W", "B", "A", "W"]
-    assert result.path == ["W", "B", "A", "W"]
-    assert result.metrics.km == 4.5
-    assert result.metrics.cost == 4.5
-    assert result.metrics.optimal is False
-    assert calls == 3
+    assert result.order == ["W", "A", "B", "W"]
+    assert result.path == ["W", "A", "B", "W"]
+    assert result.metrics.km == 3.0
+    assert result.metrics.cost == 3.0
+    assert result.metrics.optimal is True
+    assert calls == 6
 
 
 def test_held_karp_assembles_only_selected_cached_legs(

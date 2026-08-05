@@ -20,5 +20,7 @@ class PlanRequest(Contract):
     start: str
     goal: str
     stops: list[str] = Field(default_factory=list)
+    # Applies only to point-search algorithms. Nearest Neighbor and Held-Karp
+    # always apply their own trip-ordering strategies.
     optimise_order: bool = False
     conditions: Conditions
