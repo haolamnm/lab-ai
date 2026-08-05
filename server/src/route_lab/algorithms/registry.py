@@ -9,7 +9,6 @@ from route_lab.algorithms.astar import a_star_search
 from route_lab.algorithms.base import Algorithm
 from route_lab.algorithms.bfs import breadth_first_search
 from route_lab.algorithms.dfs import depth_first_search
-from route_lab.algorithms.greedy import greedy_best_first_search
 from route_lab.algorithms.ucs import uniform_cost_search
 from route_lab.contract.request import AlgoKey
 
@@ -19,7 +18,6 @@ POINT_SEARCHES: dict[str, Algorithm] = {
     "dfs": depth_first_search,
     "ucs": uniform_cost_search,
     "astar": a_star_search,
-    "greedy": greedy_best_first_search,
 }
 
 # Whether an algorithm is optimal over the cost function. UCS and A* are; the
@@ -30,12 +28,11 @@ ALGO_OPTIMAL: dict[AlgoKey, bool] = {
     "dfs": False,
     "ucs": True,
     "astar": True,
-    "greedy": False,
     "nearest": False,
     "held_karp": True,
 }
 
 
 def guided(algo: str) -> bool:
-    """Whether the algorithm consults a heuristic (A*, Greedy)."""
-    return algo in ("astar", "greedy")
+    """Whether the algorithm consults a heuristic (A* alone, now Greedy is gone)."""
+    return algo == "astar"

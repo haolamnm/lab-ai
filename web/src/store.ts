@@ -117,7 +117,7 @@ interface State {
 export const MAX_PANES = ALGOS.length
 /** The order `addPane` hands algorithms out in — the useful ones first, so the
  *  first two panes are the two that produce an optimal route. */
-const ALGO_ORDER: AlgoKey[] = ['astar', 'ucs', 'bfs', 'dfs', 'greedy', 'nearest', 'held_karp']
+const ALGO_ORDER: AlgoKey[] = ['astar', 'ucs', 'bfs', 'dfs', 'nearest', 'held_karp']
 let seq = 0
 
 export const useStore = create<State>((set, get) => ({

@@ -14,7 +14,7 @@ from route_lab.shared.search import SearchLegResult
 #     (problem) -> SearchLegResult
 #
 # The blind searches (BFS, DFS, UCS) simply never call `problem.heuristic`; the
-# guided ones (A*, Greedy) do.
+# guided one (A*) does.
 Algorithm = Callable[[SearchProblem], SearchLegResult]
 
 

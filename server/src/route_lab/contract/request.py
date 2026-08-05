@@ -9,7 +9,7 @@ from route_lab.contract.graph import Contract, GraphPayload
 
 # `nearest` is not a search algorithm but a stop-ordering strategy layered on
 # UCS; the planner resolves it to a UCS point search, exactly as search.ts does.
-AlgoKey = Literal["bfs", "dfs", "ucs", "astar", "greedy", "nearest", "held_karp"]
+AlgoKey = Literal["bfs", "dfs", "ucs", "astar", "nearest", "held_karp"]
 
 
 class PlanRequest(Contract):

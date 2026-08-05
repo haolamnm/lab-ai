@@ -8,7 +8,6 @@ off next, and that is decided entirely by the frontier's discipline:
     DFS   -> Stack           last in, first out        (deepest branch)
     UCS   -> PriorityQueue   lowest g                   (cheapest so far)
     A*    -> PriorityQueue   lowest g + h               (cheapest + estimate)
-    Greedy-> PriorityQueue   lowest h                   (closest estimate)
 
 So an algorithm here is: pick a frontier, decide the priority you push with, and
 write the loop. All three expose ``push`` / ``pop`` and a truthy length, so
@@ -59,7 +58,7 @@ class Queue:
 
 
 class PriorityQueue:
-    """Min-first frontier — pop returns the lowest-priority state (UCS/A*/Greedy).
+    """Min-first frontier — pop returns the lowest-priority state (UCS/A*).
 
     Push the same state again with a lower priority to "improve" it; the older,
     worse entry stays in the heap and is skipped when popped because the state is

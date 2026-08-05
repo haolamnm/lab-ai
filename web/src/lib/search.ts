@@ -20,7 +20,6 @@ export const ALGOS: AlgorithmInfo[] = [
   { key: 'dfs', name: 'DFS', optimal: false, hue: '#a33b62', note: 'Plunges down one branch, usually a poor route' },
   { key: 'ucs', name: 'UCS', optimal: true, hue: '#1e5fa8', note: 'Optimal; this is Dijkstra search' },
   { key: 'astar', name: 'A*', optimal: true, hue: '#0a736f', note: 'Optimal, guided by a lower-bound heuristic' },
-  { key: 'greedy', name: 'Greedy Best-First', optimal: false, hue: '#6d4aa8', note: 'Guided only by the heuristic; not optimal' },
   { key: 'nearest', name: 'Nearest Neighbor', optimal: false, hue: '#527326', note: 'Orders stops greedily by UCS route cost; each leg uses UCS' },
   { key: 'held_karp', name: 'Held–Karp DP', optimal: true, hue: '#b45309', note: 'Exact cheapest closed tour, from Pairwise A* costs and bitmask DP. Backend only' },
 ]
@@ -334,36 +333,6 @@ export function aStarSearch(
   return completeLeg(memory, null, startedAt)
 }
 
-/** Greedy Best-First Search: priority `h(n)` trades optimality for focus. */
-export function greedyBestFirstSearch(
-  graph: Graph,
-  start: string,
-  goal: string,
-  conditions: Conditions,
-  heuristicScale = minCostPerKm(graph, conditions),
-): SearchLegResult {
-  const startedAt = performance.now()
-  const memory = createSearchMemory(graph, start, conditions)
-  const estimate = (key: string) =>
-    heuristicScale * haversine(graph.nodes[memory.nodeAt[key]], graph.nodes[goal])
-  const frontier = new Heap()
-  frontier.push(memory.startKey, estimate(memory.startKey), 0)
-
-  for (let current = popFresh(frontier, memory); current !== undefined;
-    current = popFresh(frontier, memory)) {
-    recordExpansion(memory, current, estimate(current))
-    if (memory.nodeAt[current] === goal) return completeLeg(memory, current, startedAt)
-
-    for (const { edge, key } of nextStates(memory, current)) {
-      const candidate = memory.cost[current] + edgeCost(edge, conditions)
-      if (key in memory.cost && candidate >= memory.cost[key]) continue
-      remember(memory, key, current, edge, candidate)
-      frontier.push(key, estimate(key), candidate)
-    }
-  }
-  return completeLeg(memory, null, startedAt)
-}
-
 /**
  * The algorithms that route a single leg.
  *
@@ -390,7 +359,6 @@ function runPointSearch(
     case 'dfs': return depthFirstSearch(graph, start, goal, conditions)
     case 'ucs': return uniformCostSearch(graph, start, goal, conditions)
     case 'astar': return aStarSearch(graph, start, goal, conditions, heuristicScale)
-    case 'greedy': return greedyBestFirstSearch(graph, start, goal, conditions, heuristicScale)
   }
 }
 
@@ -593,7 +561,7 @@ export function planRoute(input: PlanInput): RouteResult {
   }
 
   const conditionsKey = conditionKey(conditions)
-  const heuristicScale = algo === 'astar' || algo === 'greedy'
+  const heuristicScale = algo === 'astar'
     ? shared(graph, `heuristic:${conditionsKey}`, () => minCostPerKm(graph, conditions))
     : 0
   const shouldOrderStops = (algo === 'nearest' || optimiseOrder) && stops.length > 1
