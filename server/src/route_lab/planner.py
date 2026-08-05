@@ -37,7 +37,8 @@ def _leg_sequence(request: PlanRequest, graph: Graph) -> list[str]:
     # The dropoff is a destination just like every intermediate stop. When
     # ordering is enabled it may therefore be visited before another stop.
     destinations = [*request.stops, request.goal]
-    should_order = (request.algo == "nearest" or request.optimise_order) and len(destinations) > 1
+    uses_optional_ordering = request.algo in POINT_SEARCHES and request.optimise_order
+    should_order = (request.algo == "nearest" or uses_optional_ordering) and len(destinations) > 1
     ordered = (
         nearest_neighbor_order(graph, request.start, destinations, request.conditions)
         if should_order
@@ -240,10 +241,9 @@ def plan_route(request: PlanRequest) -> RouteResult:
             "Rebuild the network or re-pin the trip.",
         )
 
-    # With optimisation disabled, Held-Karp follows the entered closed-tour
-    # sequence just like every other algorithm. A stop-free tour is still
-    # handled by the exact branch so start == goal returns the trivial route.
-    if algo == "held_karp" and (request.optimise_order or not request.stops):
+    # Held-Karp is a trip-level optimiser; the point-search ordering toggle does
+    # not disable its Pairwise A* matrix or dynamic-programming branch.
+    if algo == "held_karp":
         return _plan_held_karp(request, graph, ids)
 
     sequence = _leg_sequence(request, graph)
@@ -255,10 +255,10 @@ def plan_route(request: PlanRequest) -> RouteResult:
             "The pickup and dropoff pin to the same intersection. Choose points farther apart.",
         )
 
-    # Nearest Neighbor picks the order and UCS supplies each leg. Held-Karp
-    # with optimisation disabled follows the requested order using A* legs.
-    point_algo = "ucs" if algo == "nearest" else "astar" if algo == "held_karp" else algo
-    search = a_star_search if algo == "held_karp" else POINT_SEARCHES[point_algo]
+    # Nearest Neighbor always picks the order and UCS supplies each leg.
+    # Held-Karp returned through its dedicated branch above.
+    point_algo = "ucs" if algo == "nearest" else algo
+    search = POINT_SEARCHES[point_algo]
     is_guided = guided(point_algo)
 
     trace: list[TraceStep] = []
