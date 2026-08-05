@@ -8,7 +8,7 @@ deterministic, which is exactly what makes it safe for several people to impleme
 side by side.
 
 **This is the real backend, not `web/src/lib/search.ts`.** The TypeScript in `search.ts` was a demo
-that ran BFS, DFS, UCS, A\*, and Greedy entirely in the browser, with no server involved — it proved
+that ran BFS, DFS, UCS, and A\* entirely in the browser, with no server involved — it proved
 the idea and shipped the first version of the app. This Python service replaces it as the actual
 planning backend, speaking the identical JSON contract (`POST /plan` in, a `RouteResult` out), so
 the frontend's request and response shapes do not change, only which process answers them.
@@ -96,9 +96,8 @@ server/
     │   ├── ucs.py       Uniform Cost Search implementation.
     │   ├── nearest_neighbor.py  Traffic-aware stop-ordering heuristic.
     │   ├── bfs.py       )
-    │   ├── dfs.py       ) The other four point searches. Each differs from ucs.py only in its
+    │   ├── dfs.py       ) The other three point searches. Each differs from ucs.py only in its
     │   ├── astar.py     ) frontier and the priority it pushes with.
-    │   ├── greedy.py    )
     │   └── held_karp.py Trip-level, not a point search: consumes a directed cost matrix and
     │                    returns the cheapest closed tour. Not in POINT_SEARCHES.
     ├── planner.py       plan_route(request) -> RouteResult: builds the leg sequence, dispatches
@@ -122,7 +121,7 @@ A layer may import the ones below it and never the ones above. Concretely: an al
 algorithm; `contract` is a pure leaf that depends on nothing else in the package.
 
 This is what mechanically keeps the algorithms folder decoupled and reviewable. Several people wrote
-`bfs.py`, `dfs.py`, `astar.py`, `greedy.py`, and `held_karp.py` at the same time, in parallel with
+`bfs.py`, `dfs.py`, `astar.py`, and `held_karp.py` at the same time, in parallel with
 the planner and API being built. Without an enforced boundary, one algorithm quietly importing another,
 or reaching into the planner for a shortcut, turns every pull request into a review of the whole
 package. With it, a change confined to `algorithms/*.py` is mechanically guaranteed not to touch
@@ -133,7 +132,7 @@ anything else, so a reviewer only has to read the one file that changed.
 ## The algorithm kit
 
 Everything you need to write an algorithm is in `shared/`, and it is designed so the *only* thing
-that differs between BFS, DFS, UCS, A\*, and Greedy is which frontier you pick and what priority you
+that differs between BFS, DFS, UCS, and A\* is which frontier you pick and what priority you
 push with. Everything else — the graph, the cost, the heuristic, the bookkeeping, the metrics — is
 provided and identical for all of them.
 
@@ -161,7 +160,7 @@ reads the same in every algorithm:
 |---|---|---|
 | `Queue` | FIFO — first in, first out | BFS (fewest hops) |
 | `Stack` | LIFO — last in, first out | DFS (deepest branch first) |
-| `PriorityQueue` | lowest priority first | UCS (`g`), A\* (`g + h`), Greedy (`h`) |
+| `PriorityQueue` | lowest priority first | UCS (`g`), A\* (`g + h`) |
 
 `PriorityQueue.push(state, priority)` takes the value to order by; the others take just the state.
 To "improve" a state in the priority queue, push it again with a lower priority — the stale entry is
@@ -252,7 +251,7 @@ Steps:
    pick a frontier from the kit, then loop:
    - pop a state; skip it if it is already in `memory.closed` (a stale entry),
    - `record_expansion(memory, current)` to append the step to the trace the frontend animates
-     (pass the heuristic value too, for A\*/Greedy, so the pane can show `h`),
+     (pass the heuristic value too for A\*, so the pane can show `h`),
    - test `memory.node_at[current] == problem.goal`,
    - for each `next_states(memory, current)`, compute the cost with `problem.cost(edge)` and, if it
      improves on the best known, `remember(...)` it and push it onto the frontier.
@@ -279,11 +278,11 @@ Request body — one planning request, matching `PlanInput` in `web/src/lib/sear
 | Field | Type | Meaning |
 |---|---|---|
 | `graph` | `Graph` | The road network the frontend already built from OpenStreetMap (or the sample graph). |
-| `algo` | `AlgoKey` | Which algorithm to run: `bfs`, `dfs`, `ucs`, `astar`, `greedy`, or `nearest`. |
+| `algo` | `AlgoKey` | Which algorithm to run: `bfs`, `dfs`, `ucs`, `astar`, `nearest`, or `held_karp`. |
 | `start` | `string` | Node id of the pickup point. |
 | `goal` | `string` | Node id of the dropoff point. |
-| `stops` | `string[]` | Node ids of intermediate stops, in the order given unless `optimiseOrder` reorders them. |
-| `optimiseOrder` | `boolean` | Whether to reorder `stops` with the nearest-neighbour heuristic before planning. |
+| `stops` | `string[]` | Node ids of intermediate stops, in the entered order when `optimiseOrder` is false. |
+| `optimiseOrder` | `boolean` | Whether to reorder all destinations (intermediate stops plus dropoff). Point searches use Nearest Neighbor; Held-Karp runs its exact optimizer. The `nearest` algorithm always reorders even when false. |
 | `conditions` | `Conditions` | Vehicle, time period, and the four cost weights. |
 
 Response body — a `RouteResult`: `path`, `trace`, `nodeIds`, `reveal`, `found`, `metrics`, and an

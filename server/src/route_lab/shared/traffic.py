@@ -253,7 +253,7 @@ def edge_cost(edge: GraphEdge, c: Conditions) -> float:
 def min_cost_per_km(edges: Iterable[GraphEdge], conditions: Conditions) -> float:
     """The cheapest cost-per-km over any passable segment.
 
-    A* and Greedy scale their straight-line heuristic by this so it stays a lower
+    A* scales its straight-line heuristic by this so it stays a lower
     bound (admissible) while remaining tight enough to prune real work. Using raw
     kilometres instead would make the heuristic far too weak and A* would
     degenerate into UCS.

@@ -180,7 +180,6 @@ export interface Conditions {
  *
  * A* dies the same way: its heuristic multiplies by the lowest cost per
  * kilometre, and that number is now 0, so h = 0 and A* degenerates into UCS.
- * Greedy does too.
  */
 export const costIsFlat = (w: Weights) =>
   w.distance === 0 && w.time === 0 && w.congestion === 0 && w.risk === 0

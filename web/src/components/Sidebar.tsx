@@ -82,7 +82,7 @@ export function Sidebar() {
             role="Dropoff" kind="goal" placeholder="Dropoff location" value={s.goal}
             onPick={p => s.setPlace('goal', p)} onClear={() => s.setPlace('goal', null)}
           />
-          {s.stops.length > 1 && (
+          {s.stops.length > 0 && (
             <label className="field-row" style={{ marginTop: 10 }}>
               <span>Optimize visit order</span>
               <input
