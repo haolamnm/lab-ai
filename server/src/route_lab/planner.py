@@ -3,14 +3,15 @@
 This is the Python side of ``planRoute`` in web/src/lib/search.ts. It orders the
 stops (optionally), splits the trip into legs, dispatches each leg to the chosen
 algorithm through the registry, joins the results, and aggregates the metrics.
-Two of the seven keys are not point searches and are resolved here rather than in
-the registry: ``nearest`` becomes a UCS point search plus the stop ordering in
-``algorithms/nearest_neighbor.py``, and ``held_karp`` takes its own branch
-entirely, because it needs a directed cost matrix over the trip points before any
-leg can be routed.
+Two keys are not point searches and are resolved here rather than in the
+registry: ``nearest`` and ``held_karp`` both consume directed Pairwise A* costs
+and cached legs, then apply their own trip-level ordering strategy.
 """
 
 from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from itertools import pairwise
 
 from route_lab.algorithms.astar import a_star_search
 from route_lab.algorithms.base import AlgorithmNotImplemented
@@ -37,14 +38,24 @@ def _leg_sequence(request: PlanRequest, graph: Graph) -> list[str]:
     # The dropoff is a destination just like every intermediate stop. When
     # ordering is enabled it may therefore be visited before another stop.
     destinations = [*request.stops, request.goal]
-    should_order = (request.algo == "nearest" or request.optimise_order) and len(destinations) > 1
-    ordered = (
-        nearest_neighbor_order(graph, request.start, destinations, request.conditions)
-        if should_order
-        else destinations
-    )
+    uses_optional_ordering = request.algo in POINT_SEARCHES and request.optimise_order
+    if uses_optional_ordering and len(destinations) > 1:
+        pairwise = build_pairwise(
+            graph=graph,
+            locations=_pairwise_locations(request.start, destinations),
+            conditions=request.conditions,
+            search=a_star_search,
+        )
+        ordered = list(nearest_neighbor_order(request.start, destinations, pairwise.costs))
+    else:
+        ordered = destinations
     raw = [request.start, *ordered]
     return [node for index, node in enumerate(raw) if index == 0 or node != raw[index - 1]]
+
+
+def _pairwise_locations(start: str, destinations: Sequence[str]) -> list[str]:
+    """Return stable, duplicate-free Pairwise inputs without changing destinations."""
+    return list(dict.fromkeys([start, *destinations]))
 
 
 def _zero_metrics(*, optimal: bool = False) -> Metrics:
@@ -86,6 +97,106 @@ def _stopped(algo: AlgoKey, order: list[str], ids: list[str], problem: str) -> R
         found=False,
         metrics=_zero_metrics(),
     )
+
+
+def _assemble_cached_legs(
+    request: PlanRequest,
+    ids: list[str],
+    order: list[str],
+    paths: Mapping[tuple[str, str], SearchLegResult],
+    *,
+    optimal: bool,
+) -> RouteResult:
+    """Assemble one route from selected cached legs only.
+
+    Pairwise searches that are not selected contribute neither search effort nor
+    runtime. Reported metrics describe only the cached legs in ``order``.
+    """
+    selected_legs: list[SearchLegResult] = []
+    for source, target in pairwise(order):
+        if source == target:
+            continue
+        leg = paths.get((source, target))
+        if leg is None:
+            return _stopped(
+                request.algo,
+                [order[0]],
+                ids,
+                f"The cached Pairwise route for {source} -> {target} is missing.",
+            )
+        selected_legs.append(leg)
+
+    trace: list[TraceStep] = []
+    reveal: list[Reveal] = []
+    path: list[str] = []
+    km = minutes = cost = ms = 0.0
+    expanded = generated = reopened = max_frontier = turns_blocked = 0
+
+    for leg in selected_legs:
+        ms += leg.ms
+        expanded += leg.stats.expanded
+        generated += leg.stats.generated
+        reopened += leg.stats.reopened
+        max_frontier = max(max_frontier, leg.stats.max_frontier)
+        turns_blocked += leg.stats.turns_blocked
+        trace.extend(leg.trace)
+
+        leg_km, leg_minutes, leg_cost = _edge_totals(leg.edges, request.conditions)
+        km += leg_km
+        minutes += leg_minutes
+        cost += leg_cost
+        path.extend(leg.path if not path else leg.path[1:])
+        reveal.append(Reveal(upto=len(trace), path=list(path)))
+
+    return RouteResult(
+        algo=request.algo,
+        problem=None,
+        order=order,
+        path=path,
+        trace=trace,
+        node_ids=ids,
+        reveal=reveal,
+        found=True,
+        metrics=Metrics(
+            km=js_round(km, 2),
+            minutes=js_round(minutes),
+            cost=js_round(cost, 1),
+            hops=max(0, len(path) - 1),
+            expanded=expanded,
+            generated=generated,
+            reopened=reopened,
+            max_frontier=max_frontier,
+            ms=js_round(ms, 1),
+            optimal=optimal,
+            turns_blocked=turns_blocked,
+        ),
+    )
+
+
+def _plan_nearest(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteResult:
+    """Plan legacy destinations using Pairwise A* and pure Nearest Neighbor ordering."""
+    destinations = [*request.stops, request.goal]
+    pairwise = build_pairwise(
+        graph=graph,
+        locations=_pairwise_locations(request.start, destinations),
+        conditions=request.conditions,
+        search=a_star_search,
+    )
+    ordered = nearest_neighbor_order(request.start, destinations, pairwise.costs)
+    raw_order = [request.start, *ordered]
+    order = [
+        location
+        for index, location in enumerate(raw_order)
+        if index == 0 or location != raw_order[index - 1]
+    ]
+    if len(order) < 2:
+        return _stopped(
+            request.algo,
+            order,
+            ids,
+            "The pickup and dropoff pin to the same intersection. Choose points farther apart.",
+        )
+    return _assemble_cached_legs(request, ids, order, pairwise.paths, optimal=False)
 
 
 def _plan_held_karp(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteResult:
@@ -158,62 +269,12 @@ def _plan_held_karp(request: PlanRequest, graph: Graph, ids: list[str]) -> Route
             "No directed route can visit every Held-Karp stop and return to the warehouse.",
         )
 
-    selected_legs: list[SearchLegResult] = []
-    for source, target in zip(tour.order, tour.order[1:], strict=False):
-        leg = pairwise.paths.get((source, target))
-        if leg is None:
-            return _stopped(
-                request.algo,
-                [warehouse],
-                ids,
-                f"The cached Pairwise route for {source} -> {target} is missing.",
-            )
-        selected_legs.append(leg)
-
-    trace: list[TraceStep] = []
-    reveal: list[Reveal] = []
-    path: list[str] = []
-    km = minutes = cost = ms = 0.0
-    expanded = generated = reopened = max_frontier = turns_blocked = 0
-
-    for leg in selected_legs:
-        ms += leg.ms
-        expanded += leg.stats.expanded
-        generated += leg.stats.generated
-        reopened += leg.stats.reopened
-        max_frontier = max(max_frontier, leg.stats.max_frontier)
-        turns_blocked += leg.stats.turns_blocked
-        trace.extend(leg.trace)
-
-        leg_km, leg_minutes, leg_cost = _edge_totals(leg.edges, request.conditions)
-        km += leg_km
-        minutes += leg_minutes
-        cost += leg_cost
-        path.extend(leg.path if not path else leg.path[1:])
-        reveal.append(Reveal(upto=len(trace), path=list(path)))
-
-    return RouteResult(
-        algo=request.algo,
-        problem=None,
-        order=list(tour.order),
-        path=path,
-        trace=trace,
-        node_ids=ids,
-        reveal=reveal,
-        found=True,
-        metrics=Metrics(
-            km=js_round(km, 2),
-            minutes=js_round(minutes),
-            cost=js_round(cost, 1),
-            hops=max(0, len(path) - 1),
-            expanded=expanded,
-            generated=generated,
-            reopened=reopened,
-            max_frontier=max_frontier,
-            ms=js_round(ms, 1),
-            optimal=ALGO_OPTIMAL[request.algo],
-            turns_blocked=turns_blocked,
-        ),
+    return _assemble_cached_legs(
+        request,
+        ids,
+        list(tour.order),
+        pairwise.paths,
+        optimal=ALGO_OPTIMAL[request.algo],
     )
 
 
@@ -240,11 +301,12 @@ def plan_route(request: PlanRequest) -> RouteResult:
             "Rebuild the network or re-pin the trip.",
         )
 
-    # With optimisation disabled, Held-Karp follows the entered closed-tour
-    # sequence just like every other algorithm. A stop-free tour is still
-    # handled by the exact branch so start == goal returns the trivial route.
-    if algo == "held_karp" and (request.optimise_order or not request.stops):
+    # Held-Karp is a trip-level optimiser; the point-search ordering toggle does
+    # not disable its Pairwise A* matrix or dynamic-programming branch.
+    if algo == "held_karp":
         return _plan_held_karp(request, graph, ids)
+    if algo == "nearest":
+        return _plan_nearest(request, graph, ids)
 
     sequence = _leg_sequence(request, graph)
     if len(sequence) < 2:
@@ -255,11 +317,8 @@ def plan_route(request: PlanRequest) -> RouteResult:
             "The pickup and dropoff pin to the same intersection. Choose points farther apart.",
         )
 
-    # Nearest Neighbor picks the order and UCS supplies each leg. Held-Karp
-    # with optimisation disabled follows the requested order using A* legs.
-    point_algo = "ucs" if algo == "nearest" else "astar" if algo == "held_karp" else algo
-    search = a_star_search if algo == "held_karp" else POINT_SEARCHES[point_algo]
-    is_guided = guided(point_algo)
+    search = POINT_SEARCHES[algo]
+    is_guided = guided(algo)
 
     trace: list[TraceStep] = []
     reveal: list[Reveal] = []
