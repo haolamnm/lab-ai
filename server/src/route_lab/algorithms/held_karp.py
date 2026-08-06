@@ -1,4 +1,4 @@
-"""Pure Held–Karp dynamic programming for directed closed tours.
+"""Pure Held–Karp dynamic programming for directed open paths and closed tours.
 
 This trip-level algorithm is intentionally independent of the road-search stack.
 It consumes already-computed pair costs and orders stops; it does not build a
@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class HeldKarpResult:
-    """The optimal closed visit cycle, or a finite failure result."""
+    """The optimal visit order for the requested mode, or a finite failure result."""
 
     found: bool
     order: tuple[str, ...]
@@ -34,27 +34,32 @@ def held_karp(
     warehouse: str,
     stops: Sequence[str],
     costs: Mapping[tuple[str, str], float],
+    *,
+    return_to_start: bool = True,
 ) -> HeldKarpResult:
-    """Find a minimum-cost directed cycle through every stop exactly once.
+    """Find a minimum-cost directed path or cycle through every stop exactly once.
 
     ``costs`` is a directed mapping: a missing ``(u, v)`` transition is
     unreachable and no reverse edge is inferred. The warehouse is excluded from
     the bitmask. For stop index ``last``, ``dp[(mask, last)]`` is the cheapest
     cost from the warehouse that visits exactly ``mask`` and ends at ``last``.
-    A parent table reconstructs the final cycle without storing paths per state.
+    A parent table reconstructs the result without storing paths per state. The
+    DP recurrence is shared: closed mode adds the final directed return cost,
+    while open mode stops at the best full-mask state.
 
     Equal-cost tours are resolved lexicographically by stop index, hence by the
     order supplied in ``stops``. The algorithm runs in ``O(n² * 2ⁿ)`` time and
     ``O(n * 2ⁿ)`` space for ``n`` stops.
 
     Args:
-        warehouse: Start and end location of the closed tour.
+        warehouse: Start location, and end location when closing the tour.
         stops: Ordered location identifiers to visit exactly once.
         costs: Finite, non-negative costs for available directed transitions.
+        return_to_start: Whether to close the route at ``warehouse``.
 
     Returns:
-        The optimal full cycle and its cost, or ``found=False`` when no
-        Hamiltonian cycle exists.
+        The optimal full path or cycle and its cost, or ``found=False`` when no
+        complete route exists.
 
     Raises:
         ValueError: If stops are duplicated, include the warehouse, or a relevant
@@ -135,10 +140,15 @@ def held_karp(
     for last in range(stop_count):
         state = (full_mask, last)
         route_cost = dp.get(state)
-        return_cost = available.get((stop_ids[last], warehouse))
-        if route_cost is None or return_cost is None:
+        if route_cost is None:
             continue
-        total = route_cost + return_cost
+        if return_to_start:
+            return_cost = available.get((stop_ids[last], warehouse))
+            if return_cost is None:
+                continue
+            total = route_cost + return_cost
+        else:
+            total = route_cost
         state_lex = lex_key[state]
         if best_cost is not None and (
             total > best_cost
@@ -164,5 +174,8 @@ def held_karp(
         last = previous
     reverse_indices.reverse()
 
-    order = (warehouse, *(stop_ids[index] for index in reverse_indices), warehouse)
+    ordered_stops = tuple(stop_ids[index] for index in reverse_indices)
+    order = (
+        (warehouse, *ordered_stops, warehouse) if return_to_start else (warehouse, *ordered_stops)
+    )
     return HeldKarpResult(found=True, order=order, cost=best_cost)

@@ -23,6 +23,7 @@ def _request(
     goal: str = "W",
     stops: list[str] | None = None,
     optimise_order: bool = True,
+    return_to_start: bool | None = None,
     edges: list[tuple[str, str, float]] | None = None,
 ) -> PlanRequest:
     edge_values = edges or [
@@ -71,6 +72,8 @@ def _request(
             },
         },
     }
+    if return_to_start is not None:
+        payload["returnToStart"] = return_to_start
     return PlanRequest.model_validate(payload)
 
 
@@ -179,6 +182,105 @@ def test_held_karp_assembles_only_selected_cached_legs(
 
 
 def test_held_karp_rejects_open_trip() -> None:
+    result = planner.plan_route(_request(goal="A", stops=["B"]))
+
+    assert result.found is False
+    assert result.problem is not None and "same warehouse" in result.problem
+
+
+def test_explicit_open_held_karp_ignores_goal() -> None:
+    result = planner.plan_route(_request(goal="GHOST", stops=["A", "B"], return_to_start=False))
+
+    assert result.found is True
+    assert result.order == ["W", "A", "B"]
+    assert result.path == ["W", "A", "B"]
+    assert result.metrics.optimal is True
+
+
+def test_explicit_closed_held_karp_ignores_goal() -> None:
+    result = planner.plan_route(_request(goal="GHOST", stops=["A", "B"], return_to_start=True))
+
+    assert result.found is True
+    assert result.order == ["W", "A", "B", "W"]
+    assert result.path == ["W", "A", "B", "W"]
+    assert result.metrics.optimal is True
+
+
+def test_explicit_open_and_closed_held_karp_can_differ() -> None:
+    edges = [
+        ("W", "A", 1.0),
+        ("W", "B", 2.0),
+        ("A", "B", 10.0),
+        ("B", "A", 1.0),
+        ("A", "W", 100.0),
+        ("B", "W", 1.0),
+    ]
+
+    open_result = planner.plan_route(_request(stops=["A", "B"], return_to_start=False, edges=edges))
+    closed_result = planner.plan_route(
+        _request(stops=["A", "B"], return_to_start=True, edges=edges)
+    )
+
+    assert open_result.order == ["W", "B", "A"]
+    assert open_result.metrics.cost == 3.0
+    assert closed_result.order == ["W", "A", "B", "W"]
+    assert closed_result.metrics.cost == 12.0
+
+
+@pytest.mark.parametrize("return_to_start", [False, True])
+def test_explicit_held_karp_zero_stops_is_trivial(return_to_start: bool) -> None:
+    result = planner.plan_route(_request(goal="GHOST", stops=[], return_to_start=return_to_start))
+
+    assert result.found is True
+    assert result.order == ["W"]
+    assert result.path == ["W"]
+    assert result.metrics.cost == 0.0
+    assert result.metrics.optimal is True
+
+
+def test_explicit_open_held_karp_one_stop_needs_no_return() -> None:
+    result = planner.plan_route(
+        _request(
+            goal="GHOST",
+            stops=["A"],
+            return_to_start=False,
+            edges=[("W", "A", 1.0)],
+        )
+    )
+
+    assert result.found is True
+    assert result.order == ["W", "A"]
+
+
+def test_explicit_closed_held_karp_one_stop_requires_return() -> None:
+    result = planner.plan_route(
+        _request(
+            goal="GHOST",
+            stops=["A"],
+            return_to_start=True,
+            edges=[("W", "A", 1.0)],
+        )
+    )
+
+    assert result.found is False
+    assert result.problem is not None and "closed tour" in result.problem
+
+
+def test_explicit_open_held_karp_reports_incomplete_route() -> None:
+    result = planner.plan_route(
+        _request(
+            goal="GHOST",
+            stops=["A", "B"],
+            return_to_start=False,
+            edges=[("W", "A", 1.0)],
+        )
+    )
+
+    assert result.found is False
+    assert result.problem is not None and "open route" in result.problem
+
+
+def test_omitted_return_to_start_preserves_legacy_closed_validation() -> None:
     result = planner.plan_route(_request(goal="A", stops=["B"]))
 
     assert result.found is False
