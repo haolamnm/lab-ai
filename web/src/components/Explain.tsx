@@ -77,8 +77,9 @@ export function Explain() {
           tallest fixed thing on the screen — it was taking a quarter of the
           stage's height and handing what was left to the panes, which are the
           part you actually watch. Same header, same wording, same place as its
-          neighbours, so there is no new control to learn. */}
-      {/* The whole row is the button, exactly as the two comparison headers are.
+          neighbours, so there is no new control to learn.
+
+          The whole row is the button, exactly as the two comparison headers are.
           Wrapping only the words left the rest of the row dead to the pointer —
           it looked identical to its neighbours and did not behave like them.
           Export data cannot live inside it (a button inside a button is not

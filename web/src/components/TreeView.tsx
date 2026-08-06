@@ -112,7 +112,7 @@ export function TreeView({ result, step, graph, nameOf }: Props) {
   const [hover, setHover] = useState<number | null>(null)
   /** Tears down whatever is currently wired to the `<svg>`, if anything is. */
   const unwire = useRef<(() => void) | null>(null)
-  const drag = useRef<{ x: number; y: number; cam: Camera; moved: boolean } | null>(null)
+  const drag = useRef<{ x: number; y: number; cam: Camera } | null>(null)
 
   // A new run means a completely different tree; keeping the old viewport would just leave you lost.
   useEffect(() => { setCam(HOME); setHover(null) }, [result])
@@ -144,6 +144,15 @@ export function TreeView({ result, step, graph, nameOf }: Props) {
     if (!result || !graph) return () => undefined as string | undefined
     return (idx: number) => graph.nodes[result.nodeIds[idx]]?.label
   }, [result, graph])
+
+  /** Looks a node up by index, the one place that walks `tree.at` to do it. */
+  const nodeOf = (idx: number): TreeNode | undefined => {
+    const pos = tree?.at.get(idx)
+    return pos === undefined ? undefined : tree?.nodes[pos]
+  }
+
+  /** A node's screen position: its column stretched by the spread, its row as laid out. */
+  const at = (t: TreeNode) => ({ x: t.x * spread, y: t.y })
 
   /** Convert screen cursor coordinates to coordinates inside the drawing frame. */
   const atCursor = (e: { clientX: number; clientY: number }) =>
@@ -239,7 +248,12 @@ export function TreeView({ result, step, graph, nameOf }: Props) {
     return byOrder.slice(0, lo)
   }, [byOrder, shown])
 
-  const current = shown > 0 ? byOrder.find(t => t.order === shown - 1) ?? null : null
+  // `visible` is already the order-sorted prefix below `shown`, so the node
+  // that was revealed last — if the last revealing step actually opened a new
+  // node, rather than re-touching one already on the tree — is just its tail,
+  // not a fresh scan of every node on every render.
+  const lastVisible = visible[visible.length - 1]
+  const current = lastVisible?.order === shown - 1 ? lastVisible : null
 
   // The drawing is split out and memoized: panning or zooming only changes one
   // transform attribute, without touching the hundreds of circles inside. Without
@@ -247,14 +261,12 @@ export function TreeView({ result, step, graph, nameOf }: Props) {
   const body = useMemo(() => {
     if (!tree) return null
     const line = lettered ? 0.05 : 0.035
-    const at = (t: TreeNode) => ({ x: t.x * spread, y: t.y })
 
     return (
       <g strokeLinecap="round">
         {visible.map(t => {
           if (t.parent == null) return null
-          const pi = tree.at.get(t.parent)
-          const p = pi === undefined ? null : tree.nodes[pi]
+          const p = nodeOf(t.parent) ?? null
           if (!p || p.order >= shown) return null
           const both = onPath.has(t.idx) && onPath.has(t.parent)
           const a = at(p), b = at(t)
@@ -365,14 +377,12 @@ export function TreeView({ result, step, graph, nameOf }: Props) {
   if (!lettered && current) {
     called.push(current)
     for (const kid of tree?.kids.get(current.idx) ?? []) {
-      const pos = tree?.at.get(kid)
-      const node = pos === undefined ? undefined : tree?.nodes[pos]
+      const node = nodeOf(kid)
       if (node && node.order < shown) called.push(node)
     }
   }
   if (hover !== null) {
-    const pos = tree?.at.get(hover)
-    const node = pos === undefined ? undefined : tree?.nodes[pos]
+    const node = nodeOf(hover)
     if (node && node.order < shown && !called.some(c => c.idx === node.idx)) called.push(node)
   }
 
@@ -392,14 +402,13 @@ export function TreeView({ result, step, graph, nameOf }: Props) {
         preserveAspectRatio="xMidYMid meet"
         onPointerDown={e => {
           const p = atCursor(e)
-          drag.current = { x: p.x, y: p.y, cam, moved: false }
+          drag.current = { x: p.x, y: p.y, cam }
           e.currentTarget.setPointerCapture(e.pointerId)
         }}
         onPointerMove={e => {
           const d = drag.current
           if (!d) return
           const p = atCursor(e)
-          d.moved = true
           setCam({ ...d.cam, x: d.cam.x + (p.x - d.x), y: d.cam.y + (p.y - d.y) })
         }}
         onPointerUp={e => {
@@ -414,7 +423,7 @@ export function TreeView({ result, step, graph, nameOf }: Props) {
             <Callout
               key={`c${t.idx}`}
               node={t}
-              x={t.x * spread}
+              x={at(t).x}
               y={t.y}
               px={px}
               letter={letterOf(t.idx)}
@@ -424,7 +433,7 @@ export function TreeView({ result, step, graph, nameOf }: Props) {
               // would otherwise put its numbers outside the pane, and the one
               // node whose numbers are wanted most is the one being expanded —
               // which on a goal-directed search is exactly the node nearest an edge.
-              flip={t.x * spread > frame.x + frame.w * 0.6}
+              flip={at(t).x > frame.x + frame.w * 0.6}
             />
           ))}
         </g>

@@ -241,19 +241,15 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
     routeCore.current = L.polyline([], { color: ROUTE, weight: 5, opacity: 0 }).addTo(m)
 
     const idle = styleUntouched(dotsFor(Object.keys(graph.nodes).length), false)
-    for (const n of Object.values(graph.nodes))
-      nodeLayer.current[n.id] = L.circleMarker([n.lat, n.lng], {
-        radius: idle.radius, color: idle.color, fillColor: idle.fill,
-        fillOpacity: idle.opacity, weight: 0,
-      }).addTo(m)
-    for (const n of Object.values(graph.nodes))
-      if (n.name) nodeLayer.current[n.id].bindTooltip(`${n.label ? n.label + ' · ' : ''}${n.name}`,
-        { direction: 'top', offset: [0, -4] })
+    for (const n of Object.values(graph.nodes)) {
+      const marker = L.circleMarker([n.lat, n.lng], circleStyle(idle)).addTo(m)
+      if (n.name) marker.bindTooltip(`${n.label ? n.label + ' · ' : ''}${n.name}`, { direction: 'top', offset: [0, -4] })
+      nodeLayer.current[n.id] = marker
+    }
 
     // For a small graph, a letter label goes on every node — without labels nobody
     // could trace a route like "A → C → F → H" the way the sample problem does.
-    labels.current.forEach(l => l.remove())
-    labels.current = []
+    clearLayers(labels)
     const list = Object.values(graph.nodes)
     if (list.length <= 40)
       for (const n of list) {
@@ -348,10 +344,8 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
   useEffect(() => {
     const m = map.current
     if (!m) return
-    marks.current.forEach(x => x.remove())
-    marks.current = []
-    walks.current.forEach(x => x.remove())
-    walks.current = []
+    clearLayers(marks)
+    clearLayers(walks)
     const put = (a: Anchor | null, role: string, title: string) => {
       if (!a) return
       const icon = L.divIcon({
@@ -649,6 +643,17 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
   )
 }
 
+/** Remove every layer a ref is tracking and empty it, ready for the next redraw. */
+function clearLayers<T extends L.Layer>(ref: { current: T[] }): void {
+  ref.current.forEach(l => l.remove())
+  ref.current = []
+}
+
+/** The Leaflet circle-marker options a node style maps to — shared by the initial draw and every restyle. */
+function circleStyle(s: NodeStyle): L.CircleMarkerOptions {
+  return { radius: s.radius, color: s.color, fillColor: s.fill, fillOpacity: s.opacity, opacity: s.opacity, weight: s.weight }
+}
+
 /** Restyle only the nodes whose state actually changed; skip the rest. */
 function applyAll(
   layers: Record<string, L.CircleMarker>,
@@ -664,10 +669,7 @@ function applyAll(
     keys[i] = key
     const layer = layers[list[i]]
     if (!layer) continue
-    layer.setStyle({
-      radius: style.radius, color: style.color, fillColor: style.fill,
-      fillOpacity: style.opacity, opacity: style.opacity, weight: style.weight,
-    })
+    layer.setStyle(circleStyle(style))
   }
 }
 

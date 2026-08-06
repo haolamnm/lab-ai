@@ -38,6 +38,17 @@ export function PlaceField({ role, kind, placeholder, value, autoFocus, onPick, 
     onPick(place)
   }
 
+  /** Same button markup for a live result and a recalled one — only the source list differs. */
+  const placeButton = (r: Place, i: number) => (
+    <button key={`${r.lat},${r.lng},${i}`} className="place-result" onClick={() => take(r)}>
+      <b>{r.name}</b>
+      {r.detail && <small>{r.detail}</small>}
+    </button>
+  )
+
+  /** The recently picked places, refetched from storage whenever a reason to show them comes up. */
+  const refreshRecent = () => setRecent(recentPlaces())
+
   useEffect(() => setText(value?.place.name ?? ''), [value?.place.name])
 
   // Close whichever list is open on an outside click.
@@ -85,13 +96,13 @@ export function PlaceField({ role, kind, placeholder, value, autoFocus, onPick, 
             setText(e.target.value)
             setRecent(e.target.value.trim() ? null : recentPlaces())
           }}
-          onFocus={() => { if (!text.trim()) setRecent(recentPlaces()) }}
+          onFocus={() => { if (!text.trim()) refreshRecent() }}
           aria-label={placeholder}
         />
         {onClear && value && (
           <button
             className="place-clear"
-            onClick={() => { setText(''); onClear(); setRecent(recentPlaces()) }}
+            onClick={() => { setText(''); onClear(); refreshRecent() }}
             aria-label="Clear selection"
           >
             Clear
@@ -110,16 +121,7 @@ export function PlaceField({ role, kind, placeholder, value, autoFocus, onPick, 
           {busy && <p className="place-empty">Searching…</p>}
           {!busy && failed && <p className="place-empty">Could not look up the location. Check your connection and try again.</p>}
           {!busy && !failed && results.length === 0 && <p className="place-empty">No matching locations.</p>}
-          {results.map((r, i) => (
-            <button
-              key={`${r.lat},${r.lng},${i}`}
-              className="place-result"
-              onClick={() => take(r)}
-            >
-              <b>{r.name}</b>
-              {r.detail && <small>{r.detail}</small>}
-            </button>
-          ))}
+          {results.map(placeButton)}
         </div>
       )}
 
@@ -136,16 +138,7 @@ export function PlaceField({ role, kind, placeholder, value, autoFocus, onPick, 
               Clear
             </button>
           </p>
-          {recent.map((r, i) => (
-            <button
-              key={`${r.lat},${r.lng},${i}`}
-              className="place-result"
-              onClick={() => take(r)}
-            >
-              <b>{r.name}</b>
-              {r.detail && <small>{r.detail}</small>}
-            </button>
-          ))}
+          {recent.map(placeButton)}
         </div>
       )}
     </div>

@@ -33,7 +33,7 @@ import type { RouteResult } from './types'
  * on-screen size than a unit of horizontal spacing does. Room for one line of
  * arithmetic under each node is all this needs to buy.
  */
-export const LEVEL_GAP = 1.8
+const LEVEL_GAP = 1.8
 
 export interface TreeNode {
   /** Node index into RouteResult.nodeIds. */

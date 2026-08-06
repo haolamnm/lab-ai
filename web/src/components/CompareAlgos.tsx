@@ -77,9 +77,9 @@ export function CompareAlgos() {
   // when no row reported a time would be inventing a result.
   const best = useMemo(() => {
     const out: Partial<Record<Ranked, number>> = {}
+    const found = rows.filter(r => r.result.found)
     for (const column of LOWER_IS_BETTER) {
-      const values = rows
-        .filter(r => r.result.found)
+      const values = found
         .map(r => r.result.metrics[column])
         .filter((v): v is number => typeof v === 'number')
       if (values.length > 1) out[column] = Math.min(...values)
