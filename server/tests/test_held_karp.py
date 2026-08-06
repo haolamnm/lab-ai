@@ -65,16 +65,50 @@ def test_held_karp_zero_stops() -> None:
     assert held_karp("W", [], {}) == HeldKarpResult(True, ("W",), 0.0)
 
 
+def test_held_karp_open_zero_stops() -> None:
+    assert held_karp("W", [], {}, return_to_start=False) == HeldKarpResult(True, ("W",), 0.0)
+
+
 def test_held_karp_one_stop() -> None:
     result = held_karp("W", ["A"], {("W", "A"): 2.5, ("A", "W"): 3.5})
 
     assert result == HeldKarpResult(True, ("W", "A", "W"), 6.0)
 
 
+def test_held_karp_open_one_stop_needs_only_outbound_cost() -> None:
+    result = held_karp("W", ["A"], {("W", "A"): 2.5}, return_to_start=False)
+
+    assert result == HeldKarpResult(True, ("W", "A"), 2.5)
+
+
 def test_held_karp_three_stops() -> None:
     result = held_karp("W", ["A", "B", "C"], SAMPLE_COSTS)
 
     assert result == HeldKarpResult(True, ("W", "A", "B", "C", "W"), 12.0)
+
+
+def test_explicit_closed_matches_legacy_closed_behavior() -> None:
+    assert held_karp("W", ["A", "B", "C"], SAMPLE_COSTS, return_to_start=True) == held_karp(
+        "W", ["A", "B", "C"], SAMPLE_COSTS
+    )
+
+
+def test_open_and_closed_can_choose_different_orders() -> None:
+    costs = {
+        ("W", "A"): 1.0,
+        ("W", "B"): 2.0,
+        ("A", "B"): 10.0,
+        ("B", "A"): 1.0,
+        ("A", "W"): 100.0,
+        ("B", "W"): 1.0,
+    }
+
+    assert held_karp("W", ["A", "B"], costs, return_to_start=False) == HeldKarpResult(
+        True, ("W", "B", "A"), 3.0
+    )
+    assert held_karp("W", ["A", "B"], costs, return_to_start=True) == HeldKarpResult(
+        True, ("W", "A", "B", "W"), 12.0
+    )
 
 
 def test_held_karp_asymmetric_matrix() -> None:
@@ -112,6 +146,18 @@ def test_held_karp_deterministic_tie_break() -> None:
     result = held_karp("W", stops, costs)
 
     assert result == HeldKarpResult(True, ("W", "B", "A", "C", "W"), 4.0)
+
+
+def test_open_held_karp_deterministic_tie_break() -> None:
+    stops = ["B", "A", "C"]
+    locations = ["W", *stops]
+    costs = {
+        (source, target): 1.0 for source in locations for target in locations if source != target
+    }
+
+    result = held_karp("W", stops, costs, return_to_start=False)
+
+    assert result == HeldKarpResult(True, ("W", "B", "A", "C"), 3.0)
 
 
 @pytest.mark.parametrize(
@@ -152,7 +198,7 @@ def test_held_karp_does_not_mutate_inputs() -> None:
     original_stops = list(stops)
     original_costs = dict(costs)
 
-    held_karp("W", stops, costs)
+    held_karp("W", stops, costs, return_to_start=False)
 
     assert stops == original_stops
     assert costs == original_costs
@@ -191,6 +237,23 @@ def test_held_karp_ignores_invalid_cost_for_unrelated_locations() -> None:
 
 def test_held_karp_fails_when_return_to_warehouse_is_missing() -> None:
     result = held_karp("W", ["A"], {("W", "A"): 1.0})
+
+    assert result == HeldKarpResult(False, (), None)
+
+
+def test_open_succeeds_when_return_to_warehouse_is_missing() -> None:
+    result = held_karp("W", ["A"], {("W", "A"): 1.0}, return_to_start=False)
+
+    assert result == HeldKarpResult(True, ("W", "A"), 1.0)
+
+
+def test_open_fails_when_no_complete_path_exists() -> None:
+    result = held_karp(
+        "W",
+        ["A", "B"],
+        {("W", "A"): 1.0},
+        return_to_start=False,
+    )
 
     assert result == HeldKarpResult(False, (), None)
 

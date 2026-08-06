@@ -24,6 +24,7 @@ def _request(
     stops: list[str] | None = None,
     goal: str = "B",
     optimise_order: bool = False,
+    return_to_start: bool | None = None,
 ) -> PlanRequest:
     edges = [
         ("W", "A", 1.0),
@@ -71,6 +72,8 @@ def _request(
             },
         },
     }
+    if return_to_start is not None:
+        payload["returnToStart"] = return_to_start
     return PlanRequest.model_validate(payload)
 
 
@@ -229,6 +232,162 @@ def test_nearest_reports_missing_selected_cached_leg(monkeypatch: pytest.MonkeyP
     assert result.found is False
     assert result.problem is not None and "A -> B" in result.problem
     assert result.metrics.cost == 0.0
+
+
+def test_explicit_open_nearest_ignores_goal() -> None:
+    result = planner.plan_route(_request(stops=["A", "B"], goal="GHOST", return_to_start=False))
+
+    assert result.found is True
+    assert result.order == ["W", "A", "B"]
+    assert result.path == ["W", "A", "B"]
+    assert result.metrics.optimal is False
+
+
+def test_explicit_closed_nearest_ignores_goal() -> None:
+    result = planner.plan_route(_request(stops=["A", "B"], goal="GHOST", return_to_start=True))
+
+    assert result.found is True
+    assert result.order == ["W", "A", "B", "W"]
+    assert result.path == ["W", "A", "B", "W"]
+    assert result.metrics.optimal is False
+
+
+@pytest.mark.parametrize("return_to_start", [False, True])
+def test_explicit_nearest_zero_stops_is_trivial(return_to_start: bool) -> None:
+    result = planner.plan_route(_request(stops=[], goal="GHOST", return_to_start=return_to_start))
+
+    assert result.found is True
+    assert result.order == ["W"]
+    assert result.path == ["W"]
+    assert result.metrics.cost == 0.0
+    assert result.metrics.optimal is False
+
+
+def test_explicit_open_nearest_one_stop() -> None:
+    result = planner.plan_route(_request(stops=["A"], goal="GHOST", return_to_start=False))
+
+    assert result.found is True
+    assert result.order == ["W", "A"]
+
+
+def test_explicit_closed_nearest_one_stop() -> None:
+    result = planner.plan_route(_request(stops=["A"], goal="GHOST", return_to_start=True))
+
+    assert result.found is True
+    assert result.order == ["W", "A", "W"]
+
+
+@pytest.mark.parametrize(
+    ("return_to_start", "expected_order"),
+    [(False, ["W", "A"]), (True, ["W", "A", "W"])],
+)
+def test_explicit_nearest_reuses_pairwise_astar_legs(
+    monkeypatch: pytest.MonkeyPatch,
+    return_to_start: bool,
+    expected_order: list[str],
+) -> None:
+    calls = 0
+
+    def search(problem: SearchProblem) -> SearchLegResult:
+        nonlocal calls
+        calls += 1
+        return a_star_search(problem)
+
+    monkeypatch.setattr(planner, "a_star_search", search)
+    result = planner.plan_route(
+        _request(stops=["A"], goal="GHOST", return_to_start=return_to_start)
+    )
+
+    assert result.found is True
+    assert result.order == expected_order
+    assert calls == 2
+
+
+def test_explicit_open_nearest_succeeds_without_return_leg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _request(stops=["A"], goal="GHOST", return_to_start=False)
+    graph = build_graph(request.graph)
+    costs = {("W", "W"): 0.0, ("A", "A"): 0.0, ("W", "A"): 1.0}
+    paths = {("W", "A"): _leg(graph, "W", "A", 1)}
+    monkeypatch.setattr(
+        planner,
+        "build_pairwise",
+        lambda **_kwargs: PairwiseResult(costs=costs, paths=paths),
+    )
+
+    result = planner.plan_route(request)
+
+    assert result.found is True
+    assert result.order == ["W", "A"]
+
+
+def test_explicit_closed_nearest_fails_without_return_leg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _request(stops=["A"], goal="GHOST", return_to_start=True)
+    graph = build_graph(request.graph)
+    costs = {("W", "W"): 0.0, ("A", "A"): 0.0, ("W", "A"): 1.0}
+    paths = {("W", "A"): _leg(graph, "W", "A", 1)}
+    monkeypatch.setattr(
+        planner,
+        "build_pairwise",
+        lambda **_kwargs: PairwiseResult(costs=costs, paths=paths),
+    )
+
+    result = planner.plan_route(request)
+
+    assert result.found is False
+    assert result.problem is not None and "closed tour" in result.problem
+
+
+def test_explicit_open_nearest_reports_missing_internal_leg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _request(stops=["A", "B"], goal="GHOST", return_to_start=False)
+    graph = build_graph(request.graph)
+    costs = {
+        ("W", "W"): 0.0,
+        ("A", "A"): 0.0,
+        ("B", "B"): 0.0,
+        ("W", "A"): 1.0,
+    }
+    paths = {("W", "A"): _leg(graph, "W", "A", 1)}
+    monkeypatch.setattr(
+        planner,
+        "build_pairwise",
+        lambda **_kwargs: PairwiseResult(costs=costs, paths=paths),
+    )
+
+    result = planner.plan_route(request)
+
+    assert result.found is False
+    assert result.problem is not None and "open route" in result.problem
+
+
+@pytest.mark.parametrize(
+    ("stops", "expected_order"),
+    [
+        (["A", "A"], ["W", "A"]),
+        (["W", "A"], ["W", "A"]),
+        (["W", "W"], ["W"]),
+    ],
+)
+def test_explicit_open_nearest_handles_duplicate_stops(
+    stops: list[str],
+    expected_order: list[str],
+) -> None:
+    result = planner.plan_route(_request(stops=stops, goal="A", return_to_start=False))
+
+    assert result.found is True
+    assert result.order == expected_order
+
+
+def test_omitted_return_to_start_preserves_legacy_goal_participation() -> None:
+    result = planner.plan_route(_request(stops=["B", "A"], goal="B"))
+
+    assert result.found is True
+    assert result.order == ["W", "A", "B"]
 
 
 @pytest.mark.parametrize(

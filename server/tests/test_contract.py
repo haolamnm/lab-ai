@@ -1,5 +1,6 @@
 """The HTTP contract: /plan round-trips camelCase JSON into a RouteResult."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from route_lab.api import app
@@ -48,6 +49,43 @@ def test_optimise_order_defaults_to_false() -> None:
     payload.pop("optimiseOrder")
 
     assert PlanRequest.model_validate(payload).optimise_order is False
+
+
+@pytest.mark.parametrize(
+    ("wire_value", "model_value"),
+    [(True, True), (False, False), (None, None)],
+)
+def test_return_to_start_uses_camelcase_alias(
+    wire_value: bool | None,
+    model_value: bool | None,
+) -> None:
+    payload = diamond_json("ucs")
+    payload["returnToStart"] = wire_value
+
+    request = PlanRequest.model_validate(payload)
+
+    assert request.return_to_start is model_value
+    dumped = request.model_dump(mode="json", by_alias=True)
+    assert dumped["returnToStart"] is model_value
+    assert "optimiseOrder" in dumped
+
+
+def test_return_to_start_defaults_to_legacy_none() -> None:
+    assert PlanRequest.model_validate(diamond_json("ucs")).return_to_start is None
+
+
+def test_invalid_return_to_start_is_rejected() -> None:
+    payload = diamond_json("ucs")
+    payload["returnToStart"] = [True]
+
+    assert client.post("/plan", json=payload).status_code == 422
+
+
+def test_goal_remains_required() -> None:
+    payload = diamond_json("ucs")
+    del payload["goal"]
+
+    assert client.post("/plan", json=payload).status_code == 422
 
 
 def test_greedy_algorithm_is_rejected() -> None:

@@ -50,12 +50,21 @@ def _leg_sequence(request: PlanRequest, graph: Graph) -> list[str]:
     else:
         ordered = destinations
     raw = [request.start, *ordered]
-    return [node for index, node in enumerate(raw) if index == 0 or node != raw[index - 1]]
+    return _without_consecutive_duplicates(raw)
 
 
 def _pairwise_locations(start: str, destinations: Sequence[str]) -> list[str]:
     """Return stable, duplicate-free Pairwise inputs without changing destinations."""
     return list(dict.fromkeys([start, *destinations]))
+
+
+def _without_consecutive_duplicates(locations: Sequence[str]) -> list[str]:
+    """Remove zero-length consecutive legs while preserving all other order."""
+    return [
+        location
+        for index, location in enumerate(locations)
+        if index == 0 or location != locations[index - 1]
+    ]
 
 
 def _zero_metrics(*, optimal: bool = False) -> Metrics:
@@ -99,6 +108,21 @@ def _stopped(algo: AlgoKey, order: list[str], ids: list[str], problem: str) -> R
     )
 
 
+def _trivial_route(request: PlanRequest, ids: list[str], *, optimal: bool) -> RouteResult:
+    """Return the valid zero-leg route at the request start."""
+    return RouteResult(
+        algo=request.algo,
+        problem=None,
+        order=[request.start],
+        path=[request.start],
+        trace=[],
+        node_ids=ids,
+        reveal=[],
+        found=True,
+        metrics=_zero_metrics(optimal=optimal),
+    )
+
+
 def _assemble_cached_legs(
     request: PlanRequest,
     ids: list[str],
@@ -106,6 +130,7 @@ def _assemble_cached_legs(
     paths: Mapping[tuple[str, str], SearchLegResult],
     *,
     optimal: bool,
+    route_kind: str | None = None,
 ) -> RouteResult:
     """Assemble one route from selected cached legs only.
 
@@ -118,11 +143,17 @@ def _assemble_cached_legs(
             continue
         leg = paths.get((source, target))
         if leg is None:
+            problem = f"The cached Pairwise route for {source} -> {target} is missing."
+            if route_kind is not None:
+                problem = (
+                    f"No complete {route_kind} exists; required directed leg "
+                    f"{source} -> {target} is missing."
+                )
             return _stopped(
                 request.algo,
                 [order[0]],
                 ids,
-                f"The cached Pairwise route for {source} -> {target} is missing.",
+                problem,
             )
         selected_legs.append(leg)
 
@@ -174,8 +205,12 @@ def _assemble_cached_legs(
 
 
 def _plan_nearest(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteResult:
-    """Plan legacy destinations using Pairwise A* and pure Nearest Neighbor ordering."""
-    destinations = [*request.stops, request.goal]
+    """Plan legacy or explicit destinations with Pairwise A* and Nearest Neighbor."""
+    explicit = request.return_to_start is not None
+    destinations = list(request.stops) if explicit else [*request.stops, request.goal]
+    if explicit and not destinations:
+        return _trivial_route(request, ids, optimal=False)
+
     pairwise = build_pairwise(
         graph=graph,
         locations=_pairwise_locations(request.start, destinations),
@@ -184,27 +219,38 @@ def _plan_nearest(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteRe
     )
     ordered = nearest_neighbor_order(request.start, destinations, pairwise.costs)
     raw_order = [request.start, *ordered]
-    order = [
-        location
-        for index, location in enumerate(raw_order)
-        if index == 0 or location != raw_order[index - 1]
-    ]
+    if request.return_to_start is True:
+        raw_order.append(request.start)
+    order = _without_consecutive_duplicates(raw_order)
     if len(order) < 2:
+        if explicit:
+            return _trivial_route(request, ids, optimal=False)
         return _stopped(
             request.algo,
             order,
             ids,
             "The pickup and dropoff pin to the same intersection. Choose points farther apart.",
         )
-    return _assemble_cached_legs(request, ids, order, pairwise.paths, optimal=False)
+    route_kind = None
+    if explicit:
+        route_kind = "closed tour" if request.return_to_start else "open route"
+    return _assemble_cached_legs(
+        request,
+        ids,
+        order,
+        pairwise.paths,
+        optimal=False,
+        route_kind=route_kind,
+    )
 
 
 def _plan_held_karp(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteResult:
-    """Plan a closed warehouse tour using Pairwise A* and Held-Karp ordering."""
+    """Plan a legacy cycle or explicit path/tour using Pairwise A* and Held-Karp."""
     warehouse = request.start
     stops = request.stops
+    explicit = request.return_to_start is not None
 
-    if request.goal != warehouse:
+    if not explicit and request.goal != warehouse:
         return _stopped(
             request.algo,
             [warehouse],
@@ -234,17 +280,7 @@ def _plan_held_karp(request: PlanRequest, graph: Graph, ids: list[str]) -> Route
         )
 
     if not stops:
-        return RouteResult(
-            algo=request.algo,
-            problem=None,
-            order=[warehouse],
-            path=[warehouse],
-            trace=[],
-            node_ids=ids,
-            reveal=[],
-            found=True,
-            metrics=_zero_metrics(optimal=True),
-        )
+        return _trivial_route(request, ids, optimal=True)
 
     pairwise = build_pairwise(
         graph=graph,
@@ -257,11 +293,20 @@ def _plan_held_karp(request: PlanRequest, graph: Graph, ids: list[str]) -> Route
             warehouse=warehouse,
             stops=stops,
             costs=pairwise.costs,
+            return_to_start=True if request.return_to_start is None else request.return_to_start,
         )
     except ValueError as exc:
         return _stopped(request.algo, [warehouse], ids, f"Held-Karp input is invalid: {exc}")
 
     if not tour.found:
+        if explicit:
+            route_kind = "closed tour" if request.return_to_start else "open route"
+            return _stopped(
+                request.algo,
+                [warehouse],
+                ids,
+                f"No complete {route_kind} exists for all Held-Karp stops.",
+            )
         return _stopped(
             request.algo,
             [warehouse],
@@ -269,12 +314,16 @@ def _plan_held_karp(request: PlanRequest, graph: Graph, ids: list[str]) -> Route
             "No directed route can visit every Held-Karp stop and return to the warehouse.",
         )
 
+    route_kind = None
+    if explicit:
+        route_kind = "closed tour" if request.return_to_start else "open route"
     return _assemble_cached_legs(
         request,
         ids,
         list(tour.order),
         pairwise.paths,
         optimal=ALGO_OPTIMAL[request.algo],
+        route_kind=route_kind,
     )
 
 
@@ -290,7 +339,13 @@ def plan_route(request: PlanRequest) -> RouteResult:
     # raise a KeyError on the first frontier expansion and surface as a bare 500;
     # here it becomes a normal result whose `problem` says what to fix, the same
     # way an unimplemented algorithm does below.
-    trip_points = list(dict.fromkeys([request.start, request.goal, *request.stops]))
+    explicit_trip = algo in ("nearest", "held_karp") and request.return_to_start is not None
+    raw_trip_points = (
+        [request.start, *request.stops]
+        if explicit_trip
+        else [request.start, request.goal, *request.stops]
+    )
+    trip_points = list(dict.fromkeys(raw_trip_points))
     unknown = [point for point in trip_points if point not in graph.nodes]
     if unknown:
         return _stopped(

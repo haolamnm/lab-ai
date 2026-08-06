@@ -23,4 +23,8 @@ class PlanRequest(Contract):
     # Applies only to point-search algorithms. Nearest Neighbor and Held-Karp
     # always apply their own trip-ordering strategies.
     optimise_order: bool = False
+    # Explicit multi-location mode for Nearest Neighbor and Held-Karp: true
+    # returns to start, false finishes at the selected final stop, and omitted
+    # or null preserves the legacy goal-based behavior.
+    return_to_start: bool | None = None
     conditions: Conditions

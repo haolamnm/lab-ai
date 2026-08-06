@@ -14,7 +14,12 @@ from route_lab.shared.problem import SearchProblem
 from route_lab.shared.search import SearchLegResult, SearchStats
 
 
-def _request(algo: AlgoKey, *, optimise_order: bool) -> PlanRequest:
+def _request(
+    algo: AlgoKey,
+    *,
+    optimise_order: bool,
+    return_to_start: bool | None = None,
+) -> PlanRequest:
     payload: dict[str, Any] = {
         "graph": {
             "nodes": {
@@ -57,6 +62,8 @@ def _request(algo: AlgoKey, *, optimise_order: bool) -> PlanRequest:
             },
         },
     }
+    if return_to_start is not None:
+        payload["returnToStart"] = return_to_start
     return PlanRequest.model_validate(payload)
 
 
@@ -186,3 +193,23 @@ def test_optional_ordering_does_not_change_leg_search(
 
     assert result.found is True
     assert calls == 2
+
+
+@pytest.mark.parametrize("algo", ["bfs", "dfs", "ucs", "astar"])
+@pytest.mark.parametrize("return_to_start", [False, True])
+def test_return_to_start_does_not_affect_point_searches(
+    algo: AlgoKey,
+    return_to_start: bool,
+) -> None:
+    baseline = planner.plan_route(_request(algo, optimise_order=False))
+    explicit = planner.plan_route(
+        _request(
+            algo,
+            optimise_order=False,
+            return_to_start=return_to_start,
+        )
+    )
+
+    assert explicit.order == baseline.order
+    assert explicit.path == baseline.path
+    assert explicit.metrics.cost == baseline.metrics.cost

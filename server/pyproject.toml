@@ -93,6 +93,7 @@ root = "tests"
 reportUnknownMemberType = false
 reportUnknownVariableType = false
 reportUnknownArgumentType = false
+reportUnknownLambdaType = false
 
 # ------------------------------------------------------------------
 # import-linter — the mechanical guarantee behind the "clean playground".
