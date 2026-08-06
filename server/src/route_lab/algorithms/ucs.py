@@ -19,8 +19,8 @@ It is also the whole pattern in one file. Read it before writing a new algorithm
 
 To write A*, change one line: push with ``candidate + problem.heuristic(...)``
 and pass that estimate to ``record_expansion``. BFS/DFS swap the
-``PriorityQueue`` for a ``Queue``/``Stack`` and count
-cost in hops. That is the entire difference between the algorithms.
+``PriorityQueue`` for a ``Queue``/``Stack`` and count cost in hops. That is the
+entire difference between the algorithms.
 """
 
 from __future__ import annotations
