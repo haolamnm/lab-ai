@@ -2,7 +2,7 @@
 
 To add an algorithm: write its module, then register it here. ``nearest`` is
 deliberately absent — it is not a point-to-point search but a stop-ordering
-strategy the planner layers on top of UCS, exactly as the frontend does.
+strategy the planner layers on top of directed Pairwise A* routes.
 """
 
 from route_lab.algorithms.astar import a_star_search
@@ -34,5 +34,5 @@ ALGO_OPTIMAL: dict[AlgoKey, bool] = {
 
 
 def guided(algo: str) -> bool:
-    """Whether the algorithm consults a heuristic (A* alone, now Greedy is gone)."""
+    """Whether the algorithm consults a heuristic."""
     return algo == "astar"

@@ -92,8 +92,10 @@ def test_plan_endpoint_accepts_held_karp() -> None:
     assert response.json()["found"] is True
 
 
-def test_held_karp_plans_closed_multi_stop_route_with_pairwise_astar(
+@pytest.mark.parametrize("optimise_order", [False, True])
+def test_held_karp_always_runs_dp(
     monkeypatch: pytest.MonkeyPatch,
+    optimise_order: bool,
 ) -> None:
     calls = 0
 
@@ -103,7 +105,7 @@ def test_held_karp_plans_closed_multi_stop_route_with_pairwise_astar(
         return a_star_search(problem)
 
     monkeypatch.setattr(planner, "a_star_search", search)
-    result = planner.plan_route(_request(stops=["B", "A"], optimise_order=False))
+    result = planner.plan_route(_request(stops=["B", "A"], optimise_order=optimise_order))
 
     assert result.found is True
     assert result.order == ["W", "A", "B", "W"]

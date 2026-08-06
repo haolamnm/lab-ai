@@ -8,7 +8,7 @@ import type { RouteResult } from './types'
  * parent-child pairs is a genuine tree, and **the shape of the tree is a
  * portrait of the algorithm**: DFS produces one long, almost unbranched
  * chain; BFS produces a fan spreading evenly layer by layer; A* produces a
- * teardrop shape skewed hard toward the goal. Put four trees side by side and
+ * teardrop shape skewed hard toward the goal. Put the trees side by side and
  * the difference is obvious without a word of explanation.
  *
  * The layout was radial until it became clear that radial hides the two things

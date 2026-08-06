@@ -564,12 +564,14 @@ export function planRoute(input: PlanInput): RouteResult {
   const heuristicScale = algo === 'astar'
     ? shared(graph, `heuristic:${conditionsKey}`, () => minCostPerKm(graph, conditions))
     : 0
-  const shouldOrderStops = (algo === 'nearest' || optimiseOrder) && stops.length > 1
-  const orderedStops = shouldOrderStops
-    ? shared(graph, `order:${conditionsKey}|${JSON.stringify([start, stops])}`,
-      () => nearestNeighborOrder(graph, start, stops, conditions))
-    : [...stops]
-  const sequence = [start, ...orderedStops, goal]
+  const destinations = [...stops, goal]
+  const shouldOrderDestinations = (algo === 'nearest' || optimiseOrder)
+    && destinations.length > 1
+  const orderedDestinations = shouldOrderDestinations
+    ? shared(graph, `order:${conditionsKey}|${JSON.stringify([start, destinations])}`,
+      () => nearestNeighborOrder(graph, start, destinations, conditions))
+    : destinations
+  const sequence = [start, ...orderedDestinations]
     .filter((node, index, all) => index === 0 || node !== all[index - 1])
 
   if (sequence.length < 2) {

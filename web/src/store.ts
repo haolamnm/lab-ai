@@ -128,7 +128,7 @@ interface State {
  *
  *  This is a comparison tool, and a cap below the number of things there are to
  *  compare is an arbitrary limit rather than a design. The grid wraps at two
- *  columns and scrolls, so the seventh pane costs a row, not a layout. */
+ *  columns and scrolls, so the fifth pane costs a row, not a layout. */
 export const MAX_PANES = ALGOS.length
 /** The order `addPane` hands algorithms out in — the useful ones first, so the
  *  first two panes are the two that produce an optimal route. */
@@ -140,7 +140,7 @@ export const useStore = create<State>((set, get) => ({
   detail: 'medium', graph: null, building: false, buildError: null, buildNote: null,
   sample: false, sampleCase: null,
   period: 'peak', vehicle: 'bike', criterion: 'balanced',
-  weights: { ...CRITERIA.balanced.weights }, optimiseOrder: true,
+  weights: { ...CRITERIA.balanced.weights }, optimiseOrder: false,
   panes: [], step: 0, maxStep: 0, playing: false, speed: 1, syncView: true,
   running: false, runError: null,
 
