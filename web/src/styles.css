@@ -91,15 +91,40 @@ button { cursor: pointer; }
   padding: 0 18px; height: 48px;
   background: var(--paper); border-bottom: 1px solid var(--rule);
 }
+/* The sidebar trigger. A ghost button: no border, no fill, until you reach for
+   it — it belongs to the window frame rather than to the controls, so it should
+   not read as one more thing to decide about. */
+.icon-button {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; margin-left: -4px;
+  border: none; border-radius: 5px; background: none; color: var(--mute);
+  transition: background .16s var(--ease), color .16s var(--ease);
+}
+.icon-button:hover { background: var(--page); color: var(--ink); }
+.icon-button[aria-expanded='false'] { color: var(--ink); }
+
 .wordmark { font-weight: 600; letter-spacing: -0.01em; }
 .wordmark b { font-weight: 600; }
 .wordmark em { font-style: normal; font-family: var(--mono); font-weight: 400; color: var(--mute); }
 
-.legend { display: flex; gap: 15px; margin-left: auto; color: var(--mute); font-size: 11px; }
+.legend { display: flex; gap: 18px; margin-left: auto; color: var(--mute); font-size: 11px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
+/* A rule before each group rather than a box around it: the header bar already
+   has a border under it, and three more boxes up there would be louder than the
+   swatches they are meant to be organising. */
+.legend-group { gap: 12px; padding-left: 18px; border-left: 1px solid var(--rule); }
+.legend-group:first-child { padding-left: 0; border-left: none; }
+.legend-group > b {
+  font-family: var(--mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--rule-strong, #c3bba8);
+}
 .swatch { width: 8px; height: 8px; border-radius: 50%; }
 .swatch.hollow { background: var(--paper); box-shadow: inset 0 0 0 2px var(--queued); }
 .swatch.ink { background: var(--ink); }
+/* Matches ROUTE/ROUTE_EDGE in MapPane and PATH in TreeView. The ring is what
+   tells it apart from the congestion ramp's orange, which is the one other warm
+   thing on the pane. */
+.swatch.route { background: #f59e0b; box-shadow: 0 0 0 1.5px #7a4405; }
 /* Mirrors the map pins, shape included — the legend has to look like the thing. */
 .swatch.pin-start { background: var(--pin-start); }
 .swatch.pin-goal { background: var(--pin-goal); border-radius: 2px; }
@@ -110,6 +135,15 @@ button { cursor: pointer; }
 .sidebar {
   flex: none; width: 344px; display: flex; flex-direction: column;
   background: var(--paper); border-right: 1px solid var(--rule); min-height: 0;
+  /* Folding it away is a width change, so the column has to clip rather than
+     spill its contents across the panes on the way in and out. */
+  overflow: hidden; transition: width .22s var(--ease);
+}
+/* Folded away. The sidebar stays mounted — every place, weight and toggle in it
+   is preserved — but `visibility` takes it out of the tab order and off the
+   accessibility tree, so nothing invisible can still be reached by keyboard. */
+.shell[data-sidebar='closed'] .sidebar {
+  width: 0; border-right-width: 0; visibility: hidden;
 }
 .sidebar-scroll { flex: 1; overflow-y: auto; }
 
@@ -172,6 +206,20 @@ button { cursor: pointer; }
 .place-result b { font-weight: 500; }
 .place-result small { display: block; color: var(--mute); font-size: 11px; margin-top: 1px; }
 .place-empty { padding: 9px 11px; color: var(--mute); font-size: 12px; }
+/* Names the list as history, so a place that was never searched for in this
+   session is not mistaken for a match on what was just typed. */
+.place-recent-head {
+  display: flex; align-items: center; margin: 0;
+  padding: 7px 11px 5px; border-bottom: 1px solid var(--rule-soft);
+  font-family: var(--mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.09em; text-transform: uppercase; color: var(--mute);
+}
+.place-forget {
+  margin-left: auto; border: none; background: none; padding: 0;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--mute);
+}
+.place-forget:hover { color: var(--w-risk); }
 
 .stop-row {
   display: flex; align-items: center; gap: 9px; padding: 7px 10px; margin-bottom: 7px;
@@ -197,10 +245,20 @@ button { cursor: pointer; }
 .button:hover:not(:disabled) { background: var(--page); border-color: var(--track); }
 .button:active:not(:disabled) { transform: translateY(1px); }
 .button.solid { background: var(--ink); border-color: var(--ink); color: var(--paper); }
-.button.solid:hover:not(:disabled) { background: #3a352d; border-color: #3a352d; }
 .button:disabled { border-color: var(--rule-soft); color: var(--mute); background: var(--paper); cursor: default; }
 .button.wide { width: 100%; }
 .button[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+/* A pressed toggle is a filled button, so it has to hover like one — the same
+   lift `.solid` gets, which is why they share this rule.
+   Without the second selector, the plain `.button:hover` above won this match:
+   it carries a `:not()`, which outscores `[aria-pressed]` on specificity. And it
+   sets only the background, not the colour — so the pressed button dropped to a
+   pale background while keeping its near-white label, and the text disappeared
+   for exactly as long as the pointer stayed on it. */
+.button.solid:hover:not(:disabled),
+.button[aria-pressed='true']:hover:not(:disabled) {
+  background: #3a352d; border-color: #3a352d; color: var(--paper);
+}
 
 /* Loading the road network: a streak of light sweeps across, just enough to show it's still alive. */
 .button.busy {
@@ -294,8 +352,21 @@ button { cursor: pointer; }
 .grid {
   flex: 1; overflow: auto; padding: 16px; display: flex; flex-wrap: wrap;
   gap: 16px; align-content: flex-start; background: var(--page);
+  /* The panes are the part being watched, so they get a floor no amount of
+     explanation below them can push through. Without it, opening every block
+     under the grid squeezed the maps into a strip. */
+  min-height: 46%;
 }
+/* The read-outs together take at most the rest, and scroll inside that. Their
+   ceiling and the grid's floor are set against each other on purpose: 46 + 45
+   leaves room for the timeline strip, so nothing can be pushed off the stage. */
+.readouts { flex: none; max-height: 45%; overflow-y: auto; }
 
+/* The empty state is the only thing in the grid, so it sits in the middle of it.
+   This has to be scoped to that case: `align-content: flex-start` above is what
+   keeps the panes themselves packed against the top, and centring those would
+   leave a growing gap over the first row as panes are added. */
+.grid:has(> .blank) { align-content: center; }
 .blank { margin: auto; max-width: 380px; text-align: center; padding: 40px 20px; animation: rise .3s var(--ease); }
 .blank h1 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
 .blank p { margin: 0 0 20px; color: var(--mute); }
@@ -342,8 +413,15 @@ button { cursor: pointer; }
 .tree {
   position: absolute; inset: 0; width: 100%; height: 100%;
   cursor: grab; touch-action: none;
+  /* Every glyph in the diagram is a number or a node letter, and both are read
+     in columns against the node above and below. Monospace keeps those columns
+     aligned; it also matches the numbers in the pane footer and the sidebar. */
+  font-family: var(--mono);
 }
 .tree:active { cursor: grabbing; }
+/* Hovering a node is how its numbers are read on a dense tree, so the circles
+   have to advertise that they are targets. */
+.tree circle { cursor: pointer; }
 /* The tree's zoom bar: tucked into the corner, only visible when the pane is hovered. */
 .tree-zoom {
   position: absolute; right: 8px; bottom: 8px; display: flex; align-items: center; gap: 2px;
@@ -359,13 +437,19 @@ button { cursor: pointer; }
   font-family: var(--mono); font-size: 10px; color: var(--ink);
   min-width: 30px; text-align: center;
 }
+/* Names the triple under each node, once, instead of lettering every number on
+   every node. Sits opposite the zoom bar so the two corner controls do not meet. */
+.tree-key {
+  position: absolute; left: 8px; top: 7px; z-index: 1; pointer-events: none;
+  font-family: var(--mono); font-size: 10.5px; color: var(--mute);
+  background: var(--paper); border: 1px solid var(--rule-soft); border-radius: 4px;
+  padding: 1px 6px;
+}
 .tree-empty {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: var(--paper); color: var(--mute); font-size: 12px; text-align: center; padding: 20px;
 }
 /* The schematic drops the map background entirely: just the road network on paper. */
-.pane-map[data-view='graph'] { background: var(--paper); }
-.pane-map[data-view='graph'] .leaflet-container { background: var(--paper); }
 /* The three views sit side by side, the active one filled solid — the same visual language as
    the vehicle and time-period pickers in the left column. */
 .pane-tabs {
@@ -414,6 +498,28 @@ button { cursor: pointer; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
 .button.as-label { display: inline-flex; align-items: center; justify-content: center; }
 
+/* Marks a button that opens something rather than doing something. Muted and
+   set apart from the label, so it reads as state and not as part of the name. */
+.button-caret { margin-left: 6px; font-size: 9px; color: var(--mute); }
+.button:hover:not(:disabled) .button-caret { color: inherit; }
+
+/* ---------- Sample scenarios ---------- */
+/* Stacked rather than a grid of chips: each one carries a sentence saying what
+   it demonstrates, and that sentence is the reason to pick it. A row of bare
+   names would fit in less height and tell a reader nothing. */
+.cases { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.case {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  padding: 7px 9px; border: 1px solid transparent; border-radius: 6px;
+  background: none; color: var(--ink-soft);
+}
+.case b { display: block; font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+.case small { display: block; margin-top: 2px; font-size: 11px; line-height: 1.45; color: var(--mute); }
+.case:hover { background: var(--page); }
+.case:hover b { color: var(--ink); }
+.case[aria-pressed='true'] { background: var(--page); border-color: var(--rule); }
+.case[aria-pressed='true'] b { color: var(--ink); }
+
 /* The letter labels of the sample graph — enough to name a node when explaining a route. */
 .node-label {
   font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--ink);
@@ -432,17 +538,36 @@ button { cursor: pointer; }
 .pane-live-q { margin-left: auto; }
 
 /* ---------- Route explanation block ---------- */
+/* No padding on the section: it belongs to the header and the body separately,
+   so the header's hit area reaches the edges instead of stopping 16px short of
+   them. `.compare` is built the same way, which is the point — the two sit one
+   above the other and have to behave identically. */
 .explain {
   flex: none; max-height: 190px; overflow-y: auto;
   background: var(--paper); border-top: 1px solid var(--rule);
-  padding: 12px 16px 14px;
 }
-.explain-head { display: flex; align-items: center; gap: 12px; margin-bottom: 9px; }
+/* Folded away it is just its own header, the same height as the two comparison
+   headers under it — the overflow has to go too, or the box keeps the scroll
+   gutter it no longer has anything to scroll. */
+.explain[data-open='false'] { max-height: none; overflow: visible; }
+/* The header IS the button, edge to edge, so the whole row responds. */
+.explain-head {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  margin: 0; padding: 10px 16px; border: none; background: none; text-align: left;
+}
+.explain-body { padding: 2px 16px 14px; }
+.explain-head:hover h2 { color: var(--ink); }
 .explain-head h2 {
   margin: 0; font-family: var(--mono); font-size: 10.5px; font-weight: 500;
   letter-spacing: 0.11em; text-transform: uppercase; color: var(--mute);
+  transition: color .16s var(--ease);
 }
-.explain-head .button { margin-left: auto; padding: 4px 10px; font-size: 12px; }
+.explain-caret { margin-left: auto; font-size: 11.5px; color: var(--mute); }
+/* Floated so the explanation's first line runs alongside it rather than starting
+   underneath — the button is an aside, and a full row of its own would push the
+   sentence people actually read further down the scroll. */
+.explain-foot { float: right; margin: 0 0 6px 12px; }
+.explain-foot .button { padding: 4px 10px; font-size: 12px; }
 .explain-lead { margin: 0 0 8px; font-size: 13.5px; line-height: 1.5; }
 .explain-row { margin: 0 0 6px; font-size: 12.5px; line-height: 1.55; color: var(--ink-soft); }
 .explain-row:last-child { margin-bottom: 0; }
@@ -526,6 +651,40 @@ button { cursor: pointer; }
 }
 tr[data-on='true'] .compare-pick { color: var(--ink); font-weight: 600; }
 .compare-pick:hover { color: var(--ink); }
+/* ---------- Algorithm comparison table ---------- */
+/* Eleven columns of numbers do not fit a narrow window, and wrapping them would
+   destroy the column alignment that is the whole point of the table — so it
+   scrolls sideways inside its own box instead. */
+.compare-table.algos { min-width: 900px; }
+.compare-table.criteria { min-width: 720px; }
+/* The four weights, in the order the sliders are stacked. Muted because they are
+   the input to the row, not one of its results. */
+.weights-cell { color: var(--mute); font-size: 11px; white-space: nowrap; }
+.compare-body { overflow-x: auto; }
+.algo-name { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+/* The same hue the pane carries, so a row and its pane are recognisably the same run. */
+.algo-swatch {
+  width: 8px; height: 8px; border-radius: 50%; flex: none;
+}
+/* The best value in a column. Underlined rather than coloured: colour in this app
+   already means congestion, and a green "best" cell would read as a clear road. */
+.compare-table td[data-best='true'] {
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 -1px var(--ink);
+}
+.compare-order {
+  font-size: 11.5px; color: var(--ink); max-width: 260px;
+}
+/* A stop the algorithms disagreed on. Bold as well as red, so the difference
+   survives for a reader who cannot separate the two colours. */
+.compare-order [data-differs='true'],
+.order-differs { color: var(--w-risk); font-weight: 600; }
+.verdict-cell {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--mute);
+}
+.verdict-cell[data-optimal='true'] { color: var(--ink); }
+
 /* Route group letter: matching letters mean the routes overlap. */
 .compare-group {
   display: inline-block; min-width: 18px; text-align: center;

@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import { boundsOf, haversine } from './lib/geo'
 import { areaProblem, buildGraph, DETAIL_LABEL, GraphBuildError, snap } from './lib/overpass'
 import { backendEnabled, planRouteRemote } from './lib/planClient'
-import { buildSampleGraph, SAMPLE_GOAL, SAMPLE_START, samplePlace } from './lib/sampleGraph'
+import { sampleCaseOf } from './lib/sampleCases'
+import { buildSampleGraph, samplePlace } from './lib/sampleGraph'
 import { ALGOS, planRoute } from './lib/search'
 import { clampCongestion, clampRisk, CRITERIA, passable, type Conditions } from './lib/traffic'
 import type {
@@ -32,8 +33,19 @@ export function anchorTo(graph: Graph | null, place: Place, vehicle: VehicleKey,
     : { nodeId: null, metres: 0 }
 }
 
-/** Two ways of viewing the same result: laid over a real map, or peeled apart into a schematic. */
-export type PaneView = 'map' | 'graph' | 'tree'
+/**
+ * Two ways of viewing the same result: laid over the real city, or as the search
+ * tree the algorithm actually built.
+ *
+ * There was a third, "Schematic" — the same map with the basemap tiles taken
+ * away and the roads flattened to one neutral tone. It existed to strip the
+ * clutter away from the exploration footprint, but it kept every node at its
+ * true geographic position, so it answered the same question the map does and
+ * only looked quieter doing it. Once the tree view became a readable node-link
+ * diagram, that was the view for reading structure, and the schematic sat
+ * between the two answering neither.
+ */
+export type PaneView = 'map' | 'tree'
 
 export interface Pane {
   id: string
@@ -84,10 +96,13 @@ interface State {
 
   setDetail: (d: Detail) => void
   build: () => Promise<void>
-  loadSample: () => void
+  /** Loads the sample network and applies one scenario. Defaults to the first. */
+  loadSample: (caseKey?: string) => void
   importGraph: (json: string) => void
   /** True when using the custom-built sample graph rather than OpenStreetMap data. */
   sample: boolean
+  /** Which scenario is loaded, or null for an imported graph that matches none. */
+  sampleCase: string | null
 
   setPeriod: (p: PeriodKey) => void
   setVehicle: (v: VehicleKey) => void
@@ -122,7 +137,8 @@ let seq = 0
 
 export const useStore = create<State>((set, get) => ({
   start: null, goal: null, stops: [],
-  detail: 'medium', graph: null, building: false, buildError: null, buildNote: null, sample: false,
+  detail: 'medium', graph: null, building: false, buildError: null, buildNote: null,
+  sample: false, sampleCase: null,
   period: 'peak', vehicle: 'bike', criterion: 'balanced',
   weights: { ...CRITERIA.balanced.weights }, optimiseOrder: false,
   panes: [], step: 0, maxStep: 0, playing: false, speed: 1, syncView: true,
@@ -184,7 +200,7 @@ export const useStore = create<State>((set, get) => ({
           // re-read for exactly that reason, it's only the three points that were missed.
           const fresh = get()
           set({
-            graph, detail, buildNote: note, sample: false, building: false,
+            graph, detail, buildNote: note, sample: false, sampleCase: null, building: false,
             ...reanchorAll(fresh, graph, fresh.vehicle, fresh.period),
           })
           get().clearResults()
@@ -204,16 +220,27 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
-  loadSample: () => {
+  // A scenario is applied as one write, not by calling setVehicle, setPeriod and
+  // setCriterion in turn. Each of those re-pins the trip points against whatever
+  // is in state at that moment, so applied one at a time they would pin the new
+  // vehicle against the old period, and the truck case — the one where pinning
+  // actually changes the answer — would land on a node the truck cannot leave.
+  loadSample: caseKey => {
+    const scenario = sampleCaseOf(caseKey ?? null)
+    // The conditions are applied twice over: to the state fields below, and to
+    // the pinning, which has to read them from the scenario because the state
+    // still holds the ones this very write is replacing.
+    const { vehicle, period, criterion, optimiseOrder } = scenario
     const graph = buildSampleGraph()
-    const { vehicle: v, period: pd } = get()
-    const put = (label: string) => {
+    const pin = (label: string): Anchor => {
       const place = samplePlace(label)
-      return { place, ...anchorTo(graph, place, v, pd) }
+      return { place, ...anchorTo(graph, place, vehicle, period) }
     }
     set({
-      graph, sample: true, buildError: null, buildNote: null, building: false,
-      start: put(SAMPLE_START), goal: put(SAMPLE_GOAL), stops: [],
+      graph, sample: true, sampleCase: scenario.key,
+      buildError: null, buildNote: null, building: false,
+      start: pin(scenario.start), goal: pin(scenario.goal), stops: scenario.stops.map(pin),
+      vehicle, period, criterion, weights: { ...CRITERIA[criterion].weights }, optimiseOrder,
     })
     get().clearResults()
   },
@@ -255,10 +282,13 @@ export const useStore = create<State>((set, get) => ({
       // Re-pin the three trip points onto the new graph, exactly as build() and loadSample() do.
       // Skip this step and start.nodeId still points at a node ID from the old graph: BFS, DFS,
       // and UCS silently return "unreachable" because adj[start] is empty, while A*
-      // crash outright — haversine reads .lat off a node that no longer exists.
+      // crashes outright — haversine reads .lat off a node that no longer exists.
       const fresh = get()
       set({
-        sample: true, buildError: null, graph,
+        // A hand-built graph, but not one of the scenarios: the trip points and
+        // conditions in state belong to whatever was loaded before, and the
+        // scenario list must not claim to describe a network it has never seen.
+        sample: true, sampleCase: null, buildError: null, graph,
         buildNote: `Loaded graph from file: ${Object.keys(nodes).length} nodes, ${edges.length} edges.`,
         ...reanchorAll(fresh, graph, fresh.vehicle, fresh.period),
       })

@@ -68,6 +68,29 @@ function jamsOn(graph: Graph, path: string[], c: Conditions): Jam[] {
   return [...byName.values()].sort((a, b) => b.congestion * b.km - a.congestion * a.km).slice(0, 3)
 }
 
+/**
+ * How much congestion and risk a route actually crosses.
+ *
+ * Both are length-weighted, because that is the form the cost function uses
+ * them in: a route is not more congested for touching a jammed corner, it is
+ * more congested for spending kilometres in one. These are the raw physical
+ * quantities the weights are applied to, which is what makes them the honest
+ * way to compare two routes found under two different cost functions — their
+ * costs are in different units and cannot be put side by side, but the
+ * congestion each one drives through can.
+ */
+export function exposureOn(graph: Graph, path: string[]): { congestion: number; risk: number } {
+  let congestion = 0
+  let risk = 0
+  for (let i = 0; i + 1 < path.length; i++) {
+    const e = edgeBetween(graph, path[i], path[i + 1])
+    if (!e) continue
+    congestion += e.congestion * e.km
+    risk += e.risk * e.km
+  }
+  return { congestion, risk }
+}
+
 export function explain(
   graph: Graph,
   results: { algo: string; result: RouteResult }[],

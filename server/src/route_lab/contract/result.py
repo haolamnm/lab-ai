@@ -66,7 +66,9 @@ class RouteResult(Contract):
     algo: AlgoKey
     # Set only when the query itself is meaningless or a leg has no route.
     problem: str | None = None
-    # The stop order after optional nearest-neighbour optimisation.
+    # Visit order. Explicit open tours end at the selected final stop; explicit
+    # closed tours end at their starting node. Legacy requests keep their old
+    # goal-based shape.
     order: list[str] = Field(default_factory=list)
     path: list[str] = Field(default_factory=list)
     trace: list[TraceStep] = Field(default_factory=list)
