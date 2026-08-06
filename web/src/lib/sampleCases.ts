@@ -17,6 +17,13 @@ import type { CriterionKey, PeriodKey, VehicleKey } from './types'
  * function. `about` says what to look at, because a route that is correct for
  * a reason you cannot see teaches nothing.
  *
+ * No case sets the dropoff to the pickup, which is what Held-Karp needs to run.
+ * That is not an oversight: on a closed tour the planner's optional ordering
+ * folds the return leg away, so five of the six panes come back with a route
+ * that never reaches the warehouse. Once that is fixed upstream this set wants
+ * a closed tour, because Held-Karp is the one algorithm nothing else here
+ * demonstrates.
+ *
  * They all run on the same network, so two cases can be compared directly:
  * `rush-hour` and `after-dark` are the same two points in the same car under
  * the policy a courier would actually use at that hour, and reading them back
@@ -87,9 +94,9 @@ export const SAMPLE_CASES: SampleCase[] = [
   },
   {
     key: 'delivery-round',
-    name: 'Three-stop round',
-    about: 'Out from the warehouse to Dinh Độc Lập, the airport and Chợ Bình Tây, and back — so the visit order is the whole problem. Held–Karp goes C, M, Q for 25.3 km; every other algorithm takes the nearest stop first, goes C, Q, M, and pays 1.4 km for it.',
-    start: 'A', stops: ['C', 'M', 'Q'], goal: 'A',
+    name: 'Three-stop run',
+    about: 'Dinh Độc Lập, the airport and Chợ Bình Tây on the way to Chợ Thủ Đức, so the visit order is the whole problem. Optimised it runs 29.5 km; turn "Optimize visit order" off and the same algorithms follow the order you typed for 36.7 km. Nearest Neighbor ignores the switch — ordering is what it is.',
+    start: 'A', stops: ['C', 'M', 'Q'], goal: 'J',
     vehicle: 'bike', period: 'peak', criterion: 'balanced', optimiseOrder: true,
   },
 ]
