@@ -18,11 +18,17 @@ import type { CriterionKey, PeriodKey, VehicleKey } from './types'
  * a reason you cannot see teaches nothing.
  *
  * No case sets the dropoff to the pickup, which is what Held-Karp needs to run.
- * That is not an oversight: on a closed tour the planner's optional ordering
- * folds the return leg away, so five of the six panes come back with a route
- * that never reaches the warehouse. Once that is fixed upstream this set wants
- * a closed tour, because Held-Karp is the one algorithm nothing else here
- * demonstrates.
+ * That is not an oversight. On a closed tour the optional ordering folds the
+ * return leg away: the dropoff sits zero cost from the start, so it is ordered
+ * first and the consecutive-duplicate filter removes it, and the route never
+ * reaches the warehouse. #15 settles this for the two trip-level algorithms
+ * with an explicit `returnToStart` flag — Nearest Neighbor and Held-Karp both
+ * keep the return leg once it is set — but the four point searches never read
+ * the flag and still plan to `goal`, so they fold as before. The app does not
+ * send the flag yet either, which would leave five of six panes wrong today
+ * and four once it did. A scenario is only worth having if every pane is
+ * answering it, so this set wants a closed tour once the point searches honour
+ * the flag too — Held-Karp is the one algorithm nothing else here demonstrates.
  *
  * They all run on the same network, so two cases can be compared directly:
  * `rush-hour` and `after-dark` are the same two points in the same car under
