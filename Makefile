@@ -20,7 +20,7 @@ help:
 	@echo "  make install   install backend (uv) and frontend (bun) dependencies"
 	@echo "  make dev       run backend and frontend together; Ctrl-C stops both"
 	@echo "  make check     the full gate, exactly what CI runs"
-	@echo "  make test      backend test suite"
+	@echo "  make test      test suites, both halves"
 	@echo "  make lint      lint and typecheck both halves"
 	@echo "  make format    format the backend"
 	@echo "  make build     production build of the frontend"
@@ -64,10 +64,12 @@ dev:
 check:
 	$(MAKE) -C server check
 	cd web && bunx tsc --noEmit
+	cd web && bun test
 	cd web && bun run build
 
 test:
 	$(MAKE) -C server test
+	cd web && bun test
 
 lint:
 	$(MAKE) -C server lint
