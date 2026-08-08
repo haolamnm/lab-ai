@@ -21,11 +21,11 @@ import type { CriterionKey, PeriodKey, VehicleKey } from './types'
  * That is not an oversight. On a closed tour the optional ordering folds the
  * return leg away: the dropoff sits zero cost from the start, so it is ordered
  * first and the consecutive-duplicate filter removes it, and the route never
- * reaches the warehouse. The backend's `returnToStart` flag holds the return leg
- * for the two trip-level algorithms, but the four point searches do not read it
- * and still plan to `goal`, so on a closed-tour scenario four of six panes would
- * be answering a different question from the other two. A scenario is only worth
- * having if every pane is answering it.
+ * reaches the warehouse. The `returnToStart` flag holds the return leg for the
+ * two trip-level algorithms on either planner, but the four point searches do
+ * not read it and still plan to `goal`, so on a closed-tour scenario four of six
+ * panes would be answering a different question from the other two. A scenario
+ * is only worth having if every pane is answering it.
  *
  * They all run on the same network, so two cases can be compared directly:
  * `rush-hour` and `after-dark` are the same two points in the same car under
