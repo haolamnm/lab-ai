@@ -1,9 +1,7 @@
 """The one interface every algorithm implements, and the not-yet-done signal."""
 
-from collections.abc import Callable
-
-from route_lab.shared.problem import SearchProblem
-from route_lab.shared.search import SearchLegResult
+from route_lab.contract.request import AlgoKey
+from route_lab.shared.problem import PointSearch
 
 # An algorithm solves one leg. It is handed a fully-assembled SearchProblem — the
 # graph, endpoints, conditions, and the plug-n-play cost and heuristic — and
@@ -14,19 +12,20 @@ from route_lab.shared.search import SearchLegResult
 #     (problem) -> SearchLegResult
 #
 # The blind searches (BFS, DFS, UCS) simply never call `problem.heuristic`; the
-# guided one (A*) does.
-Algorithm = Callable[[SearchProblem], SearchLegResult]
+# guided one (A*) does. `PointSearch` is the same type under the name `shared`
+# uses for it, which cannot import this module.
+Algorithm = PointSearch
 
 
 class AlgorithmNotImplemented(NotImplementedError):
     """Raised by a stub algorithm the team has not written yet.
 
-    The api catches it and returns a normal result whose ``problem`` explains the
-    gap, so an unfinished algorithm shows a clear message in its pane instead of
-    turning into an HTTP 500.
+    The planner catches it and returns a normal result whose ``problem`` explains
+    the gap, so an unfinished algorithm shows a clear message in its pane instead
+    of turning into an HTTP 500.
     """
 
-    def __init__(self, key: str) -> None:
+    def __init__(self, key: AlgoKey) -> None:
         self.key = key
         super().__init__(
             f"The {key.upper()} algorithm is not implemented on the backend yet. "

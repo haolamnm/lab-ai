@@ -9,16 +9,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from route_lab.algorithms.astar import a_star_search
-from route_lab.algorithms.registry import ALGO_OPTIMAL, POINT_SEARCHES, guided
+from route_lab.algorithms.registry import ALGO_OPTIMAL, POINT_SEARCHES
 from route_lab.algorithms.ucs import uniform_cost_search
 from route_lab.api import app
 from route_lab.contract.graph import GraphPayload
 from route_lab.contract.request import PlanRequest
 from route_lab.planner import plan_route
 from route_lab.shared.graph import build_graph
-from route_lab.shared.problem import SearchProblem, build_problem
+from route_lab.shared.problem import SearchProblem
 
-from .fixtures import diamond_json, diamond_payload, diamond_request
+from .fixtures import diamond_json, diamond_problem, diamond_request
 
 client = TestClient(app)
 
@@ -71,32 +71,22 @@ def _problem(
     )
 
 
-def _diamond_problem(*, guided_search: bool) -> SearchProblem:
-    return build_problem(
-        build_graph(diamond_payload()),
-        "A",
-        "D",
-        diamond_request("astar").conditions,
-        guided=guided_search,
-    )
-
-
 def test_astar_finds_path() -> None:
-    result = a_star_search(_diamond_problem(guided_search=True))
+    result = a_star_search(diamond_problem())
 
     assert result.found is True
     assert result.path == ["A", "B", "D"]
 
 
 def test_astar_matches_ucs_minimum_cost() -> None:
-    astar = a_star_search(_diamond_problem(guided_search=True))
-    ucs = uniform_cost_search(_diamond_problem(guided_search=False))
+    astar = a_star_search(diamond_problem())
+    ucs = uniform_cost_search(diamond_problem())
 
     assert sum(edge.km for edge in astar.edges) == pytest.approx(sum(edge.km for edge in ucs.edges))
 
 
 def test_astar_total_cost_is_sum_of_edge_costs() -> None:
-    problem = _diamond_problem(guided_search=True)
+    problem = diamond_problem()
     result = a_star_search(problem)
 
     edge_total = sum(problem.cost(edge) for edge in result.edges)
@@ -123,7 +113,7 @@ def test_heuristic_not_added_to_result_cost() -> None:
 
 
 def test_astar_goal_heuristic_is_zero() -> None:
-    problem = _diamond_problem(guided_search=True)
+    problem = diamond_problem()
     result = a_star_search(problem)
 
     assert problem.heuristic(problem.goal) == pytest.approx(0.0, abs=1e-9)
@@ -192,6 +182,8 @@ def test_astar_handles_stale_frontier_entries() -> None:
 
     assert result.path == ["S", "A", "X", "G"]
     assert result.trace[-1].g == pytest.approx(12.0)
+    # 2 is the node index of X, not a count: X is expanded exactly once, so the
+    # stale 5.0 entry left behind when S -> A -> X improved on it was skipped.
     assert [step.expanded for step in result.trace].count(2) == 1
 
 
@@ -217,6 +209,8 @@ def test_astar_reopens_when_better_path_found() -> None:
     assert result.path == ["S", "A", "B", "G"]
     assert result.trace[-1].g == pytest.approx(4.5)
     assert result.stats.reopened >= 1
+    # 2 is the node index of B, not a count: B really is expanded twice, once at
+    # g=3 and again after the cheaper S -> A -> B route reopened it.
     assert [step.expanded for step in result.trace].count(2) == 2
 
 
@@ -263,15 +257,14 @@ def test_astar_respects_turn_restriction() -> None:
 
 
 def test_astar_expands_no_more_than_ucs_on_guided_sample() -> None:
-    astar = a_star_search(_diamond_problem(guided_search=True))
-    ucs = uniform_cost_search(_diamond_problem(guided_search=False))
+    astar = a_star_search(diamond_problem())
+    ucs = uniform_cost_search(diamond_problem())
 
     assert astar.stats.expanded <= ucs.stats.expanded
 
 
 def test_astar_registry_configuration() -> None:
     assert POINT_SEARCHES["astar"] is a_star_search
-    assert guided("astar") is True
     assert ALGO_OPTIMAL["astar"] is True
 
 

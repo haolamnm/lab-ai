@@ -6,12 +6,24 @@ from typing import Any, cast
 import pytest
 
 from route_lab import planner
+from route_lab.algorithms.registry import PointSearchKey
 from route_lab.contract.conditions import Conditions
 from route_lab.contract.request import AlgoKey, PlanRequest
 from route_lab.shared.graph import Graph
-from route_lab.shared.pairwise import PairwiseResult, PointSearch
-from route_lab.shared.problem import SearchProblem
+from route_lab.shared.pairwise import PairwiseResult
+from route_lab.shared.problem import PointSearch, SearchProblem
 from route_lab.shared.search import SearchLegResult, SearchStats
+
+from .fixtures import trip_request
+
+# W -> B direct is four times the W -> A -> B route, so an ordering pass that
+# actually consults the cost matrix visits A first and one that does not cannot.
+_EDGES: list[tuple[str, str, float]] = [
+    ("W", "A", 1.0),
+    ("W", "B", 4.0),
+    ("A", "B", 1.0),
+    ("B", "A", 1.0),
+]
 
 
 def _request(
@@ -20,60 +32,14 @@ def _request(
     optimise_order: bool,
     return_to_start: bool | None = None,
 ) -> PlanRequest:
-    payload: dict[str, Any] = {
-        "graph": {
-            "nodes": {
-                "W": {"id": "W", "lat": 10.0, "lng": 106.0},
-                "A": {"id": "A", "lat": 10.001, "lng": 106.001},
-                "B": {"id": "B", "lat": 10.002, "lng": 106.002},
-            },
-            "edges": [
-                {
-                    "from": source,
-                    "to": target,
-                    "km": km,
-                    "roadClass": "secondary",
-                    "congestion": 1.0,
-                    "risk": 0.0,
-                }
-                for source, target, km in (
-                    ("W", "A", 1.0),
-                    ("W", "B", 4.0),
-                    ("A", "B", 1.0),
-                    ("B", "A", 1.0),
-                )
-            ],
-            "bounds": [[10.0, 106.0], [10.002, 106.002]],
-            "detail": "fine",
-        },
-        "algo": algo,
-        "start": "W",
-        "goal": "B",
-        "stops": ["B", "A"],
-        "optimiseOrder": optimise_order,
-        "conditions": {
-            "vehicle": "van",
-            "period": "peak",
-            "weights": {
-                "distance": 1.0,
-                "time": 0.0,
-                "congestion": 0.0,
-                "risk": 0.0,
-            },
-        },
-    }
-    if return_to_start is not None:
-        payload["returnToStart"] = return_to_start
-    return PlanRequest.model_validate(payload)
-
-
-@pytest.mark.parametrize("optimise_order", [False, True])
-def test_nearest_ignores_optimise_order(optimise_order: bool) -> None:
-    result = planner.plan_route(_request("nearest", optimise_order=optimise_order))
-
-    assert result.found is True
-    assert result.order == ["W", "A", "B"]
-    assert result.metrics.optimal is False
+    return trip_request(
+        algo,
+        goal="B",
+        stops=["B", "A"],
+        edges=_EDGES,
+        optimise_order=optimise_order,
+        return_to_start=return_to_start,
+    )
 
 
 @pytest.mark.parametrize("algo", ["bfs", "dfs", "ucs", "astar"])
@@ -175,7 +141,7 @@ def test_optional_ordering_excludes_pairwise_metrics(monkeypatch: pytest.MonkeyP
 )
 def test_optional_ordering_does_not_change_leg_search(
     monkeypatch: pytest.MonkeyPatch,
-    algo: AlgoKey,
+    algo: PointSearchKey,
     search_name: str,
 ) -> None:
     selected_search = planner.POINT_SEARCHES[algo]

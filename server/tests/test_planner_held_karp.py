@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Sequence
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,65 +16,38 @@ from route_lab.shared.pairwise import PairwiseResult
 from route_lab.shared.problem import SearchProblem
 from route_lab.shared.search import SearchLegResult, SearchStats
 
+from .fixtures import trip_request
+
+# A three-node cycle W -> A -> B -> W at 1.0 a leg, with the reverse direction
+# available but half again as expensive, so the closed tour has one clear winner.
+_CYCLE_EDGES: list[tuple[str, str, float]] = [
+    ("W", "A", 1.0),
+    ("A", "B", 1.0),
+    ("B", "W", 1.0),
+    ("W", "B", 1.5),
+    ("B", "A", 1.5),
+    ("A", "W", 1.5),
+]
+
 
 def _request(
     *,
     start: str = "W",
     goal: str = "W",
-    stops: list[str] | None = None,
+    stops: Sequence[str] = (),
     optimise_order: bool = True,
     return_to_start: bool | None = None,
-    edges: list[tuple[str, str, float]] | None = None,
+    edges: Sequence[tuple[str, str, float]] | None = None,
 ) -> PlanRequest:
-    edge_values = edges or [
-        ("W", "A", 1.0),
-        ("A", "B", 1.0),
-        ("B", "W", 1.0),
-        ("W", "B", 1.5),
-        ("B", "A", 1.5),
-        ("A", "W", 1.5),
-    ]
-    payload: dict[str, Any] = {
-        "graph": {
-            "nodes": {
-                "W": {"id": "W", "lat": 10.0, "lng": 106.0},
-                "A": {"id": "A", "lat": 10.001, "lng": 106.001},
-                "B": {"id": "B", "lat": 10.002, "lng": 106.002},
-            },
-            "edges": [
-                {
-                    "from": source,
-                    "to": target,
-                    "km": km,
-                    "roadClass": "secondary",
-                    "congestion": 1.0,
-                    "risk": 0.0,
-                    "name": f"{source}-{target}",
-                }
-                for source, target, km in edge_values
-            ],
-            "bounds": [[10.0, 106.0], [10.002, 106.002]],
-            "detail": "fine",
-        },
-        "algo": "held_karp",
-        "start": start,
-        "goal": goal,
-        "stops": [] if stops is None else stops,
-        "optimiseOrder": optimise_order,
-        "conditions": {
-            "vehicle": "van",
-            "period": "peak",
-            "weights": {
-                "distance": 1.0,
-                "time": 0.0,
-                "congestion": 0.0,
-                "risk": 0.0,
-            },
-        },
-    }
-    if return_to_start is not None:
-        payload["returnToStart"] = return_to_start
-    return PlanRequest.model_validate(payload)
+    return trip_request(
+        "held_karp",
+        start=start,
+        goal=goal,
+        stops=stops,
+        edges=_CYCLE_EDGES if edges is None else edges,
+        optimise_order=optimise_order,
+        return_to_start=return_to_start,
+    )
 
 
 def test_contract_and_registry_accept_held_karp_without_point_search_registration() -> None:
@@ -179,6 +152,19 @@ def test_held_karp_assembles_only_selected_cached_legs(
     assert result.metrics.reopened == 3
     assert result.metrics.max_frontier == 5
     assert result.metrics.turns_blocked == 3
+
+
+def test_flat_cost_withdraws_the_optimal_claim() -> None:
+    # Every route costs 0 with no weights, so "optimal" would be true of any
+    # answer. UCS already withdrew the claim here and Held-Karp did not, which
+    # made one comparison grid disagree with itself.
+    request = _request(stops=["B", "A"])
+    request.conditions.weights.distance = 0.0
+
+    result = planner.plan_route(request)
+
+    assert result.found is True
+    assert result.metrics.optimal is False
 
 
 def test_held_karp_rejects_open_trip() -> None:
@@ -305,15 +291,11 @@ def test_held_karp_rejects_stop_limit_before_pairwise(
     assert result.problem is not None and "at most" in result.problem
 
 
-@pytest.mark.parametrize(
-    ("stops", "message"),
-    [(["A", "A"], "duplicates"), (["W"], "warehouse")],
-)
-def test_held_karp_invalid_stops_return_failure(stops: list[str], message: str) -> None:
-    result = planner.plan_route(_request(stops=stops))
+def test_held_karp_rejects_the_warehouse_as_a_stop() -> None:
+    result = planner.plan_route(_request(stops=["W"]))
 
     assert result.found is False
-    assert result.problem is not None and message in result.problem
+    assert result.problem is not None and "warehouse" in result.problem
 
 
 def test_held_karp_no_hamiltonian_cycle_is_finite_failure() -> None:

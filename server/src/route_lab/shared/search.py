@@ -98,25 +98,33 @@ class SearchMemory:
     stats: SearchStats = field(default_factory=SearchStats)
 
     def key_of(self, node: str, incoming: GraphEdge | None) -> str:
-        """The search-state key for arriving at ``node`` via ``incoming``.
+        """The search-state key for arriving at ``node`` via ``incoming``."""
+        return _key_of(node, incoming, turns_active=self.turns_active)
 
-        Plain node id unless the graph carries turn restrictions, in which case
-        the arriving way is folded in so turn rules can be applied per arrival.
-        """
-        if not self.turns_active:
-            return node
-        way = incoming.way_id if incoming is not None else None
-        return f"{node}|{'' if way is None else way}"
+
+def _key_of(node: str, incoming: GraphEdge | None, *, turns_active: bool) -> str:
+    """Plain node id unless the graph carries turn restrictions, in which case the
+    arriving way is folded in so turn rules can be applied per arrival.
+
+    A module-level function rather than only a method, because the start key has
+    to be computed before the :class:`SearchMemory` that would hold it exists.
+    """
+    if not turns_active:
+        return node
+    way = incoming.way_id if incoming is not None else None
+    return f"{node}|{'' if way is None else way}"
 
 
 def create_search_memory(graph: Graph, start: str, conditions: Conditions) -> SearchMemory:
     """A fresh :class:`SearchMemory` seeded with the start state."""
+    turns_active = graph.turns_active
+    start_key = _key_of(start, None, turns_active=turns_active)
     memory = SearchMemory(
         graph=graph,
         conditions=conditions,
         node_index=_node_index(graph),
-        turns_active=graph.turns_active,
-        start_key="",
+        turns_active=turns_active,
+        start_key=start_key,
         node_at={},
         parent={},
         via={},
@@ -124,8 +132,6 @@ def create_search_memory(graph: Graph, start: str, conditions: Conditions) -> Se
         closed=set(),
         open={},
     )
-    start_key = memory.key_of(start, None)
-    memory.start_key = start_key
     memory.node_at[start_key] = start
     memory.parent[start_key] = None
     memory.via[start_key] = None
@@ -226,11 +232,11 @@ def complete_leg(memory: SearchMemory, goal_key: str | None, started_at: float) 
 def pop_fresh(frontier: Heap, memory: SearchMemory) -> str | None:
     """Pop the next non-stale state, or None when the frontier is exhausted.
 
-    Improved states leave stale heap entries behind; one is fresh only if it is
-    still open and its recorded cost still matches the current best. The public
-    :class:`route_lab.shared.frontier.PriorityQueue` skips stale entries with a
-    simpler ``closed`` check instead; this is the internal form the ordering
-    sweep uses.
+    Improved states leave stale heap entries behind rather than being moved by a
+    decrease-key; one is fresh only if it is still open and its recorded cost
+    still matches the current best. Comparing the cost as well as the ``closed``
+    flag is what makes this safe for A*, which reopens a closed state when an
+    inconsistent heuristic turns up a cheaper route to it.
     """
     while frontier.size:
         entry = frontier.pop()

@@ -14,17 +14,17 @@ class Contract(BaseModel):
 
     ``populate_by_name`` lets tests and internal code build a model with the
     Python field names while the wire still uses the camelCase aliases.
-    ``extra="ignore"`` is deliberate: the frontend's ``Graph`` also carries an
-    ``adj`` index whose values are the same edge objects as ``edges``. Sending it
-    would duplicate every edge in the JSON, so the client strips it — and the
-    backend rebuilds ``adj`` from ``edges`` itself. Ignoring unknown fields means
-    a client that forgets to strip ``adj`` still works instead of erroring.
+    ``extra="forbid"`` is the default because a field the backend does not know
+    is a version skew between the two halves of the contract, and a client that
+    sends ``optimizeOrder`` for ``optimiseOrder`` deserves a 422 naming the field
+    rather than a silent ``False``. :class:`GraphPayload` overrides it; that one
+    model has a documented reason to tolerate extras.
     """
 
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
-        extra="ignore",
+        extra="forbid",
     )
 
 
@@ -32,8 +32,11 @@ class GraphNode(Contract):
     """An intersection in the road network."""
 
     id: str
-    lat: float
-    lng: float
+    # Ranges are enforced here rather than trusted: the heuristics take a cosine
+    # of the latitude and a non-finite coordinate turns every estimate into nan,
+    # which makes A* expand in an arbitrary order instead of failing.
+    lat: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    lng: float = Field(ge=-180, le=180, allow_inf_nan=False)
     # Only the sample graph carries these; nodes from OpenStreetMap have neither.
     label: str | None = None
     name: str | None = None
@@ -46,12 +49,17 @@ class GraphEdge(Contract):
     # underscore and an explicit alias back to the bare wire name.
     from_: str = Field(alias="from")
     to: str
-    km: float
+    # A zero-length or negative segment makes ``edge_cost`` zero or negative, and
+    # a negative edge cost silently breaks the optimality UCS and A* rely on: the
+    # first settled arrival at a node stops being its cheapest one.
+    km: float = Field(gt=0, allow_inf_nan=False)
     road_class: RoadClass
-    # Congestion 1-5 and risk 0-1. The frontend clamps these on import; the cost
-    # model in shared/traffic.py assumes the ranges hold.
-    congestion: float
-    risk: float
+    # The cost model in shared/traffic.py assumes these ranges hold — congestion
+    # below 1 drives the cost negative, and the jam factor below zero. Rejecting
+    # an out-of-range value is better than clamping it, which would answer a
+    # different question than the caller asked and never say so.
+    congestion: float = Field(ge=1, le=5)
+    risk: float = Field(ge=0, le=1)
     name: str | None = None
     # Coordinates along the real road, so the frontend can draw its true shape.
     # The planner never reads this, but it is part of the graph the client sends.
@@ -64,6 +72,10 @@ class GraphEdge(Contract):
 class TurnRule(Contract):
     """A turn restriction at one intersection."""
 
+    # `no_left_turn`, `only_straight_on`, and so on. Nothing here reads it —
+    # ``turn_allowed`` dispatches on which of the two tables the rule came from —
+    # but every rule the frontend builds from OpenStreetMap carries it, so the
+    # field is declared rather than rejected.
     kind: str
     # Time windows this rule applies in, minutes since midnight. Empty = all day.
     hours: list[tuple[int, int]] = Field(default_factory=list)
@@ -85,11 +97,29 @@ class TurnTable(Contract):
 
 
 class GraphPayload(Contract):
-    """The graph as it crosses the wire — no ``adj``, which the backend rebuilds."""
+    """The graph as it crosses the wire — no ``adj``, which the backend rebuilds.
+
+    This is the one model that ignores unknown fields instead of rejecting them.
+    The frontend's ``Graph`` also carries an ``adj`` index whose values are the
+    same edge objects as ``edges``; sending it would duplicate every edge in the
+    JSON, so the client strips it and the backend rebuilds it from ``edges``. A
+    client that forgets to strip it still works rather than getting a 422 about a
+    field the backend was going to derive anyway.
+    """
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="ignore",
+    )
 
     nodes: dict[str, GraphNode]
     edges: list[GraphEdge]
-    bounds: tuple[tuple[float, float], tuple[float, float]]
-    detail: Detail
+    # The map viewport and the road classes the network was built at. Both are
+    # the frontend's own bookkeeping and nothing here reads them; they are
+    # declared, and optional, so the wire format stays a mirror of types.ts
+    # without making a caller invent values the planner will not use.
+    bounds: tuple[tuple[float, float], tuple[float, float]] | None = None
+    detail: Detail | None = None
     # The sample graph and imported JSON graphs carry no turn restrictions.
     turns: TurnTable | None = None

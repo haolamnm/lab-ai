@@ -18,11 +18,10 @@ from route_lab.algorithms.base import AlgorithmNotImplemented
 from route_lab.algorithms.registry import POINT_SEARCHES
 from route_lab.api import app
 from route_lab.planner import plan_route
-from route_lab.shared.graph import build_graph
-from route_lab.shared.problem import SearchProblem, build_problem
+from route_lab.shared.problem import SearchProblem
 from route_lab.shared.search import SearchLegResult
 
-from .fixtures import diamond_json, diamond_request
+from .fixtures import diamond_json, diamond_problem, diamond_request
 
 client = TestClient(app)
 
@@ -62,10 +61,8 @@ def test_endpoint_stays_200() -> None:
 
 def test_calling_an_unimplemented_algorithm_directly_raises() -> None:
     # Loud in code: nothing swallows it below the planner.
-    request = diamond_request("bfs")
-    problem = build_problem(build_graph(request.graph), "A", "D", request.conditions, guided=False)
     with pytest.raises(AlgorithmNotImplemented) as raised:
-        _unimplemented(problem)
+        _unimplemented(diamond_problem())
 
     assert raised.value.key == "bfs"
     assert "bfs.py" in str(raised.value)

@@ -27,7 +27,8 @@ from dataclasses import dataclass
 from route_lab.contract.conditions import Conditions
 from route_lab.contract.graph import GraphEdge
 from route_lab.shared.graph import Graph
-from route_lab.shared.heuristics import DEFAULT_HEURISTIC, HEURISTICS, Heuristic, zero_heuristic
+from route_lab.shared.heuristics import DEFAULT_HEURISTIC, HEURISTICS, Heuristic, HeuristicName
+from route_lab.shared.search import SearchLegResult
 from route_lab.shared.traffic import edge_cost, min_cost_per_km
 
 # The cost of traversing one edge, already bound to the run conditions, so an
@@ -47,33 +48,38 @@ class SearchProblem:
     heuristic: Heuristic
 
 
+# Solving one leg: a problem in, a leg result out. The alias lives here rather
+# than in ``algorithms`` because ``shared`` may not import an algorithm and
+# ``shared/pairwise.py`` takes one as a parameter;
+# :data:`route_lab.algorithms.base.Algorithm` is the same type under the name
+# the algorithm docs use.
+PointSearch = Callable[[SearchProblem], SearchLegResult]
+
+
 def build_problem(
     graph: Graph,
     start: str,
     goal: str,
     conditions: Conditions,
     *,
-    guided: bool,
-    heuristic_name: str = DEFAULT_HEURISTIC,
+    heuristic_name: HeuristicName = DEFAULT_HEURISTIC,
 ) -> SearchProblem:
     """Assemble the default problem for a leg.
 
-    ``cost`` defaults to the traffic cost model. ``guided`` decides the
-    heuristic: a guided search (A*) gets the named distance heuristic
-    (``haversine`` by default; see :data:`route_lab.shared.heuristics.HEURISTICS`),
-    scaled to be an admissible lower bound; a blind one (BFS, DFS, UCS) gets the
-    zero heuristic, so it is handed a valid function it simply never consults.
+    ``cost`` defaults to the traffic cost model, and the heuristic to the named
+    distance estimate (``haversine`` by default; see
+    :data:`route_lab.shared.heuristics.HEURISTICS`) scaled to be an admissible
+    lower bound. Every leg gets one, including the blind searches: BFS, DFS and
+    UCS never call ``problem.heuristic``, so building it for them costs one
+    ``min_cost_per_km`` scan and removes the standing risk of a per-algorithm
+    "is this one guided?" table drifting away from the algorithms themselves.
     """
 
     def cost(edge: GraphEdge) -> float:
         return edge_cost(edge, conditions)
 
-    heuristic: Heuristic
-    if guided:
-        scale = min_cost_per_km(graph.edges, conditions)
-        heuristic = HEURISTICS[heuristic_name](graph, goal, scale)
-    else:
-        heuristic = zero_heuristic
+    scale = min_cost_per_km(graph.edges, conditions)
+    heuristic = HEURISTICS[heuristic_name](graph, goal, scale)
 
     return SearchProblem(
         graph=graph,

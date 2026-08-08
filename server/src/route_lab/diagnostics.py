@@ -16,7 +16,7 @@ from route_lab.shared.graph import Graph
 from route_lab.shared.traffic import PERIODS, ROAD_LABEL, VEHICLES, passable, vehicle_of
 
 
-def reaches(graph: Graph, start: str, goal: str, allow: Callable[[GraphEdge], bool]) -> bool:
+def _reaches(graph: Graph, start: str, goal: str, allow: Callable[[GraphEdge], bool]) -> bool:
     """Whether ``goal`` is reachable from ``start`` using only allowed edges."""
     seen = {start}
     queue = [start]
@@ -57,7 +57,7 @@ def _connected_ignoring_direction(graph: Graph, source: str, target: str) -> boo
 
 
 def why_blocked(
-    graph: Graph, source: str, target: str, conditions: Conditions, turns_blocked: int = 0
+    graph: Graph, source: str, target: str, conditions: Conditions, turns_blocked: int
 ) -> str:
     """A one-sentence, actionable reason the leg from ``source`` to ``target`` fails.
 
@@ -65,7 +65,7 @@ def why_blocked(
     this leg; it lets a purely turn-restricted failure be named as such instead of
     being misattributed to a vehicle ban on a road the route never used.
     """
-    if not reaches(graph, source, target, lambda _edge: True):
+    if not _reaches(graph, source, target, lambda _edge: True):
         if _connected_ignoring_direction(graph, source, target):
             return (
                 "The two points are connected, but only by one-way streets running the wrong "
@@ -80,7 +80,7 @@ def why_blocked(
     # Reachable when turn rules are ignored but the vehicle and period are honoured,
     # yet the real search (which also honours turn rules) still failed and dropped a
     # direction to one: the turn restrictions are the cause, not a vehicle ban.
-    if turns_blocked > 0 and reaches(
+    if turns_blocked > 0 and _reaches(
         graph,
         source,
         target,
@@ -97,7 +97,7 @@ def why_blocked(
         period
         for period in PERIODS
         if period.key != conditions.period
-        and reaches(
+        and _reaches(
             graph,
             source,
             target,
@@ -112,7 +112,7 @@ def why_blocked(
         candidate
         for candidate in VEHICLES
         if candidate.key != conditions.vehicle
-        and reaches(
+        and _reaches(
             graph,
             source,
             target,

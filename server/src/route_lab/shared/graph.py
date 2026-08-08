@@ -3,30 +3,33 @@
 The wire payload (``GraphPayload``) carries ``nodes`` and ``edges`` but not the
 ``adj`` adjacency index — sending it would duplicate every edge in the JSON. This
 module rebuilds ``adj`` from ``edges``, exactly as the frontend's
-``store.importGraph`` does, and clamps congestion and risk into the ranges the
-cost model assumes. Clamping is defensive: the frontend already clamps on import,
-but the backend does not trust an arbitrary API caller, and a single negative
-congestion value produces a negative edge cost that silently breaks the
-optimality guarantee UCS and A* rely on.
+``store.importGraph`` does. Nothing is range-checked on the way through: the
+contract already rejects a segment whose length, congestion, or risk is outside
+the range the cost model assumes, so an arriving payload either holds or never
+became a :class:`~route_lab.contract.graph.GraphPayload` at all.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from route_lab.contract.graph import Detail, GraphEdge, GraphNode, GraphPayload, TurnTable
-from route_lab.shared.traffic import clamp_congestion, clamp_risk
+from route_lab.contract.graph import GraphEdge, GraphNode, GraphPayload, TurnTable
 
 
 @dataclass(frozen=True)
 class Graph:
-    """A road network ready to search: nodes, edges, and an adjacency index."""
+    """A road network ready to search: nodes, edges, and an adjacency index.
 
-    nodes: dict[str, GraphNode]
-    edges: list[GraphEdge]
-    adj: dict[str, list[GraphEdge]]
-    bounds: tuple[tuple[float, float], tuple[float, float]]
-    detail: Detail
+    The collections are typed read-only rather than as ``dict``/``list``. They
+    are the payload's own objects, so ``frozen=True`` alone would be a half
+    promise: it stops the fields being rebound and says nothing about mutating
+    what they point at, which would corrupt the graph mid-search.
+    """
+
+    nodes: Mapping[str, GraphNode]
+    edges: Sequence[GraphEdge]
+    adj: Mapping[str, Sequence[GraphEdge]]
     turns: TurnTable | None
 
     @property
@@ -42,19 +45,8 @@ class Graph:
 
 def build_graph(payload: GraphPayload) -> Graph:
     """Turn a wire payload into a searchable :class:`Graph`."""
-    # Clamp on the way in, once, so no downstream code has to re-check the range.
-    edges = [
-        edge.model_copy(
-            update={
-                "congestion": clamp_congestion(edge.congestion),
-                "risk": clamp_risk(edge.risk),
-            }
-        )
-        for edge in payload.edges
-    ]
-
     adj: dict[str, list[GraphEdge]] = {node_id: [] for node_id in payload.nodes}
-    for edge in edges:
+    for edge in payload.edges:
         # An edge whose endpoint is not among the nodes is dropped, matching the
         # frontend's `adj[e.from]?.push(e)` — the optional chain is a silent skip.
         if edge.from_ in adj:
@@ -62,9 +54,7 @@ def build_graph(payload: GraphPayload) -> Graph:
 
     return Graph(
         nodes=payload.nodes,
-        edges=edges,
+        edges=payload.edges,
         adj=adj,
-        bounds=payload.bounds,
-        detail=payload.detail,
         turns=payload.turns,
     )

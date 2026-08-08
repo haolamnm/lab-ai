@@ -9,37 +9,8 @@ via a ``to_camel`` alias generator, so neither side has to translate by hand.
 This package is a pure leaf: it imports nothing else from ``route_lab``, which
 import-linter enforces. A contract that reached into the algorithms or the
 planner would stop being a contract and start being an implementation.
+
+Import from the module that defines the name — ``.graph``, ``.conditions``,
+``.request``, ``.result`` — never from here. A re-export barrel would hide which
+of the four a type belongs to, and the four are the map of the wire format.
 """
-
-from route_lab.contract.conditions import Conditions, PeriodKey, VehicleKey, Weights
-from route_lab.contract.graph import (
-    Detail,
-    GraphEdge,
-    GraphNode,
-    GraphPayload,
-    RoadClass,
-    TurnRule,
-    TurnTable,
-)
-from route_lab.contract.request import AlgoKey, PlanRequest
-from route_lab.contract.result import Metrics, Reveal, RouteResult, TraceStep
-
-__all__ = [
-    "AlgoKey",
-    "Conditions",
-    "Detail",
-    "GraphEdge",
-    "GraphNode",
-    "GraphPayload",
-    "Metrics",
-    "PeriodKey",
-    "PlanRequest",
-    "Reveal",
-    "RoadClass",
-    "RouteResult",
-    "TraceStep",
-    "TurnRule",
-    "TurnTable",
-    "VehicleKey",
-    "Weights",
-]
