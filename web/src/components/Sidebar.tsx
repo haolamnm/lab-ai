@@ -37,11 +37,13 @@ export function Sidebar() {
     running: st.running, runError: st.runError,
     period: st.period, vehicle: st.vehicle, criterion: st.criterion,
     weights: st.weights, optimiseOrder: st.optimiseOrder,
+    returnToStart: st.returnToStart,
     setPlace: st.setPlace, addStop: st.addStop, removeStop: st.removeStop,
     setDetail: st.setDetail, build: st.build, loadSample: st.loadSample,
     importGraph: st.importGraph, setPeriod: st.setPeriod, setVehicle: st.setVehicle,
     setCriterion: st.setCriterion, setWeight: st.setWeight,
-    setOptimiseOrder: st.setOptimiseOrder, run: st.run,
+    setOptimiseOrder: st.setOptimiseOrder, setReturnToStart: st.setReturnToStart,
+    run: st.run,
   })))
   // Deliberately not part of the object above. `panes` is rewritten once per pane
   // per result as a run lands, and including it re-rendered every section of the
@@ -85,10 +87,28 @@ export function Sidebar() {
           ) : (
             <button className="link-button" onClick={() => setAdding(true)}>Add a stop</button>
           )}
+          {/* On a round trip the dropoff is not where the trip ends -- a loop has
+              no last stop -- so it is labelled as the ordinary stop it becomes.
+              Relabelled in place rather than moved into the stop list above,
+              because unticking has to give it straight back. */}
           <PlaceField
-            role="Dropoff" kind="goal" placeholder="Dropoff location" value={s.goal}
+            role={s.returnToStart ? 'Stop' : 'Dropoff'} kind="goal"
+            placeholder={s.returnToStart ? 'Another stop' : 'Dropoff location'} value={s.goal}
             onPick={p => s.setPlace('goal', p)} onClear={() => s.setPlace('goal', null)}
           />
+          <label className="field-row">
+            <span>Round trip</span>
+            <input
+              type="checkbox" checked={s.returnToStart}
+              onChange={e => s.setReturnToStart(e.target.checked)}
+            />
+          </label>
+          {s.returnToStart && (
+            <p className="note lift">
+              Returns to the pickup after the last stop. Every algorithm plans the
+              loop; the ordering ones choose where the dropoff falls in it.
+            </p>
+          )}
           {s.stops.length > 0 && (
             <label className="field-row">
               <span>Optimise visit order</span>

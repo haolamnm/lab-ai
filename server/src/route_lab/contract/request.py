@@ -23,10 +23,17 @@ class PlanRequest(Contract):
     # Applies only to point-search algorithms. Nearest Neighbor and Held-Karp
     # always apply their own trip-ordering strategies.
     optimise_order: bool = False
-    # Explicit multi-location mode for Nearest Neighbor and Held-Karp: true
-    # returns to start, false finishes at the selected final stop, and omitted
-    # or null preserves the legacy goal-based behavior.
-    return_to_start: bool | None = None
+    # The shape of the trip, for every algorithm. False is an open tour running
+    # start -> stops -> goal. True is a closed tour: the trip is described by its
+    # locations alone, so `goal` becomes an ordinary stop whose position is chosen
+    # like any other, and the route comes home to `start`.
+    #
+    # A plain bool, not a tri-state. It used to carry a third "omitted" mode that
+    # meant the older goal-based behaviour, which is what False now means, and
+    # which the two trip-level algorithms read while the four point searches
+    # ignored -- so four panes could answer a different question from the other
+    # two, side by side on one screen.
+    return_to_start: bool = False
     conditions: Conditions
 
     @field_validator("stops")

@@ -28,9 +28,7 @@ interface PlanRequest {
   goal: PlanInput['goal']
   stops: PlanInput['stops']
   optimiseOrder: PlanInput['optimiseOrder']
-  /** Omitted entirely when nothing sets it, which is the backend's legacy
-   *  `goal`-based branch — the flag is tri-state there, not a boolean. */
-  returnToStart?: PlanInput['returnToStart']
+  returnToStart: PlanInput['returnToStart']
   conditions: PlanInput['conditions']
 }
 

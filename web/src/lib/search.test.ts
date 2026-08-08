@@ -5,9 +5,7 @@
  * `plan_route` in `server/src/route_lab/planner.py` when `VITE_API_URL` is set —
  * and the app switches between them on a configuration flag the user never sees.
  * So a divergence is not a wrong answer, it is two answers to one question, and
- * which one you get depends on how the app was deployed. `returnToStart` had
- * exactly that shape: `PlanInput` declared the field, `planClient` forwarded it,
- * the backend acted on it, and the browser silently dropped it on the floor.
+ * which one you get depends on how the app was deployed.
  *
  * The figures below were taken by running both planners side by side on the
  * sample graph. Nothing here can call the backend — CI has no Python process —
@@ -50,9 +48,10 @@ function trip(input: PlanInput) {
 }
 
 test('a point-to-point trip runs on all five browser algorithms', () => {
-  // Group 1. Held-Karp is absent by design — it needs a cost matrix this planner
-  // has no equivalent of, and says so rather than substituting another route.
-  const point = { ...base, stops: [], optimiseOrder: true }
+  // Held-Karp is absent by design — it needs a cost matrix this planner has no
+  // equivalent of, and says so rather than substituting another route. On the
+  // backend it now plans this shape too, as an open path pinned to finish at J.
+  const point = { ...base, stops: [], optimiseOrder: true, returnToStart: false }
 
   expect(trip({ ...point, algo: 'bfs' })).toBe('12.4 AJ')
   expect(trip({ ...point, algo: 'dfs' })).toBe('21.8 AJ')
@@ -65,67 +64,82 @@ test('a point-to-point trip runs on all five browser algorithms', () => {
   expect(planRoute({ ...point, algo: 'held_karp' }).found).toBe(false)
 })
 
-test('leaving returnToStart unset keeps the goal as the final destination', () => {
-  // Group 2, legacy shape: the trip is `[...stops, goal]` and ends at J.
+test('an open tour finishes at the dropoff', () => {
+  // The dropoff is a destination, not a hint. Setting the flag used to discard it
+  // outright, so this trip ended at whichever stop the ordering left last.
   const input = { ...base, algo: 'nearest' as const, stops: STOPS, optimiseOrder: true }
-  expect(trip(input)).toBe('29.5 ACQMJ')
+  expect(trip({ ...input, returnToStart: false })).toBe('29.5 ACQMJ')
 })
 
-test('returnToStart false ends the trip at the last stop, dropping the goal', () => {
-  // Group 2, explicit open route. Once the flag is set the trip is described by
-  // its stops alone, so J is no longer part of the shape and the route stops at
-  // M. This is the backend's rule, mirrored — not an accident of the ordering.
+test('a round trip demotes the dropoff to an ordinary stop and comes home', () => {
+  // A cycle has no last stop, so J stops being the endpoint and takes whatever
+  // position the ordering gives it — here second, not last. That is the whole
+  // reason the dropoff cannot simply be pinned before the return leg.
   const input = {
-    ...base, algo: 'nearest' as const, stops: STOPS, optimiseOrder: true, returnToStart: false,
+    ...base, algo: 'nearest' as const, stops: STOPS, optimiseOrder: true, returnToStart: true,
   }
-  expect(trip(input)).toBe('17.8 ACQM')
+  const result = planRoute(input)
+
+  expect(result.found).toBe(true)
+  expect(result.order[0]).toBe('A')
+  expect(result.order[result.order.length - 1]).toBe('A')
+  // Every location is still visited: the four destinations plus the pickup at
+  // each end. Coming home must not cost the trip one of its stops.
+  expect(new Set(result.order)).toEqual(new Set(['A', 'C', 'M', 'Q', 'J']))
 })
 
-test('returnToStart true closes the tour back onto the pickup', () => {
-  // Group 3. The same four points as the open route above plus the leg home, so
-  // it must be the open route's order with A appended — and cost strictly more.
-  const input = {
-    ...base, goal: 'A', algo: 'nearest' as const, stops: STOPS, optimiseOrder: true,
-  }
-  expect(trip({ ...input, returnToStart: true })).toBe('26.7 ACQMA')
-  // Unset, the same request is the legacy shape, where goal A folds away against
-  // the pickup and the tour never returns. That difference is the whole point of
-  // the flag being tri-state rather than a boolean defaulting to false.
-  expect(trip(input)).toBe('17.8 ACQM')
+test('a round trip costs more than the open tour it closes', () => {
+  const input = { ...base, algo: 'nearest' as const, stops: STOPS, optimiseOrder: true }
+  const open = planRoute({ ...input, returnToStart: false })
+  const closed = planRoute({ ...input, returnToStart: true })
+
+  expect(closed.metrics.km).toBeGreaterThan(open.metrics.km)
 })
 
-test('a trip with no stops to make is a valid empty round, not a refusal', () => {
-  // Under the explicit shape there is no goal to fall back on, so a stopless
-  // trip is the round that stays put. Answering "the pickup and dropoff pin to
-  // the same intersection" here would be refusing a well-formed request.
+test('every algorithm reads the round-trip flag, point searches included', () => {
+  // This is the rule that changed. The flag used to be read only by the two
+  // trip-level algorithms, so four panes could show an open route beside two
+  // closed tours with nothing on screen saying why they disagreed.
+  for (const algo of ['bfs', 'dfs', 'ucs', 'astar', 'nearest'] as const) {
+    const input = { ...base, algo, stops: STOPS, optimiseOrder: true }
+    const open = planRoute({ ...input, returnToStart: false })
+    const closed = planRoute({ ...input, returnToStart: true })
+
+    expect(open.order[open.order.length - 1], `${algo} open`).not.toBe('A')
+    expect(closed.order[closed.order.length - 1], `${algo} closed`).toBe('A')
+  }
+})
+
+test('a point search closes the loop without gaining an ordering it should not have', () => {
+  // Shape and ordering are independent controls. Closing the loop must not
+  // quietly switch the ordering pass on: with it off, the trip still follows the
+  // order that was typed, and only the way home is added.
+  const input = { ...base, algo: 'astar' as const, stops: STOPS, optimiseOrder: false }
+
+  expect(trip({ ...input, returnToStart: false })).toBe('36.7 ACMQJ')
+  expect(planRoute({ ...input, returnToStart: true }).order).toEqual(
+    ['A', 'C', 'M', 'Q', 'J', 'A'],
+  )
+})
+
+test('a trip whose pickup and dropoff are one point is refused, not planned', () => {
+  // No stops, and a dropoff already at the pickup. There is nothing to route, and
+  // the backend answers with this same sentence for all six algorithms.
   for (const returnToStart of [false, true]) {
     const result = planRoute({
-      ...base, algo: 'nearest', stops: [], optimiseOrder: true, returnToStart,
+      ...base, goal: 'A', algo: 'nearest', stops: [], optimiseOrder: true, returnToStart,
     })
-    expect(result.found).toBe(true)
-    expect(result.order).toEqual(['A'])
-    expect(result.metrics.km).toBe(0)
-  }
-})
-
-test('point searches ignore returnToStart on every setting', () => {
-  // The flag describes a trip-level shape, and only the trip-level algorithms
-  // read it — on both planners. A point search that closed the tour would put
-  // four panes on a different question from the other two, side by side.
-  for (const algo of ['bfs', 'dfs', 'ucs', 'astar'] as const) {
-    const input = { ...base, algo, stops: STOPS, optimiseOrder: true }
-    const unset = trip(input)
-    expect(trip({ ...input, returnToStart: false }), `${algo} false`).toBe(unset)
-    expect(trip({ ...input, returnToStart: true }), `${algo} true`).toBe(unset)
+    expect(result.found).toBe(false)
+    expect(result.problem).toContain('same intersection')
   }
 })
 
 test('optimising the visit order changes the route on all four point searches', () => {
-  // Group 4. The ordering toggle is a teaching control, so its effect has to be
-  // visible on every algorithm that offers it — including DFS, where optimising
-  // makes the trip *worse*, because the order is chosen by cost and DFS does not
-  // follow cost. That row is the one a plausible "optimised is shorter" check
-  // would quietly get wrong.
+  // The ordering toggle is a teaching control, so its effect has to be visible on
+  // every algorithm that offers it — including DFS, where optimising makes the
+  // trip *worse*, because the order is chosen by cost and DFS does not follow
+  // cost. That row is the one a plausible "optimised is shorter" check would
+  // quietly get wrong.
   const optimised: Record<PointSearchKey, string> = {
     bfs: '29.5 ACQMJ', dfs: '54.2 ACQMJ', ucs: '29.5 ACQMJ', astar: '29.5 ACQMJ',
   }
@@ -134,7 +148,7 @@ test('optimising the visit order changes the route on all four point searches', 
   }
 
   for (const algo of ['bfs', 'dfs', 'ucs', 'astar'] as const) {
-    const input = { ...base, algo, stops: STOPS }
+    const input = { ...base, algo, stops: STOPS, returnToStart: false }
     expect(trip({ ...input, optimiseOrder: true }), `${algo} optimised`).toBe(optimised[algo])
     expect(trip({ ...input, optimiseOrder: false }), `${algo} as typed`).toBe(typed[algo])
   }
@@ -143,6 +157,6 @@ test('optimising the visit order changes the route on all four point searches', 
 test('nearest neighbor orders the trip whether or not the toggle is on', () => {
   // Ordering is what Nearest Neighbor *is*; the toggle cannot switch it off, or
   // the pane would be labelled with an algorithm that is not running.
-  const input = { ...base, algo: 'nearest' as const, stops: STOPS }
+  const input = { ...base, algo: 'nearest' as const, stops: STOPS, returnToStart: false }
   expect(trip({ ...input, optimiseOrder: false })).toBe(trip({ ...input, optimiseOrder: true }))
 })

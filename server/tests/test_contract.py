@@ -61,27 +61,31 @@ def test_optimise_order_defaults_to_false() -> None:
     assert PlanRequest.model_validate(payload).optimise_order is False
 
 
-@pytest.mark.parametrize(
-    ("wire_value", "model_value"),
-    [(True, True), (False, False), (None, None)],
-)
-def test_return_to_start_uses_camelcase_alias(
-    wire_value: bool | None,
-    model_value: bool | None,
-) -> None:
+@pytest.mark.parametrize("value", [True, False])
+def test_return_to_start_uses_camelcase_alias(value: bool) -> None:
     payload = diamond_json("ucs")
-    payload["returnToStart"] = wire_value
+    payload["returnToStart"] = value
 
     request = PlanRequest.model_validate(payload)
 
-    assert request.return_to_start is model_value
+    assert request.return_to_start is value
     dumped = request.model_dump(mode="json", by_alias=True)
-    assert dumped["returnToStart"] is model_value
+    assert dumped["returnToStart"] is value
     assert "optimiseOrder" in dumped
 
 
-def test_return_to_start_defaults_to_legacy_none() -> None:
-    assert PlanRequest.model_validate(diamond_json("ucs")).return_to_start is None
+def test_return_to_start_defaults_to_an_open_tour() -> None:
+    assert PlanRequest.model_validate(diamond_json("ucs")).return_to_start is False
+
+
+def test_null_return_to_start_is_rejected() -> None:
+    # It used to be the third state, meaning "decide from goal alone". Accepting
+    # it now would silently plan an open tour for a client that still believes it
+    # is asking for the old behaviour, so the wire says no instead.
+    payload = diamond_json("ucs")
+    payload["returnToStart"] = None
+
+    assert client.post("/plan", json=payload).status_code == 422
 
 
 def test_invalid_return_to_start_is_rejected() -> None:

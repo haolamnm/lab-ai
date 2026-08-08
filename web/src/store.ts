@@ -81,6 +81,9 @@ interface State {
   criterion: CriterionKey
   weights: Weights
   optimiseOrder: boolean
+  /** False plans start -> stops -> dropoff; true demotes the dropoff to an
+   *  ordinary stop and brings the trip home to the pickup. */
+  returnToStart: boolean
 
   panes: Pane[]
   step: number
@@ -113,6 +116,7 @@ interface State {
   setCriterion: (c: CriterionKey) => void
   setWeight: (k: keyof Weights, v: number) => void
   setOptimiseOrder: (b: boolean) => void
+  setReturnToStart: (b: boolean) => void
 
   addPane: () => void
   removePane: (id: string) => void
@@ -141,7 +145,7 @@ export const useStore = create<State>((set, get) => ({
   detail: 'medium', graph: null, building: false, buildError: null, buildNote: null,
   sample: false, sampleCase: null,
   period: 'peak', vehicle: 'bike', criterion: 'balanced',
-  weights: { ...CRITERIA.balanced.weights }, optimiseOrder: false,
+  weights: { ...CRITERIA.balanced.weights }, optimiseOrder: false, returnToStart: false,
   panes: [], step: 0, maxStep: 0, playing: false, slowdown: 1, syncView: true,
   running: false, runError: null,
 
@@ -231,7 +235,7 @@ export const useStore = create<State>((set, get) => ({
     // The conditions are applied twice over: to the state fields below, and to
     // the pinning, which has to read them from the scenario because the state
     // still holds the ones this very write is replacing.
-    const { vehicle, period, criterion, optimiseOrder } = scenario
+    const { vehicle, period, criterion, optimiseOrder, returnToStart } = scenario
     const graph = buildSampleGraph()
     const pin = (label: string): Anchor => {
       const place = samplePlace(label)
@@ -241,7 +245,8 @@ export const useStore = create<State>((set, get) => ({
       graph, sample: true, sampleCase: scenario.key,
       buildError: null, buildNote: null, building: false,
       start: pin(scenario.start), goal: pin(scenario.goal), stops: scenario.stops.map(pin),
-      vehicle, period, criterion, weights: { ...CRITERIA[criterion].weights }, optimiseOrder,
+      vehicle, period, criterion, weights: { ...CRITERIA[criterion].weights },
+      optimiseOrder, returnToStart,
     })
     get().clearResults()
   },
@@ -355,6 +360,7 @@ export const useStore = create<State>((set, get) => ({
     get().clearResults()
   },
   setOptimiseOrder: b => { set({ optimiseOrder: b }); get().clearResults() },
+  setReturnToStart: b => { set({ returnToStart: b }); get().clearResults() },
 
   addPane: () => {
     const { panes } = get()
@@ -515,6 +521,7 @@ function planInput(s: State): Omit<Parameters<typeof planRoute>[0], 'algo'> | nu
     goal: s.goal.nodeId,
     stops: s.stops.map(x => x.nodeId).filter((x): x is string => !!x),
     optimiseOrder: s.optimiseOrder,
+    returnToStart: s.returnToStart,
     conditions,
   }
 }

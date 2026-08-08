@@ -170,17 +170,13 @@ def trip_json(
     stops: Sequence[str] = (),
     edges: Sequence[tuple[str, str, float]] = tuple(TRIP_EDGES),
     optimise_order: bool = False,
-    return_to_start: bool | None = None,
+    return_to_start: bool = False,
 ) -> dict[str, Any]:
     """A warehouse-and-two-stops trip as the JSON the frontend would POST.
 
     One builder for all three trip-level test modules: they were three copies of
     this graph differing only in which edges exist, and a copy that drifted would
     have made two of them quietly stop testing the same thing.
-
-    ``returnToStart`` is omitted entirely unless set, because the backend reads
-    absent and ``null`` as the legacy goal-based mode and a test of that mode
-    must send what the frontend sends.
     """
     payload: dict[str, Any] = {
         "graph": {
@@ -208,14 +204,13 @@ def trip_json(
         "goal": goal,
         "stops": list(stops),
         "optimiseOrder": optimise_order,
+        "returnToStart": return_to_start,
         "conditions": {
             "vehicle": "van",
             "period": "peak",
             "weights": {"distance": 1.0, "time": 0.0, "congestion": 0.0, "risk": 0.0},
         },
     }
-    if return_to_start is not None:
-        payload["returnToStart"] = return_to_start
     return payload
 
 

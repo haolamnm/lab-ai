@@ -41,6 +41,7 @@ def held_karp(
     costs: Mapping[tuple[str, str], float],
     *,
     return_to_start: bool = True,
+    end: str | None = None,
 ) -> HeldKarpResult:
     """Find a minimum-cost directed path or cycle through every stop exactly once.
 
@@ -57,6 +58,14 @@ def held_karp(
     shared: closed mode adds the final directed return cost, while open mode
     stops at the best full-mask state.
 
+    ``end`` narrows open mode to the fixed-endpoint variant: a cheapest
+    Hamiltonian path from the warehouse to that particular stop, rather than to
+    whichever stop happens to be cheapest to finish at. It is a restriction on
+    which full-mask states may be chosen, nothing more — the recurrence, the
+    parent table and the tie-breaking are the same either way, so a trip planned
+    with ``end`` is still exactly optimal over the orders that satisfy it. Only
+    meaningful in open mode; a closed tour is a cycle and has no last stop.
+
     Equal-cost tours are resolved lexicographically by stop index, hence by the
     order supplied in ``stops``. The algorithm runs in ``O(n² * 2ⁿ)`` time and
     ``O(n * 2ⁿ)`` space for ``n`` stops.
@@ -66,13 +75,22 @@ def held_karp(
         exists.
 
     Raises:
-        ValueError: If the stops include the warehouse, or a relevant transition
-        has a non-finite or negative cost.
+        ValueError: If the stops include the warehouse, if ``end`` is combined
+        with ``return_to_start`` or is not one of the stops, or if a relevant
+        transition has a non-finite or negative cost.
     """
     stop_ids = tuple(stops)
     for stop in stop_ids:
         if stop == warehouse:
             raise ValueError("warehouse must not appear in stops")
+    if end is not None:
+        # Refused rather than ignored. Silently dropping `end` on a closed tour
+        # would answer a different question from the one asked, and the caller
+        # would have no way to tell which of the two it got back.
+        if return_to_start:
+            raise ValueError("end is meaningless on a closed tour; a cycle has no last stop")
+        if end not in stop_ids:
+            raise ValueError(f"end {end!r} must be one of the stops")
 
     if not stop_ids:
         return HeldKarpResult(found=True, order=(warehouse,))
@@ -135,7 +153,11 @@ def held_karp(
     best_last: int | None = None
     best_cost: float | None = None
     best_lex: int | None = None
-    for last in range(stop_count):
+    # The only thing `end` changes: which full-mask states are eligible to finish
+    # at. Every state was still built by the same recurrence above, so the winner
+    # here is the cheapest order among those ending where the caller required.
+    candidates = range(stop_count) if end is None else (stop_ids.index(end),)
+    for last in candidates:
         state = (full_mask, last)
         route_cost = dp.get(state)
         if route_cost is None:

@@ -36,7 +36,7 @@ def _request(
     goal: str = "W",
     stops: Sequence[str] = (),
     optimise_order: bool = True,
-    return_to_start: bool | None = None,
+    return_to_start: bool = False,
     edges: Sequence[tuple[str, str, float]] | None = None,
 ) -> PlanRequest:
     return trip_request(
@@ -59,7 +59,7 @@ def test_contract_and_registry_accept_held_karp_without_point_search_registratio
 
 
 def test_plan_endpoint_accepts_held_karp() -> None:
-    request = _request()
+    request = _request(stops=["A", "B"])
 
     response = TestClient(app).post("/plan", json=request.model_dump(mode="json", by_alias=True))
 
@@ -167,15 +167,19 @@ def test_flat_cost_withdraws_the_optimal_claim() -> None:
     assert result.metrics.optimal is False
 
 
-def test_held_karp_rejects_open_trip() -> None:
-    result = planner.plan_route(_request(goal="A", stops=["B"]))
+def test_open_held_karp_plans_a_trip_to_a_distinct_goal() -> None:
+    # This used to be refused outright -- "Held-Karp requires start and goal to be
+    # the same warehouse" -- so the exact optimiser was unavailable for the most
+    # ordinary trip shape there is. The goal is now the fixed end of an open path.
+    result = planner.plan_route(_request(goal="A", stops=["B"], return_to_start=False))
 
-    assert result.found is False
-    assert result.problem is not None and "same warehouse" in result.problem
+    assert result.found is True
+    assert result.order == ["W", "B", "A"]
+    assert result.metrics.optimal is True
 
 
-def test_explicit_open_held_karp_ignores_goal() -> None:
-    result = planner.plan_route(_request(goal="GHOST", stops=["A", "B"], return_to_start=False))
+def test_open_held_karp_finishes_at_the_goal_rather_than_the_cheapest_stop() -> None:
+    result = planner.plan_route(_request(goal="B", stops=["A"], return_to_start=False))
 
     assert result.found is True
     assert result.order == ["W", "A", "B"]
@@ -183,8 +187,8 @@ def test_explicit_open_held_karp_ignores_goal() -> None:
     assert result.metrics.optimal is True
 
 
-def test_explicit_closed_held_karp_ignores_goal() -> None:
-    result = planner.plan_route(_request(goal="GHOST", stops=["A", "B"], return_to_start=True))
+def test_closed_held_karp_demotes_the_goal_to_an_ordinary_stop() -> None:
+    result = planner.plan_route(_request(goal="B", stops=["A"], return_to_start=True))
 
     assert result.found is True
     assert result.order == ["W", "A", "B", "W"]
@@ -192,85 +196,83 @@ def test_explicit_closed_held_karp_ignores_goal() -> None:
     assert result.metrics.optimal is True
 
 
-def test_explicit_open_and_closed_held_karp_can_differ() -> None:
+def test_open_and_closed_held_karp_choose_different_orders() -> None:
+    # One direction round the triangle is dear and the other cheap. Pinned to
+    # finish at B the tour must go the expensive way; free to close the loop it
+    # runs the other way instead -- so the closed tour is not the open one with a
+    # return leg bolted on, and here it is the cheaper of the two despite driving
+    # an extra leg.
+    #
+    # Every direct edge is also the cheapest route between its endpoints, so the
+    # Pairwise A* costs are these numbers rather than some detour through the
+    # third node. That has to be arranged deliberately: on a three-node graph a
+    # dear edge is simply bypassed, and the DP would then be ordering costs the
+    # test never wrote down.
     edges = [
-        ("W", "A", 1.0),
+        ("W", "A", 4.0),
+        ("A", "B", 4.0),
+        ("B", "W", 4.0),
         ("W", "B", 2.0),
-        ("A", "B", 10.0),
-        ("B", "A", 1.0),
-        ("A", "W", 100.0),
-        ("B", "W", 1.0),
+        ("B", "A", 2.0),
+        ("A", "W", 2.0),
     ]
 
-    open_result = planner.plan_route(_request(stops=["A", "B"], return_to_start=False, edges=edges))
+    open_result = planner.plan_route(
+        _request(goal="B", stops=["A"], return_to_start=False, edges=edges)
+    )
     closed_result = planner.plan_route(
-        _request(stops=["A", "B"], return_to_start=True, edges=edges)
+        _request(goal="B", stops=["A"], return_to_start=True, edges=edges)
     )
 
-    assert open_result.order == ["W", "B", "A"]
-    assert open_result.metrics.cost == 3.0
-    assert closed_result.order == ["W", "A", "B", "W"]
-    assert closed_result.metrics.cost == 12.0
+    assert open_result.order == ["W", "A", "B"]
+    assert open_result.metrics.cost == 8.0
+    assert closed_result.order == ["W", "B", "A", "W"]
+    assert closed_result.metrics.cost == 6.0
+
+
+def test_a_dropoff_at_the_pickup_is_a_closed_tour_however_the_toggle_is_set() -> None:
+    # Every other algorithm plans this as a loop -- `_leg_sequence` closes it just
+    # by appending a goal that equals the start -- so Held-Karp reads the request
+    # the same way instead of being the one that answers a different question.
+    result = planner.plan_route(_request(goal="W", stops=["A", "B"], return_to_start=False))
+
+    assert result.found is True
+    assert result.order == ["W", "A", "B", "W"]
 
 
 @pytest.mark.parametrize("return_to_start", [False, True])
-def test_explicit_held_karp_zero_stops_is_trivial(return_to_start: bool) -> None:
-    result = planner.plan_route(_request(goal="GHOST", stops=[], return_to_start=return_to_start))
+def test_held_karp_refuses_a_trip_with_nowhere_to_go(return_to_start: bool) -> None:
+    result = planner.plan_route(_request(goal="W", stops=[], return_to_start=return_to_start))
 
-    assert result.found is True
-    assert result.order == ["W"]
-    assert result.path == ["W"]
-    assert result.metrics.cost == 0.0
-    assert result.metrics.optimal is True
+    assert result.found is False
+    assert result.problem is not None and "same intersection" in result.problem
 
 
-def test_explicit_open_held_karp_one_stop_needs_no_return() -> None:
+def test_open_held_karp_needs_no_return_leg() -> None:
     result = planner.plan_route(
-        _request(
-            goal="GHOST",
-            stops=["A"],
-            return_to_start=False,
-            edges=[("W", "A", 1.0)],
-        )
+        _request(goal="A", stops=[], return_to_start=False, edges=[("W", "A", 1.0)])
     )
 
     assert result.found is True
     assert result.order == ["W", "A"]
 
 
-def test_explicit_closed_held_karp_one_stop_requires_return() -> None:
+def test_closed_held_karp_requires_a_return_leg() -> None:
     result = planner.plan_route(
-        _request(
-            goal="GHOST",
-            stops=["A"],
-            return_to_start=True,
-            edges=[("W", "A", 1.0)],
-        )
+        _request(goal="A", stops=[], return_to_start=True, edges=[("W", "A", 1.0)])
     )
 
     assert result.found is False
     assert result.problem is not None and "closed tour" in result.problem
 
 
-def test_explicit_open_held_karp_reports_incomplete_route() -> None:
+def test_open_held_karp_reports_an_incomplete_route() -> None:
     result = planner.plan_route(
-        _request(
-            goal="GHOST",
-            stops=["A", "B"],
-            return_to_start=False,
-            edges=[("W", "A", 1.0)],
-        )
+        _request(goal="B", stops=["A"], return_to_start=False, edges=[("W", "A", 1.0)])
     )
 
     assert result.found is False
     assert result.problem is not None and "open route" in result.problem
-
-
-def test_omitted_return_to_start_preserves_legacy_closed_validation() -> None:
-    result = planner.plan_route(_request(goal="A", stops=["B"]))
-
-    assert result.found is False
-    assert result.problem is not None and "same warehouse" in result.problem
 
 
 def test_held_karp_rejects_stop_limit_before_pairwise(
@@ -302,7 +304,7 @@ def test_held_karp_no_hamiltonian_cycle_is_finite_failure() -> None:
     result = planner.plan_route(_request(stops=["A"], edges=[("W", "A", 1.0)]))
 
     assert result.found is False
-    assert result.problem is not None and "return" in result.problem
+    assert result.problem is not None and "closed tour" in result.problem
     assert result.metrics.cost == 0.0
     assert result.metrics.ms == 0.0
 
@@ -321,8 +323,7 @@ def test_held_karp_zero_stops_skips_pairwise(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(planner, "build_pairwise", fail_pairwise)
     result = planner.plan_route(_request())
 
-    assert result.found is True
-    assert result.order == ["W"]
-    assert result.path == ["W"]
-    assert result.metrics.cost == 0.0
-    assert result.metrics.optimal is True
+    # There is nowhere to go, so the refusal has to come before the cost matrix:
+    # building one over a single location is work with no possible answer.
+    assert result.found is False
+    assert result.problem is not None and "same intersection" in result.problem
