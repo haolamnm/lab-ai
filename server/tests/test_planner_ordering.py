@@ -30,13 +30,14 @@ def _request(
     algo: AlgoKey,
     *,
     optimise_order: bool,
-    return_to_start: bool | None = None,
+    return_to_start: bool = False,
+    edges: Sequence[tuple[str, str, float]] = tuple(_EDGES),
 ) -> PlanRequest:
     return trip_request(
         algo,
         goal="B",
         stops=["B", "A"],
-        edges=_EDGES,
+        edges=edges,
         optimise_order=optimise_order,
         return_to_start=return_to_start,
     )
@@ -161,21 +162,34 @@ def test_optional_ordering_does_not_change_leg_search(
     assert calls == 2
 
 
+# The same graph with a way home, so a closed tour is possible at all.
+_EDGES_WITH_RETURN: list[tuple[str, str, float]] = [*_EDGES, ("B", "W", 1.0), ("A", "W", 1.0)]
+
+
 @pytest.mark.parametrize("algo", ["bfs", "dfs", "ucs", "astar"])
-@pytest.mark.parametrize("return_to_start", [False, True])
-def test_return_to_start_does_not_affect_point_searches(
-    algo: AlgoKey,
-    return_to_start: bool,
-) -> None:
-    baseline = planner.plan_route(_request(algo, optimise_order=False))
-    explicit = planner.plan_route(
-        _request(
-            algo,
-            optimise_order=False,
-            return_to_start=return_to_start,
-        )
+def test_return_to_start_closes_the_loop_for_point_searches(algo: AlgoKey) -> None:
+    # A point search reads the flag too. It does not get to choose the order --
+    # that is what the trip-level algorithms are for -- but it plans the same
+    # shape, so all six panes answer the question the toggle asked. This used to
+    # be the opposite rule, and four panes could show an open route beside two
+    # closed tours with nothing on screen saying why they disagreed.
+    open_tour = planner.plan_route(_request(algo, optimise_order=False, edges=_EDGES_WITH_RETURN))
+    closed_tour = planner.plan_route(
+        _request(algo, optimise_order=False, return_to_start=True, edges=_EDGES_WITH_RETURN)
     )
 
-    assert explicit.order == baseline.order
-    assert explicit.path == baseline.path
-    assert explicit.metrics.cost == baseline.metrics.cost
+    assert open_tour.order == ["W", "B", "A", "B"]
+    assert closed_tour.order == ["W", "B", "A", "B", "W"]
+    assert closed_tour.metrics.cost > open_tour.metrics.cost
+
+
+@pytest.mark.parametrize("algo", ["bfs", "dfs", "ucs", "astar"])
+def test_a_closed_point_search_still_orders_by_the_toggle(algo: AlgoKey) -> None:
+    # Ordering and shape are independent controls: closing the loop must not
+    # quietly turn the ordering pass on, nor suppress it.
+    result = planner.plan_route(
+        _request(algo, optimise_order=True, return_to_start=True, edges=_EDGES_WITH_RETURN)
+    )
+
+    assert result.found is True
+    assert result.order == ["W", "A", "B", "W"]

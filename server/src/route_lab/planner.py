@@ -82,6 +82,11 @@ def _leg_sequence(request: PlanRequest, graph: Graph) -> list[str]:
     else:
         ordered = destinations
     raw = [request.start, *ordered]
+    # A point search reads `return_to_start` too. It does not get to choose the
+    # order -- that is what the trip-level algorithms are for -- but it plans the
+    # same shape, so all six panes answer the question the toggle asked.
+    if request.return_to_start:
+        raw.append(request.start)
     return _without_consecutive_duplicates(raw)
 
 
@@ -213,21 +218,6 @@ def _route_from_legs(
     )
 
 
-def _trivial_route(request: PlanRequest, ids: list[str]) -> RouteResult:
-    """Return the valid zero-leg route at the request start."""
-    return RouteResult(
-        algo=request.algo,
-        problem=None,
-        order=[request.start],
-        path=[request.start],
-        trace=[],
-        node_ids=ids,
-        reveal=[],
-        found=True,
-        metrics=_zero_metrics(optimal=_optimal(request, found=True)),
-    )
-
-
 def _assemble_cached_legs(
     request: PlanRequest,
     graph: Graph,
@@ -259,15 +249,11 @@ def _assemble_cached_legs(
 
 
 def _plan_nearest(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteResult:
-    """Plan legacy or explicit destinations with Pairwise A* and Nearest Neighbor."""
-    explicit = request.return_to_start is not None
-    route_kind: RouteKind | None = None
-    if explicit:
-        route_kind = "closed tour" if request.return_to_start else "open route"
-
-    destinations = list(request.stops) if explicit else [*request.stops, request.goal]
-    if explicit and not destinations:
-        return _trivial_route(request, ids)
+    """Order every destination greedily by exact route cost, then route each leg."""
+    route_kind: RouteKind = "closed tour" if request.return_to_start else "open route"
+    # One list for both shapes. The dropoff is a destination like any other, and
+    # `return_to_start` only decides whether the trip comes home afterwards.
+    destinations = [*request.stops, request.goal]
 
     matrix = build_pairwise(
         graph=graph,
@@ -277,12 +263,10 @@ def _plan_nearest(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteRe
     )
     ordered = nearest_neighbor_order(request.start, destinations, matrix.costs)
     raw_order = [request.start, *ordered]
-    if request.return_to_start is True:
+    if request.return_to_start:
         raw_order.append(request.start)
     order = _without_consecutive_duplicates(raw_order)
     if len(order) < 2:
-        if explicit:
-            return _trivial_route(request, ids)
         return _stopped(
             request.algo,
             ids,
@@ -299,60 +283,69 @@ def _plan_nearest(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteRe
 
 
 def _plan_held_karp(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteResult:
-    """Plan a legacy cycle or explicit path/tour using Pairwise A* and Held-Karp."""
+    """Plan an exact open or closed tour from Pairwise A* costs and Held-Karp."""
     warehouse = request.start
-    stops = request.stops
-    explicit = request.return_to_start is not None
-    route_kind: RouteKind | None = None
-    if explicit:
-        route_kind = "closed tour" if request.return_to_start else "open route"
+    # A trip whose dropoff is already the pickup is a loop however the toggle is
+    # set, and every other algorithm plans it as one -- `_leg_sequence` closes it
+    # simply by appending a `goal` that equals `start`. Held-Karp agrees rather
+    # than being the one algorithm that reads the same request differently.
+    closed = request.return_to_start or request.goal == warehouse
+    route_kind: RouteKind = "closed tour" if closed else "open route"
 
-    if not explicit and request.goal != warehouse:
+    # The dropoff joins the stops. On a closed tour it is an ordinary location
+    # whose position is chosen like any other; on an open tour it is the location
+    # the path is required to finish at. Deduplicated because a dropoff that
+    # repeats a stop is one place to visit, and the bitmask carries one bit per
+    # entry -- a repeat would be planned as two unrelated visits.
+    destinations = [
+        location
+        for location in dict.fromkeys([*request.stops, request.goal])
+        if location != warehouse
+    ]
+
+    if len(destinations) > MAX_HELD_KARP_STOPS:
         return _stopped(
             request.algo,
             ids,
-            "Held-Karp requires start and goal to be the same warehouse.",
+            f"Held-Karp supports at most {MAX_HELD_KARP_STOPS} stops; "
+            f"received {len(destinations)}.",
         )
-    if len(stops) > MAX_HELD_KARP_STOPS:
-        return _stopped(
-            request.algo,
-            ids,
-            f"Held-Karp supports at most {MAX_HELD_KARP_STOPS} stops; received {len(stops)}.",
-        )
-    if warehouse in stops:
+    if warehouse in request.stops:
         return _stopped(
             request.algo,
             ids,
             "The Held-Karp warehouse must not appear in stops.",
         )
 
-    if not stops:
-        return _trivial_route(request, ids)
+    if not destinations:
+        # Nowhere to go: no stops, and a dropoff that is already the pickup. The
+        # four point searches answer this with the sentence below, so Held-Karp
+        # does too rather than being the one algorithm that calls it a valid trip.
+        return _stopped(
+            request.algo,
+            ids,
+            "The pickup and dropoff pin to the same intersection. Choose points farther apart.",
+        )
 
     matrix = build_pairwise(
         graph=graph,
-        locations=[warehouse, *stops],
+        locations=[warehouse, *destinations],
         conditions=request.conditions,
         search=a_star_search,
     )
     tour = held_karp(
         warehouse=warehouse,
-        stops=stops,
+        stops=destinations,
         costs=matrix.costs,
-        return_to_start=True if request.return_to_start is None else request.return_to_start,
+        return_to_start=closed,
+        end=None if closed else request.goal,
     )
 
     if not tour.found:
-        if route_kind is not None:
-            return _stopped(
-                request.algo,
-                ids,
-                f"No complete {route_kind} exists for all Held-Karp stops.",
-            )
         return _stopped(
             request.algo,
             ids,
-            "No directed route can visit every Held-Karp stop and return to the warehouse.",
+            f"No complete {route_kind} exists for all Held-Karp stops.",
         )
 
     return _assemble_cached_legs(
@@ -377,13 +370,7 @@ def plan_route(request: PlanRequest) -> RouteResult:
     # raise a KeyError on the first frontier expansion and surface as a bare 500;
     # here it becomes a normal result whose `problem` says what to fix, the same
     # way an unimplemented algorithm does below.
-    explicit_trip = algo not in POINT_SEARCHES and request.return_to_start is not None
-    raw_trip_points = (
-        [request.start, *request.stops]
-        if explicit_trip
-        else [request.start, request.goal, *request.stops]
-    )
-    trip_points = list(dict.fromkeys(raw_trip_points))
+    trip_points = list(dict.fromkeys([request.start, request.goal, *request.stops]))
     unknown = [point for point in trip_points if point not in graph.nodes]
     if unknown:
         return _stopped(

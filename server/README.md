@@ -126,8 +126,9 @@ server/
     │   ├── dfs.py       ) The other three point searches. Each differs from ucs.py only in its
     │   ├── astar.py     ) frontier and the priority it pushes with.
     │   └── held_karp.py Trip-level, not a point search: consumes a directed cost matrix and
-    │                    returns the cheapest tour, open or closed, per `returnToStart`.
-    │                    Not in POINT_SEARCHES.
+    │                    returns the cheapest closed tour, or the cheapest open path — either
+    │                    to whichever stop is cheapest, or to a required `end`. Not in
+    │                    POINT_SEARCHES.
     ├── planner.py       plan_route(request) -> RouteResult: builds the leg sequence, dispatches
     │                   each leg through the registry, applies nearest-neighbour ordering,
     │                   aggregates metrics, and produces failure explanations.
@@ -323,7 +324,7 @@ Request body — one planning request, matching `PlanInput` in `web/src/lib/sear
 | `goal` | `string` | Node id of the dropoff point. |
 | `stops` | `string[]` | Node ids of intermediate stops, in the entered order when `optimiseOrder` is false. |
 | `optimiseOrder` | `boolean` | Whether to reorder all destinations (intermediate stops plus dropoff). Point searches use Nearest Neighbor; Held-Karp runs its exact optimizer. The `nearest` algorithm always reorders even when false. |
-| `returnToStart` | `boolean \| null` | Closed tour when true, open when false, legacy goal-based behaviour when omitted. Applies to the trip-level algorithms, `nearest` and `held_karp`. |
+| `returnToStart` | `boolean` | The shape of the trip, read by **every** algorithm. False is an open tour running `start -> stops -> goal`. True is a closed tour: `goal` becomes an ordinary stop whose position is chosen like any other, and the route comes home to `start`. |
 | `conditions` | `Conditions` | Vehicle, time period, and the four cost weights. |
 
 **The contract validates rather than repairs.** Two things follow from that, and both surface as a

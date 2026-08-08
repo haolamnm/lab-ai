@@ -25,7 +25,7 @@ def _request(
     stops: Sequence[str] = ("A",),
     goal: str = "B",
     optimise_order: bool = False,
-    return_to_start: bool | None = None,
+    return_to_start: bool = False,
     edges: Sequence[tuple[str, str, float]] | None = None,
 ) -> PlanRequest:
     return trip_request(
@@ -215,8 +215,11 @@ def test_nearest_explains_an_unreachable_leg_instead_of_naming_the_cache() -> No
     assert result.metrics.cost == 0.0
 
 
-def test_explicit_open_nearest_ignores_goal() -> None:
-    result = planner.plan_route(_request(stops=["A", "B"], goal="GHOST", return_to_start=False))
+def test_open_nearest_finishes_at_the_goal() -> None:
+    # The dropoff is a destination, not a hint. It used to be discarded outright
+    # whenever `returnToStart` was set, so this trip ended at whichever stop the
+    # ordering happened to leave last.
+    result = planner.plan_route(_request(stops=["A"], goal="B", return_to_start=False))
 
     assert result.found is True
     assert result.order == ["W", "A", "B"]
@@ -224,8 +227,10 @@ def test_explicit_open_nearest_ignores_goal() -> None:
     assert result.metrics.optimal is False
 
 
-def test_explicit_closed_nearest_ignores_goal() -> None:
-    result = planner.plan_route(_request(stops=["A", "B"], goal="GHOST", return_to_start=True))
+def test_closed_nearest_orders_the_goal_like_any_other_stop() -> None:
+    # A cycle has no last stop, so on a closed tour the dropoff is demoted to an
+    # ordinary location and takes whatever position the ordering gives it.
+    result = planner.plan_route(_request(stops=["A"], goal="B", return_to_start=True))
 
     assert result.found is True
     assert result.order == ["W", "A", "B", "W"]
@@ -234,21 +239,20 @@ def test_explicit_closed_nearest_ignores_goal() -> None:
 
 
 @pytest.mark.parametrize("return_to_start", [False, True])
-def test_explicit_nearest_zero_stops_is_trivial(return_to_start: bool) -> None:
-    result = planner.plan_route(_request(stops=[], goal="GHOST", return_to_start=return_to_start))
+def test_nearest_refuses_a_trip_with_nowhere_to_go(return_to_start: bool) -> None:
+    # No stops and a dropoff already at the pickup. The point searches answer this
+    # with the same sentence, so all six panes agree it is not a trip.
+    result = planner.plan_route(_request(stops=[], goal="W", return_to_start=return_to_start))
 
-    assert result.found is True
-    assert result.order == ["W"]
-    assert result.path == ["W"]
-    assert result.metrics.cost == 0.0
-    assert result.metrics.optimal is False
+    assert result.found is False
+    assert result.problem is not None and "same intersection" in result.problem
 
 
 @pytest.mark.parametrize(
     ("return_to_start", "expected_order"),
     [(False, ["W", "A"]), (True, ["W", "A", "W"])],
 )
-def test_explicit_nearest_reuses_pairwise_astar_legs(
+def test_nearest_reuses_pairwise_astar_legs(
     monkeypatch: pytest.MonkeyPatch,
     return_to_start: bool,
     expected_order: list[str],
@@ -261,43 +265,43 @@ def test_explicit_nearest_reuses_pairwise_astar_legs(
         return a_star_search(problem)
 
     monkeypatch.setattr(planner, "a_star_search", search)
-    result = planner.plan_route(
-        _request(stops=["A"], goal="GHOST", return_to_start=return_to_start)
-    )
+    result = planner.plan_route(_request(stops=[], goal="A", return_to_start=return_to_start))
 
     assert result.found is True
     assert result.order == expected_order
+    # Two locations, two directed pairs, and the return leg is taken from the
+    # same cache rather than searched again.
     assert calls == 2
 
 
-def test_explicit_open_nearest_succeeds_without_return_leg() -> None:
+def test_open_nearest_succeeds_without_a_return_leg() -> None:
     result = planner.plan_route(
-        _request(stops=["A"], goal="GHOST", return_to_start=False, edges=[("W", "A", 1.0)])
+        _request(stops=[], goal="A", return_to_start=False, edges=[("W", "A", 1.0)])
     )
 
     assert result.found is True
     assert result.order == ["W", "A"]
 
 
-def test_explicit_closed_nearest_fails_without_return_leg() -> None:
+def test_closed_nearest_fails_without_a_return_leg() -> None:
     result = planner.plan_route(
-        _request(stops=["A"], goal="GHOST", return_to_start=True, edges=[("W", "A", 1.0)])
+        _request(stops=[], goal="A", return_to_start=True, edges=[("W", "A", 1.0)])
     )
 
     assert result.found is False
     assert result.problem is not None and "closed tour" in result.problem
 
 
-def test_explicit_open_nearest_reports_missing_internal_leg() -> None:
+def test_open_nearest_reports_a_missing_internal_leg() -> None:
     result = planner.plan_route(
-        _request(stops=["A", "B"], goal="GHOST", return_to_start=False, edges=[("W", "A", 1.0)])
+        _request(stops=["A"], goal="B", return_to_start=False, edges=[("W", "A", 1.0)])
     )
 
     assert result.found is False
     assert result.problem is not None and "open route" in result.problem
 
 
-def test_explicit_open_nearest_accepts_the_start_as_a_stop() -> None:
+def test_open_nearest_accepts_the_start_as_a_stop() -> None:
     # W is already where the trip begins, so revisiting it first is a zero-length
     # leg the planner drops rather than a route back to itself.
     result = planner.plan_route(_request(stops=["W", "A"], goal="A", return_to_start=False))
@@ -306,7 +310,7 @@ def test_explicit_open_nearest_accepts_the_start_as_a_stop() -> None:
     assert result.order == ["W", "A"]
 
 
-def test_omitted_return_to_start_preserves_legacy_goal_participation() -> None:
+def test_open_nearest_orders_the_goal_among_the_stops() -> None:
     result = planner.plan_route(_request(stops=["B", "A"], goal="B"))
 
     assert result.found is True
