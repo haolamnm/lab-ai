@@ -66,9 +66,9 @@ class RouteResult(Contract):
     algo: AlgoKey
     # Set only when the query itself is meaningless or a leg has no route.
     problem: str | None = None
-    # Visit order. Explicit open tours end at the selected final stop; explicit
-    # closed tours end at their starting node. Legacy requests keep their old
-    # goal-based shape. A run that completed no leg reports an empty order, in
+    # Visit order. An open tour ends at the goal; a closed tour ends where it
+    # started, the goal having been ordered like any other stop. A run that
+    # completed no leg reports an empty order, in
     # step with its empty `path` and zero metrics — the one shape a reader can
     # rely on is that `order` never names a point the trip did not reach.
     order: list[str] = Field(default_factory=list)

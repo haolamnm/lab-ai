@@ -1,5 +1,5 @@
 /**
- * The seven sample cases still produce the routes their write-ups describe.
+ * The eight sample cases still produce the routes their write-ups describe.
  *
  * Each case carries an `about` string quoting real figures — "1.2 km", "A* and
  * UCS agree on 11.4 km", "7.2 km, 23 minutes". Those are the app's teaching
