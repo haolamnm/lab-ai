@@ -235,3 +235,104 @@ def test_held_karp_accepts_tuple_stops() -> None:
     result = held_karp("W", ("A",), {("W", "A"): 2.0, ("A", "W"): 3.0})
 
     assert result == HeldKarpResult(True, ("W", "A", "W"))
+
+
+def _brute_force_open(
+    warehouse: str,
+    stops: Sequence[str],
+    costs: Mapping[tuple[str, str], float],
+    end: str | None = None,
+) -> HeldKarpResult:
+    """The cheapest open path by exhaustive search, optionally pinned to ``end``."""
+    if not stops:
+        return HeldKarpResult(True, (warehouse,))
+
+    best_order: tuple[str, ...] = ()
+    best_indices: tuple[int, ...] | None = None
+    best_cost: float | None = None
+    for indices in permutations(range(len(stops))):
+        order = (warehouse, *(stops[index] for index in indices))
+        if end is not None and order[-1] != end:
+            continue
+        total = 0.0
+        for source, target in pairwise(order):
+            transition = costs.get((source, target))
+            if transition is None:
+                break
+            total += transition
+        else:
+            if (
+                best_cost is None
+                or total < best_cost
+                or (total == best_cost and best_indices is not None and indices < best_indices)
+            ):
+                best_order = order
+                best_indices = indices
+                best_cost = total
+
+    if best_cost is None:
+        return HeldKarpResult(False, ())
+    return HeldKarpResult(True, best_order)
+
+
+@pytest.mark.parametrize("end", ["A", "B", "C"])
+def test_end_matches_exhaustive_search_over_paths_that_finish_there(end: str) -> None:
+    # The point of the parameter is that the answer stays *exactly* optimal over
+    # the orders satisfying it, rather than becoming a heuristic once constrained.
+    result = held_karp("W", ["A", "B", "C"], SAMPLE_COSTS, return_to_start=False, end=end)
+
+    assert result == _brute_force_open("W", ["A", "B", "C"], SAMPLE_COSTS, end)
+    assert result.order[-1] == end
+
+
+def test_end_reorders_the_whole_path_not_just_its_tail() -> None:
+    # Free, the cheapest open path is W-A-B-C. Requiring it to finish at A is not
+    # that path with A moved to the end -- it is a different route through the
+    # same stops, which is why this cannot be done by post-processing.
+    free = held_karp("W", ["A", "B", "C"], SAMPLE_COSTS, return_to_start=False)
+    pinned = held_karp("W", ["A", "B", "C"], SAMPLE_COSTS, return_to_start=False, end="A")
+
+    assert free.order == ("W", "A", "B", "C")
+    assert pinned.order == ("W", "C", "B", "A")
+
+
+def test_end_agrees_with_free_choice_when_it_asks_for_the_same_stop() -> None:
+    # Pinning the endpoint the free search would have chosen anyway must not
+    # perturb the result: the constraint is inert, not merely cheap.
+    free = held_karp("W", ["A", "B", "C"], SAMPLE_COSTS, return_to_start=False)
+    pinned = held_karp(
+        "W", ["A", "B", "C"], SAMPLE_COSTS, return_to_start=False, end=free.order[-1]
+    )
+
+    assert pinned == free
+
+
+def test_end_reports_failure_rather_than_finishing_somewhere_else() -> None:
+    # W-A-B is a complete open path, so an unpinned search succeeds here. Finishing
+    # at A instead would need W-B-A, and there is no W->B transition. The pinned
+    # search must therefore fail rather than quietly handing back W-A-B --
+    # answering a different question is worse than answering none.
+    costs = {("W", "A"): 1.0, ("A", "B"): 1.0}
+
+    assert held_karp("W", ["A", "B"], costs, return_to_start=False).order == ("W", "A", "B")
+    assert held_karp("W", ["A", "B"], costs, return_to_start=False, end="A") == HeldKarpResult(
+        False, ()
+    )
+
+
+def test_end_on_the_only_stop_is_the_whole_path() -> None:
+    result = held_karp("W", ["A"], {("W", "A"): 2.5}, return_to_start=False, end="A")
+
+    assert result == HeldKarpResult(True, ("W", "A"))
+
+
+def test_end_is_refused_on_a_closed_tour() -> None:
+    # A cycle has no last stop, so silently ignoring `end` here would hand back an
+    # answer to a question the caller did not ask, indistinguishably.
+    with pytest.raises(ValueError, match="cycle has no last stop"):
+        held_karp("W", ["A", "B"], SAMPLE_COSTS, return_to_start=True, end="A")
+
+
+def test_end_must_name_a_stop() -> None:
+    with pytest.raises(ValueError, match="must be one of the stops"):
+        held_karp("W", ["A", "B"], SAMPLE_COSTS, return_to_start=False, end="W")
