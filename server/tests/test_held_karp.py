@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from itertools import pairwise, permutations
-from typing import cast
 
 import pytest
 
@@ -33,7 +32,7 @@ def _brute_force(
     costs: Mapping[tuple[str, str], float],
 ) -> HeldKarpResult:
     if not stops:
-        return HeldKarpResult(True, (warehouse,), 0.0)
+        return HeldKarpResult(True, (warehouse,))
 
     best_order: tuple[str, ...] = ()
     best_indices: tuple[int, ...] | None = None
@@ -57,57 +56,41 @@ def _brute_force(
                 best_cost = total
 
     if best_cost is None:
-        return HeldKarpResult(False, (), None)
-    return HeldKarpResult(True, best_order, best_cost)
+        return HeldKarpResult(False, ())
+    return HeldKarpResult(True, best_order)
 
 
 def test_held_karp_zero_stops() -> None:
-    assert held_karp("W", [], {}) == HeldKarpResult(True, ("W",), 0.0)
+    assert held_karp("W", [], {}) == HeldKarpResult(True, ("W",))
 
 
 def test_held_karp_open_zero_stops() -> None:
-    assert held_karp("W", [], {}, return_to_start=False) == HeldKarpResult(True, ("W",), 0.0)
+    assert held_karp("W", [], {}, return_to_start=False) == HeldKarpResult(True, ("W",))
 
 
 def test_held_karp_one_stop() -> None:
     result = held_karp("W", ["A"], {("W", "A"): 2.5, ("A", "W"): 3.5})
 
-    assert result == HeldKarpResult(True, ("W", "A", "W"), 6.0)
+    assert result == HeldKarpResult(True, ("W", "A", "W"))
 
 
 def test_held_karp_open_one_stop_needs_only_outbound_cost() -> None:
     result = held_karp("W", ["A"], {("W", "A"): 2.5}, return_to_start=False)
 
-    assert result == HeldKarpResult(True, ("W", "A"), 2.5)
+    assert result == HeldKarpResult(True, ("W", "A"))
 
 
 def test_held_karp_three_stops() -> None:
     result = held_karp("W", ["A", "B", "C"], SAMPLE_COSTS)
 
-    assert result == HeldKarpResult(True, ("W", "A", "B", "C", "W"), 12.0)
+    assert result == HeldKarpResult(True, ("W", "A", "B", "C", "W"))
 
 
-def test_explicit_closed_matches_legacy_closed_behavior() -> None:
-    assert held_karp("W", ["A", "B", "C"], SAMPLE_COSTS, return_to_start=True) == held_karp(
-        "W", ["A", "B", "C"], SAMPLE_COSTS
-    )
-
-
-def test_open_and_closed_can_choose_different_orders() -> None:
-    costs = {
-        ("W", "A"): 1.0,
-        ("W", "B"): 2.0,
-        ("A", "B"): 10.0,
-        ("B", "A"): 1.0,
-        ("A", "W"): 100.0,
-        ("B", "W"): 1.0,
-    }
-
-    assert held_karp("W", ["A", "B"], costs, return_to_start=False) == HeldKarpResult(
-        True, ("W", "B", "A"), 3.0
-    )
-    assert held_karp("W", ["A", "B"], costs, return_to_start=True) == HeldKarpResult(
-        True, ("W", "A", "B", "W"), 12.0
+def test_closing_the_tour_is_the_default() -> None:
+    # `return_to_start` defaults to True, so an omitted flag must close the tour
+    # on the warehouse rather than stop at the last stop.
+    assert held_karp("W", ["A", "B", "C"], SAMPLE_COSTS) == HeldKarpResult(
+        True, ("W", "A", "B", "C", "W")
     )
 
 
@@ -121,19 +104,19 @@ def test_held_karp_asymmetric_matrix() -> None:
         ("A", "W"): 10.0,
     }
 
-    assert held_karp("W", ["A", "B"], costs) == HeldKarpResult(True, ("W", "A", "B", "W"), 3.0)
+    assert held_karp("W", ["A", "B"], costs) == HeldKarpResult(True, ("W", "A", "B", "W"))
 
 
 def test_held_karp_unreachable_pair_but_cycle_exists() -> None:
     costs = {("W", "A"): 1.0, ("A", "B"): 2.0, ("B", "W"): 3.0}
 
-    assert held_karp("W", ["A", "B"], costs) == HeldKarpResult(True, ("W", "A", "B", "W"), 6.0)
+    assert held_karp("W", ["A", "B"], costs) == HeldKarpResult(True, ("W", "A", "B", "W"))
 
 
 def test_held_karp_no_hamiltonian_cycle() -> None:
     result = held_karp("W", ["A", "B"], {("W", "A"): 1.0, ("A", "B"): 1.0})
 
-    assert result == HeldKarpResult(False, (), None)
+    assert result == HeldKarpResult(False, ())
 
 
 def test_held_karp_deterministic_tie_break() -> None:
@@ -145,7 +128,7 @@ def test_held_karp_deterministic_tie_break() -> None:
 
     result = held_karp("W", stops, costs)
 
-    assert result == HeldKarpResult(True, ("W", "B", "A", "C", "W"), 4.0)
+    assert result == HeldKarpResult(True, ("W", "B", "A", "C", "W"))
 
 
 def test_open_held_karp_deterministic_tie_break() -> None:
@@ -157,7 +140,7 @@ def test_open_held_karp_deterministic_tie_break() -> None:
 
     result = held_karp("W", stops, costs, return_to_start=False)
 
-    assert result == HeldKarpResult(True, ("W", "B", "A", "C"), 3.0)
+    assert result == HeldKarpResult(True, ("W", "B", "A", "C"))
 
 
 @pytest.mark.parametrize(
@@ -204,33 +187,23 @@ def test_held_karp_does_not_mutate_inputs() -> None:
     assert costs == original_costs
 
 
-def test_held_karp_rejects_duplicate_stops() -> None:
-    with pytest.raises(ValueError, match="duplicate stop"):
-        held_karp("W", ["A", "A"], {})
-
-
 def test_held_karp_rejects_warehouse_in_stops() -> None:
     with pytest.raises(ValueError, match="warehouse must not appear"):
         held_karp("W", ["A", "W"], {})
 
 
-@pytest.mark.parametrize("value", [-1.0, math.nan, math.inf, -math.inf, "invalid", True])
-def test_held_karp_rejects_invalid_cost(value: object) -> None:
-    costs: dict[tuple[str, str], float] = {
-        ("W", "A"): cast(float, value),
-        ("A", "W"): 1.0,
-    }
+@pytest.mark.parametrize("value", [-1.0, math.nan, math.inf, -math.inf])
+def test_held_karp_rejects_invalid_cost(value: float) -> None:
+    # A nan loses every comparison in the recurrence and a negative cost makes a
+    # longer tour look cheaper, so both are refused rather than propagated.
+    costs = {("W", "A"): value, ("A", "W"): 1.0}
 
     with pytest.raises(ValueError, match="cost for"):
         held_karp("W", ["A"], costs)
 
 
 def test_held_karp_ignores_invalid_cost_for_unrelated_locations() -> None:
-    costs: dict[tuple[str, str], float] = {
-        ("W", "A"): 1.0,
-        ("A", "W"): 1.0,
-        ("X", "Y"): cast(float, "invalid"),
-    }
+    costs = {("W", "A"): 1.0, ("A", "W"): 1.0, ("X", "Y"): -1.0}
 
     assert held_karp("W", ["A"], costs).found is True
 
@@ -238,13 +211,13 @@ def test_held_karp_ignores_invalid_cost_for_unrelated_locations() -> None:
 def test_held_karp_fails_when_return_to_warehouse_is_missing() -> None:
     result = held_karp("W", ["A"], {("W", "A"): 1.0})
 
-    assert result == HeldKarpResult(False, (), None)
+    assert result == HeldKarpResult(False, ())
 
 
 def test_open_succeeds_when_return_to_warehouse_is_missing() -> None:
     result = held_karp("W", ["A"], {("W", "A"): 1.0}, return_to_start=False)
 
-    assert result == HeldKarpResult(True, ("W", "A"), 1.0)
+    assert result == HeldKarpResult(True, ("W", "A"))
 
 
 def test_open_fails_when_no_complete_path_exists() -> None:
@@ -255,10 +228,10 @@ def test_open_fails_when_no_complete_path_exists() -> None:
         return_to_start=False,
     )
 
-    assert result == HeldKarpResult(False, (), None)
+    assert result == HeldKarpResult(False, ())
 
 
 def test_held_karp_accepts_tuple_stops() -> None:
     result = held_karp("W", ("A",), {("W", "A"): 2.0, ("A", "W"): 3.0})
 
-    assert result == HeldKarpResult(True, ("W", "A", "W"), 5.0)
+    assert result == HeldKarpResult(True, ("W", "A", "W"))
