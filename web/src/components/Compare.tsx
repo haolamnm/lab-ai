@@ -1,17 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Icon, VEHICLE_ICON } from '../icons'
-import { backendEnabled, planRouteRemote } from '../lib/planClient'
-import { algoOf, planRoute, type PlanInput } from '../lib/search'
-import { banReason, periodOf, VEHICLES, type Vehicle } from '../lib/traffic'
+import { routeLetters } from '../lib/explain'
+import { backendEnabled, messageOf, planRouteRemote } from '../lib/planClient'
+import { ALGOS, backendOnlyNote, planRoute, SETTLE_MS, type PlanInput } from '../lib/search'
+import { banReason, PERIODS, VEHICLES, type Vehicle } from '../lib/traffic'
 import type { RouteResult } from '../lib/types'
-import { anchorTo, useStore } from '../store'
-
-/** Route groups are named with letters, so it's obvious at a glance which vehicles share a route. */
-const GROUP = ['A', 'B', 'C', 'D']
-
-/** How long the inputs must hold still before four trips are planned. Long enough
- *  that dragging a weight slider across its range costs one run, not thirty. */
-const SETTLE_MS = 350
+import { anchorTo, leadAlgo, useStore } from '../store'
 
 interface Row {
   v: Vehicle
@@ -49,7 +43,7 @@ export function Compare() {
   const period = useStore(s => s.period)
   const weights = useStore(s => s.weights)
   const vehicle = useStore(s => s.vehicle)
-  const panes = useStore(s => s.panes)
+  const algo = useStore(leadAlgo)
   const optimiseOrder = useStore(s => s.optimiseOrder)
   const setVehicle = useStore(s => s.setVehicle)
 
@@ -57,11 +51,11 @@ export function Compare() {
   const [rows, setRows] = useState<Row[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const algo = panes[0]?.algo ?? 'astar'
 
-  // Held–Karp has no browser implementation, so with no backend configured there
-  // is nothing this table could run for it. With one, it plans like any other.
-  const unsupported = algo === 'held_karp' && !backendEnabled
+  // A backend-only algorithm has no browser implementation, so with no backend
+  // configured there is nothing this table could run for it. With one, it plans
+  // like any other.
+  const unsupported = !!ALGOS[algo].backendOnly && !backendEnabled
 
   useEffect(() => {
     if (!open || unsupported || !graph || !start || !goal) {
@@ -79,7 +73,7 @@ export function Compare() {
     let live = true
     setBusy(true)
     const timer = setTimeout(() => {
-      const jobs = VEHICLES.map(v => {
+      const jobs = Object.values(VEHICLES).map(v => {
         // Pin through the shared rule, not a local copy of it. Each vehicle needs
         // its own pin — a truck cannot start where a motorbike can — and getting
         // that rule subtly different here than in the sidebar would make this
@@ -126,7 +120,7 @@ export function Compare() {
         .catch((e: unknown) => {
           if (!live) return
           setRows(null)
-          setError(`Could not reach the planning backend: ${(e as Error).message}`)
+          setError(`Could not reach the planning backend: ${messageOf(e)}`)
           setBusy(false)
         })
     }, SETTLE_MS)
@@ -135,15 +129,7 @@ export function Compare() {
   }, [open, unsupported, graph, algo, period, weights, start, goal, stops, optimiseOrder])
 
   // Vehicles that share a route get the same letter.
-  const groupOf = useMemo(() => {
-    const seen = new Map<string, number>()
-    return (path: string[]) => {
-      const k = path.join('>')
-      if (!k) return '—'
-      if (!seen.has(k)) seen.set(k, seen.size)
-      return GROUP[seen.get(k)!] ?? '?'
-    }
-  }, [rows])
+  const groupOf = useMemo(routeLetters, [rows])
 
   if (!graph || !start || !goal) return null
 
@@ -152,18 +138,14 @@ export function Compare() {
       <button className="compare-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
         <span className="compare-title">Compare vehicles</span>
         <span className="compare-sub">
-          {algoOf(algo).name} · {periodOf(period).name.toLowerCase()}
+          {ALGOS[algo].name} · {PERIODS[period].name.toLowerCase()}
         </span>
         <span className="compare-caret" data-open={open}>{open ? 'Collapse' : 'Expand'}</span>
       </button>
 
       {open && unsupported && (
         <div className="compare-body">
-          <p className="note warn">
-            Held–Karp runs only on the Python backend, and none is configured, so this table
-            cannot plan for it. Set <code>VITE_API_URL</code>, or switch the first pane to
-            another algorithm.
-          </p>
+          <p className="note warn">{backendOnlyNote(algo)}</p>
         </div>
       )}
 
@@ -228,7 +210,7 @@ export function Compare() {
               })}
             </tbody>
           </table>
-          <p className="note" style={{ marginTop: 9 }}>
+          <p className="note">
             Same letter in the <b>Route</b> column means the same road. The <b>Blocked edges</b> column
             includes truck curfews, so changing the time period changes the number too. Click a vehicle name to switch the whole grid to it.
           </p>

@@ -49,8 +49,9 @@ export interface GraphEdge {
  * Those are exactly the two axes the app already has: time period and vehicle.
  */
 export interface TurnRule {
-  /** no_left_turn, no_u_turn, only_straight_on… */
-  kind: string
+  /** no_left_turn, no_u_turn, only_straight_on… The two prefixes are the whole
+   *  distinction the lookup table is built around, so they are in the type. */
+  kind: `no_${string}` | `only_${string}`
   /** Time period this applies to, in minutes since midnight. Empty means restricted all day. */
   hours: [number, number][]
   /** Vehicle types exempted, per OpenStreetMap keyword. */
@@ -100,8 +101,8 @@ export interface Weights {
  * One node-expansion step of the algorithm.
  * Nodes are stored by index rather than by string id: a single run over a
  * network of a few hundred nodes produces tens of thousands of queue
- * entries, and multiplied across five panes, storing strings would waste
- * memory for nothing. Convert back via RouteResult.nodeIds.
+ * entries, and multiplied across a full grid of panes, storing strings would
+ * waste memory for nothing. Convert back via RouteResult.nodeIds.
  */
 export interface TraceStep {
   expanded: number
@@ -135,8 +136,10 @@ export interface Metrics {
 
 export interface RouteResult {
   algo: AlgoKey
-  /** Reason it could not run, when the query itself is meaningless. */
-  problem?: string
+  /** Reason it could not run, when the query itself is meaningless. Explicitly
+   *  `null` over the wire — FastAPI serialises `str | None` as a present null,
+   *  so a reader testing `problem !== undefined` would see one on every result. */
+  problem?: string | null
   /** Order of the stops to visit, after optimising if the user enabled it.
    *  For Held–Karp this is the closed tour, so it opens and closes on the
    *  warehouse. Always read the visit order from here — never re-derive it from

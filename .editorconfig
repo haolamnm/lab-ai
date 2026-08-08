@@ -18,3 +18,13 @@ indent_size = 2
 
 [*.svg]
 insert_final_newline = true
+
+# `ruff format` writes four spaces and will reformat anything else, so the
+# editor has to agree with it or every save fights `make format`.
+[*.py]
+indent_size = 4
+
+# Make requires a literal tab before each recipe line. Spaces here are not a
+# style choice, they are a "missing separator" error.
+[Makefile]
+indent_style = tab

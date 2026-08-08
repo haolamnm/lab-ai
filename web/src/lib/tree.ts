@@ -50,7 +50,7 @@ export interface TreeNode {
   h: number | null
 }
 
-export interface Tree {
+interface Tree {
   nodes: TreeNode[]
   /** Looks up array position in nodes from node index. */
   at: Map<number, number>
@@ -83,12 +83,17 @@ export function buildTree(result: RouteResult): Tree {
     // two different columns.
     if (orderOf.get(s.expanded) !== i) return
     const p = s.parent
-    const valid = p != null && orderOf.has(p) && orderOf.get(p)! < i
-    parentOf.set(s.expanded, valid ? p! : null)
-    if (valid) {
-      if (!kids.has(p!)) kids.set(p!, [])
-      kids.get(p!)!.push(s.expanded)
+    // Written as control flow rather than a `valid` boolean: a boolean cannot
+    // narrow `p`, so every use of it below had to assert away a null the line
+    // computing the boolean had already ruled out.
+    const parentOrder = p == null ? undefined : orderOf.get(p)
+    if (p != null && parentOrder !== undefined && parentOrder < i) {
+      parentOf.set(s.expanded, p)
+      const siblings = kids.get(p)
+      if (siblings) siblings.push(s.expanded)
+      else kids.set(p, [s.expanded])
     } else {
+      parentOf.set(s.expanded, null)
       roots.push(s.expanded)
     }
   })
@@ -107,26 +112,33 @@ export function buildTree(result: RouteResult): Tree {
     const stack: { n: number; up: boolean }[] = [{ n: root, up: false }]
     while (stack.length) {
       const frame = stack[stack.length - 1]
+      if (!frame) break
       const children = kids.get(frame.n) ?? []
       if (!frame.up) {
         frame.up = true
-        const depth = depthOf.get(frame.n)!
+        const depth = depthOf.get(frame.n) ?? 0
         if (depth > maxDepth) maxDepth = depth
         // Pushed in reverse so the first child ends up on top of the stack and
         // therefore takes the leftmost slot — the tree reads in expansion order.
         for (let i = children.length - 1; i >= 0; i--) {
-          depthOf.set(children[i], depth + 1)
-          stack.push({ n: children[i], up: false })
+          const child = children[i]
+          if (child === undefined) continue
+          depthOf.set(child, depth + 1)
+          stack.push({ n: child, up: false })
         }
         continue
       }
       stack.pop()
-      if (!children.length) {
+      // A parent centres over its children's columns, which were set on the way
+      // back up; a leaf takes the next free slot. `??` on the ends is not a
+      // fallback so much as the leaf case again — a child whose column is
+      // missing has none to centre over.
+      const first = children.length ? xOf.get(children[0] ?? -1) : undefined
+      const last = children.length ? xOf.get(children[children.length - 1] ?? -1) : undefined
+      if (first === undefined || last === undefined) {
         xOf.set(frame.n, slot)
         slot += 1
       } else {
-        const first = xOf.get(children[0])!
-        const last = xOf.get(children[children.length - 1])!
         xOf.set(frame.n, (first + last) / 2)
       }
     }

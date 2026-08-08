@@ -1,32 +1,81 @@
 import { haversine } from './geo'
 import {
   costIsFlat, edgeCost, edgeMinutes, passable, PERIODS, ROAD_LABEL, turnAllowed, VEHICLES,
-  vehicleOf,
   type Conditions,
 } from './traffic'
 import type { AlgoKey, Graph, GraphEdge, RouteResult, TraceStep } from './types'
 
-export interface AlgorithmInfo {
+interface AlgorithmInfo {
   key: AlgoKey
   name: string
   optimal: boolean
   note: string
   hue: string
+  /** Exists only in the Python backend, so the browser can plan nothing for it.
+   *  A flag here rather than an `algo === 'held_karp'` test in five UI files. */
+  backendOnly?: true
+  /** Ceiling the algorithm itself imposes on the number of stops — Held–Karp is
+   *  O(n²·2ⁿ) in them. Mirrors `MAX_HELD_KARP_STOPS` in the Python planner, which
+   *  is still the one that enforces it; this only warns before Run is pressed. */
+  maxStops?: number
+  /** What the reported runtime actually measures, when it is not simply "the
+   *  search". Held–Karp times the legs it ended up choosing, which is neither the
+   *  full pairwise search nor the DP. */
+  msNote?: string
+  /** How the optimality guarantee reads, when the bare word "optimal" would let a
+   *  reader assume the wrong one. Prefixed with the algorithm's name where shown. */
+  optimalityNote?: string
 }
 
-/** Metadata used by the pane selector and result explanation. */
-export const ALGOS: AlgorithmInfo[] = [
-  { key: 'bfs', name: 'BFS', optimal: false, hue: '#b0651c', note: 'Fewest hops, ignores cost' },
-  { key: 'dfs', name: 'DFS', optimal: false, hue: '#a33b62', note: 'Plunges down one branch, usually a poor route' },
-  { key: 'ucs', name: 'UCS', optimal: true, hue: '#1e5fa8', note: 'Optimal; this is Dijkstra search' },
-  { key: 'astar', name: 'A*', optimal: true, hue: '#0a736f', note: 'Optimal, guided by a lower-bound heuristic' },
-  { key: 'nearest', name: 'Nearest Neighbor', optimal: false, hue: '#527326', note: 'Orders stops greedily by UCS route cost; each leg uses UCS' },
-  { key: 'held_karp', name: 'Held–Karp DP', optimal: true, hue: '#b45309', note: 'Exact cheapest closed tour, from Pairwise A* costs and bitmask DP. Backend only' },
-]
-
-export function algoOf(key: AlgoKey): AlgorithmInfo {
-  return ALGOS.find(algorithm => algorithm.key === key)!
+/**
+ * Metadata used by the pane selector, the pane footer, and the explanation.
+ *
+ * Keyed by `AlgoKey` rather than searched with `ALGOS.find(a => a.key === k)!`:
+ * a seventh algorithm added to the union and forgotten here is now a compile
+ * error instead of an `undefined` surfacing inside a render pass.
+ *
+ * The declaration order is the order `addPane` hands algorithms out in and the
+ * order the pane selector lists them — the two that produce an optimal
+ * point-to-point route first, since those are the ones a comparison starts from.
+ * A separate hand-written order list is how a new algorithm gets counted towards
+ * the pane cap while never actually being handed to a pane.
+ */
+export const ALGOS: Record<AlgoKey, AlgorithmInfo> = {
+  astar: { key: 'astar', name: 'A*', optimal: true, hue: '#0a736f', note: 'Optimal, guided by a lower-bound heuristic' },
+  ucs: { key: 'ucs', name: 'UCS', optimal: true, hue: '#1e5fa8', note: 'Optimal; this is Dijkstra search' },
+  bfs: { key: 'bfs', name: 'BFS', optimal: false, hue: '#b0651c', note: 'Fewest hops, ignores cost' },
+  dfs: { key: 'dfs', name: 'DFS', optimal: false, hue: '#a33b62', note: 'Plunges down one branch, usually a poor route' },
+  nearest: { key: 'nearest', name: 'Nearest Neighbor', optimal: false, hue: '#527326', note: 'Orders stops greedily by exact route cost; each leg is then routed exactly' },
+  held_karp: {
+    key: 'held_karp', name: 'Held–Karp DP', optimal: true, hue: '#b45309',
+    note: 'Exact cheapest visit order, from pairwise A* costs and bitmask DP. Backend only',
+    backendOnly: true,
+    maxStops: 12,
+    msNote: 'Runtime of the A* legs on the chosen tour — not the full pairwise search, and not the DP',
+    optimalityNote: 'is exact over the visit order: it costs every ordered pair of trip points with A*, then evaluates every possible tour through them, so no tour over these stops is cheaper than this one. Each leg of the tour is itself an optimal A* route. The timeline replays those chosen leg searches — the bitmask DP table is not part of the result.',
+  },
 }
+
+/**
+ * Said once, wherever a backend-only algorithm is asked for and none is
+ * configured. Four places used to carry their own wording of it — the sidebar
+ * notice, both comparison tables, and the result this planner returns below —
+ * so the same situation was explained four slightly different ways.
+ */
+export function backendOnlyNote(algo: AlgoKey): string {
+  return `${ALGOS[algo].name} runs only on the Python backend, and none is configured. `
+    + 'Set VITE_API_URL, start the server in server/, then reload.'
+}
+
+/**
+ * How long the inputs must hold still before the comparison tables replan.
+ *
+ * Every input they watch can change many times a second — the weight sliders
+ * fire on each input event — and one recomputation is four or five whole trips,
+ * each carrying the entire road network to the backend. Long enough that
+ * dragging a slider across its range costs one run, not thirty.
+ */
+export const SETTLE_MS = 350
 
 const indexCache = new WeakMap<Graph, { ids: string[]; of: Record<string, number> }>()
 
@@ -54,21 +103,36 @@ class Heap {
 
   get size() { return this.entries.length }
 
+  /** Priority at a slot, or +∞ past the end — an absent child then loses every
+   *  comparison, which is exactly how a missing child should behave. */
+  private priorityAt(index: number): number {
+    return this.entries[index]?.priority ?? Infinity
+  }
+
+  private swap(a: number, b: number) {
+    const first = this.entries[a], second = this.entries[b]
+    if (first === undefined || second === undefined) return
+    this.entries[a] = second
+    this.entries[b] = first
+  }
+
   push(id: string, priority: number, cost: number) {
     this.entries.push({ id, priority, cost })
     let index = this.entries.length - 1
     while (index > 0) {
       const parent = (index - 1) >> 1
-      if (this.entries[parent].priority <= this.entries[index].priority) break
-      ;[this.entries[parent], this.entries[index]] = [this.entries[index], this.entries[parent]]
+      if (this.priorityAt(parent) <= this.priorityAt(index)) break
+      this.swap(parent, index)
       index = parent
     }
   }
 
-  pop(): HeapEntry {
+  /** Undefined on an empty heap, rather than a value the caller has to trust
+   *  exists — the only caller already loops on `size`. */
+  pop(): HeapEntry | undefined {
     const first = this.entries[0]
-    const last = this.entries.pop()!
-    if (!this.entries.length) return first
+    const last = this.entries.pop()
+    if (last === undefined || !this.entries.length) return first
 
     this.entries[0] = last
     let index = 0
@@ -76,12 +140,10 @@ class Heap {
       const left = index * 2 + 1
       const right = left + 1
       let smallest = index
-      if (left < this.entries.length
-        && this.entries[left].priority < this.entries[smallest].priority) smallest = left
-      if (right < this.entries.length
-        && this.entries[right].priority < this.entries[smallest].priority) smallest = right
+      if (left < this.entries.length && this.priorityAt(left) < this.priorityAt(smallest)) smallest = left
+      if (right < this.entries.length && this.priorityAt(right) < this.priorityAt(smallest)) smallest = right
       if (smallest === index) break
-      ;[this.entries[smallest], this.entries[index]] = [this.entries[index], this.entries[smallest]]
+      this.swap(smallest, index)
       index = smallest
     }
     return first
@@ -97,7 +159,7 @@ function minCostPerKm(graph: Graph, conditions: Conditions): number {
   return Number.isFinite(cheapest) ? cheapest : 0
 }
 
-export interface SearchLegResult {
+interface SearchLegResult {
   path: string[]
   edges: GraphEdge[]
   trace: TraceStep[]
@@ -156,6 +218,10 @@ function nextStates(memory: SearchMemory, current: string) {
   const at = memory.nodeAt[current]
   const incoming = memory.via[current] ?? null
   const next: { edge: GraphEdge; key: string }[] = []
+  // A state whose intersection was never recorded has no roads leading out of
+  // it. `remember` writes it before the state can reach any frontier, so this is
+  // an invariant restated as a branch rather than asserted away.
+  if (at === undefined) return next
 
   for (const edge of memory.graph.adj[at] ?? []) {
     if (!passable(edge, memory.conditions.vehicle, memory.conditions.period)) continue
@@ -189,20 +255,35 @@ function recordExpansion(
 ) {
   memory.closed.add(current)
   memory.open.delete(current)
-  const at = memory.nodeAt[current]
-  const parent = memory.parent[current]
+  const expanded = indexOfState(memory, current)
+  // Nothing the timeline could draw: a state with no recorded intersection, or
+  // one outside this graph's node index. Neither is reachable, and the branch
+  // costs less than the two assertions it replaces.
+  if (expanded === undefined) return
+  const parentKey = memory.parent[current] ?? null
+  const parent = parentKey === null ? undefined : indexOfState(memory, parentKey)
   memory.trace.push({
-    expanded: memory.nodeIndex[at],
-    frontier: [...memory.open].map(key => memory.nodeIndex[memory.nodeAt[key]]),
-    g: +memory.cost[current].toFixed(3),
+    expanded,
+    frontier: [...memory.open].flatMap(key => {
+      const index = indexOfState(memory, key)
+      return index === undefined ? [] : [index]
+    }),
+    g: +(memory.cost[current] ?? 0).toFixed(3),
     h: heuristic == null ? null : +heuristic.toFixed(3),
-    parent: parent == null ? null : memory.nodeIndex[memory.nodeAt[parent]],
+    parent: parent ?? null,
   })
+}
+
+/** The graph-node index a search state sits at, for the trace's compact form. */
+function indexOfState(memory: SearchMemory, key: string): number | undefined {
+  const at = memory.nodeAt[key]
+  return at === undefined ? undefined : memory.nodeIndex[at]
 }
 
 function popFresh(frontier: Heap, memory: SearchMemory): string | undefined {
   while (frontier.size) {
     const entry = frontier.pop()
+    if (entry === undefined) return undefined
     if (!memory.closed.has(entry.id) && entry.cost === memory.cost[entry.id]) return entry.id
   }
   return undefined
@@ -216,8 +297,10 @@ function completeLeg(
 
   // Keep the exact edge objects selected by the algorithm. Looking an edge up
   // again by node pair is wrong when parallel roads join the same intersections.
-  for (let current = goalKey; current != null; current = memory.parent[current]) {
-    path.unshift(memory.nodeAt[current])
+  for (let current = goalKey; current != null; current = memory.parent[current] ?? null) {
+    const at = memory.nodeAt[current]
+    if (at === undefined) break
+    path.unshift(at)
     const edge = memory.via[current]
     if (edge) edges.unshift(edge)
   }
@@ -233,7 +316,7 @@ function completeLeg(
 }
 
 /** Breadth-First Search: a FIFO queue produces the fewest-hop path. */
-export function breadthFirstSearch(
+function breadthFirstSearch(
   graph: Graph, start: string, goal: string, conditions: Conditions,
 ): SearchLegResult {
   const startedAt = performance.now()
@@ -243,13 +326,13 @@ export function breadthFirstSearch(
 
   while (head < queue.length) {
     const current = queue[head++]
-    if (memory.closed.has(current)) continue
+    if (current === undefined || memory.closed.has(current)) continue
     recordExpansion(memory, current)
     if (memory.nodeAt[current] === goal) return completeLeg(memory, current, startedAt)
 
     for (const { edge, key } of nextStates(memory, current)) {
       if (key in memory.cost) continue
-      remember(memory, key, current, edge, memory.cost[current] + 1)
+      remember(memory, key, current, edge, (memory.cost[current] ?? 0) + 1)
       queue.push(key)
     }
   }
@@ -257,7 +340,7 @@ export function breadthFirstSearch(
 }
 
 /** Depth-First Search: a LIFO stack explores the newest branch first. */
-export function depthFirstSearch(
+function depthFirstSearch(
   graph: Graph, start: string, goal: string, conditions: Conditions,
 ): SearchLegResult {
   const startedAt = performance.now()
@@ -265,14 +348,14 @@ export function depthFirstSearch(
   const stack = [memory.startKey]
 
   while (stack.length) {
-    const current = stack.pop()!
-    if (memory.closed.has(current)) continue
+    const current = stack.pop()
+    if (current === undefined || memory.closed.has(current)) continue
     recordExpansion(memory, current)
     if (memory.nodeAt[current] === goal) return completeLeg(memory, current, startedAt)
 
     for (const { edge, key } of nextStates(memory, current)) {
       if (key in memory.cost) continue
-      remember(memory, key, current, edge, memory.cost[current] + 1)
+      remember(memory, key, current, edge, (memory.cost[current] ?? 0) + 1)
       stack.push(key)
     }
   }
@@ -280,7 +363,7 @@ export function depthFirstSearch(
 }
 
 /** Uniform Cost Search: Dijkstra priority `g(n)` returns a minimum-cost path. */
-export function uniformCostSearch(
+function uniformCostSearch(
   graph: Graph, start: string, goal: string, conditions: Conditions,
 ): SearchLegResult {
   const startedAt = performance.now()
@@ -294,8 +377,11 @@ export function uniformCostSearch(
     if (memory.nodeAt[current] === goal) return completeLeg(memory, current, startedAt)
 
     for (const { edge, key } of nextStates(memory, current)) {
-      const candidate = memory.cost[current] + edgeCost(edge, conditions)
-      if (key in memory.cost && candidate >= memory.cost[key]) continue
+      const candidate = (memory.cost[current] ?? 0) + edgeCost(edge, conditions)
+      // One read instead of an `in` test followed by an index the compiler had
+      // to be told could not miss. Same rule: only relax a state we can beat.
+      const known = memory.cost[key]
+      if (known !== undefined && candidate >= known) continue
       remember(memory, key, current, edge, candidate)
       frontier.push(key, candidate, candidate)
     }
@@ -304,7 +390,7 @@ export function uniformCostSearch(
 }
 
 /** A* Search: priority `g(n) + h(n)` keeps UCS optimality with less exploration. */
-export function aStarSearch(
+function aStarSearch(
   graph: Graph,
   start: string,
   goal: string,
@@ -313,8 +399,15 @@ export function aStarSearch(
 ): SearchLegResult {
   const startedAt = performance.now()
   const memory = createSearchMemory(graph, start, conditions)
-  const estimate = (key: string) =>
-    heuristicScale * haversine(graph.nodes[memory.nodeAt[key]], graph.nodes[goal])
+  const target = graph.nodes[goal]
+  const estimate = (key: string) => {
+    const at = memory.nodeAt[key]
+    const node = at === undefined ? undefined : graph.nodes[at]
+    // Zero for a node this graph does not hold. A zero heuristic is admissible,
+    // so an unknown node degrades A* to UCS for that state rather than making
+    // it unsound — the one fallback here that is safe in the direction it errs.
+    return node && target ? heuristicScale * haversine(node, target) : 0
+  }
   const frontier = new Heap()
   frontier.push(memory.startKey, estimate(memory.startKey), 0)
 
@@ -324,8 +417,11 @@ export function aStarSearch(
     if (memory.nodeAt[current] === goal) return completeLeg(memory, current, startedAt)
 
     for (const { edge, key } of nextStates(memory, current)) {
-      const candidate = memory.cost[current] + edgeCost(edge, conditions)
-      if (key in memory.cost && candidate >= memory.cost[key]) continue
+      const candidate = (memory.cost[current] ?? 0) + edgeCost(edge, conditions)
+      // One read instead of an `in` test followed by an index the compiler had
+      // to be told could not miss. Same rule: only relax a state we can beat.
+      const known = memory.cost[key]
+      if (known !== undefined && candidate >= known) continue
       remember(memory, key, current, edge, candidate)
       frontier.push(key, candidate + estimate(key), candidate)
     }
@@ -338,7 +434,7 @@ export function aStarSearch(
  *
  * Two keys are excluded because neither is a point-to-point search: `nearest`
  * only chooses a stop order and leaves the routing to UCS, and `held_karp` only
- * chooses a closed tour and leaves the routing to A*. Keeping them out of the
+ * chooses the visit order and leaves the routing to A*. Keeping them out of the
  * type is what makes the `switch` below exhaustive without a `default`, so
  * adding a trip-level algorithm to `AlgoKey` and forgetting it here is a
  * compile error rather than a leg silently planned by the wrong algorithm.
@@ -373,6 +469,7 @@ function reaches(
   const queue = [start]
   for (let head = 0; head < queue.length; head++) {
     const current = queue[head]
+    if (current === undefined) continue
     if (current === goal) return true
     for (const edge of graph.adj[current] ?? []) {
       if (allow(edge) && !seen.has(edge.to)) {
@@ -392,10 +489,12 @@ function whyBlocked(graph: Graph, from: string, to: string, conditions: Conditio
     const seen = new Set([from])
     const queue = [from]
     for (let head = 0; head < queue.length; head++) {
-      for (const edge of graph.adj[queue[head]] ?? []) {
+      const current = queue[head]
+      if (current === undefined) continue
+      for (const edge of graph.adj[current] ?? []) {
         if (!seen.has(edge.to)) { seen.add(edge.to); queue.push(edge.to) }
       }
-      for (const previous of reverse[queue[head]] ?? []) {
+      for (const previous of reverse[current] ?? []) {
         if (!seen.has(previous)) { seen.add(previous); queue.push(previous) }
       }
     }
@@ -407,15 +506,15 @@ function whyBlocked(graph: Graph, from: string, to: string, conditions: Conditio
       + 'different detail level, or choose two points closer together.'
   }
 
-  const vehicle = vehicleOf(conditions.vehicle)
-  const availablePeriods = PERIODS.filter(period => period.key !== conditions.period
+  const vehicle = VEHICLES[conditions.vehicle]
+  const availablePeriods = Object.values(PERIODS).filter(period => period.key !== conditions.period
     && reaches(graph, from, to, edge => passable(edge, conditions.vehicle, period.key)))
   if (availablePeriods.length && vehicle.curfew) {
     return `${vehicle.curfew.note}. Switch to the `
       + `${availablePeriods.map(period => period.name.toLowerCase()).join(' or ')} period.`
   }
 
-  const otherVehicles = VEHICLES.filter(candidate => candidate.key !== conditions.vehicle
+  const otherVehicles = Object.values(VEHICLES).filter(candidate => candidate.key !== conditions.vehicle
     && reaches(graph, from, to, edge => passable(edge, candidate.key, conditions.period)))
   const banned = vehicle.banned.map(roadClass => ROAD_LABEL[roadClass]).join(' and ')
     || 'a restricted road'
@@ -457,12 +556,17 @@ function ucsCostsToTargets(
     current = popFresh(frontier, memory)) {
     memory.closed.add(current)
     const at = memory.nodeAt[current]
-    if (targets.has(at) && !result.has(at)) result.set(at, memory.cost[current])
+    const cost = memory.cost[current]
+    if (at !== undefined && cost !== undefined && targets.has(at) && !result.has(at))
+      result.set(at, cost)
     if (result.size === targets.size) break
 
     for (const { edge, key } of nextStates(memory, current)) {
-      const candidate = memory.cost[current] + edgeCost(edge, conditions)
-      if (key in memory.cost && candidate >= memory.cost[key]) continue
+      const candidate = (memory.cost[current] ?? 0) + edgeCost(edge, conditions)
+      // One read instead of an `in` test followed by an index the compiler had
+      // to be told could not miss. Same rule: only relax a state we can beat.
+      const known = memory.cost[key]
+      if (known !== undefined && candidate >= known) continue
       remember(memory, key, current, edge, candidate)
       frontier.push(key, candidate, candidate)
     }
@@ -477,7 +581,7 @@ function ucsCostsToTargets(
  * cost from the current location. The decision is locally cheapest, while the
  * full order remains a heuristic and has no global optimality guarantee.
  */
-export function nearestNeighborOrder(
+function nearestNeighborOrder(
   graph: Graph, start: string, stops: string[], conditions: Conditions,
 ): string[] {
   const remaining = [...stops]
@@ -488,18 +592,20 @@ export function nearestNeighborOrder(
     const costs = ucsCostsToTargets(graph, current, new Set(remaining), conditions)
     let nearestIndex = -1
     let nearestCost = Infinity
-    for (let index = 0; index < remaining.length; index++) {
-      const cost = costs.get(remaining[index]) ?? Infinity
+    let nearest: string | undefined
+    remaining.forEach((stop, index) => {
+      const cost = costs.get(stop) ?? Infinity
       if (cost < nearestCost) {
         nearestCost = cost
         nearestIndex = index
+        nearest = stop
       }
-    }
+    })
 
     // Keep unreachable stops in the request so the normal leg planner can
     // explain the failure rather than silently dropping requested locations.
-    if (nearestIndex < 0) { order.push(...remaining); break }
-    current = remaining[nearestIndex]
+    if (nearest === undefined) { order.push(...remaining); break }
+    current = nearest
     order.push(current)
     remaining.splice(nearestIndex, 1)
   }
@@ -514,8 +620,11 @@ function shared<T>(graph: Graph, key: string, compute: () => T): T {
     graphCache = new Map()
     sharedCache.set(graph, graphCache)
   }
-  if (!graphCache.has(key)) graphCache.set(key, compute())
-  return graphCache.get(key) as T
+  const hit = graphCache.get(key)
+  if (hit !== undefined) return hit as T
+  const made = compute()
+  graphCache.set(key, made)
+  return made
 }
 
 function conditionKey(conditions: Conditions) {
@@ -531,6 +640,14 @@ export interface PlanInput {
   goal: string
   stops: string[]
   optimiseOrder: boolean
+  /**
+   * Whether the two trip-level algorithms close the tour back onto the pickup.
+   *
+   * Tri-state on purpose: left unset, the backend keeps its older behaviour of
+   * deciding from `goal` alone. Only the backend honours it — this local planner
+   * plans to `goal` either way, exactly as the four point searches do.
+   */
+  returnToStart?: boolean
   conditions: Conditions
 }
 
@@ -551,7 +668,7 @@ export function planRoute(input: PlanInput): RouteResult {
       trace: [],
       reveal: [],
       found: false,
-      problem: 'Held–Karp requires the Python planning backend, and none is configured. Set VITE_API_URL, start the server in server/, then reload.',
+      problem: backendOnlyNote(algo),
       nodeIds: indexer(graph).ids,
       metrics: {
         km: 0, minutes: 0, cost: 0, expanded: 0, ms: 0,
@@ -561,7 +678,15 @@ export function planRoute(input: PlanInput): RouteResult {
   }
 
   const conditionsKey = conditionKey(conditions)
-  const heuristicScale = algo === 'astar'
+  // Nearest Neighbor chooses the trip order; the legs between its chosen stops
+  // are a plain point search, and A* is the one to use. The Python backend
+  // routes them with Pairwise A*, so picking anything else here would make the
+  // "nodes expanded" figure move when VITE_API_URL is set — the same trip, the
+  // same route, the same cost, but a different headline number depending on
+  // which planner answered. A* and UCS return the identical route because both
+  // are exact; A* just reaches it having opened fewer nodes.
+  const pointAlgorithm: PointSearchKey = algo === 'nearest' ? 'astar' : algo
+  const heuristicScale = pointAlgorithm === 'astar'
     ? shared(graph, `heuristic:${conditionsKey}`, () => minCostPerKm(graph, conditions))
     : 0
   const destinations = [...stops, goal]
@@ -591,9 +716,6 @@ export function planRoute(input: PlanInput): RouteResult {
     }
   }
 
-  // Nearest Neighbor chooses the trip order. UCS supplies each exact route
-  // between its selected stops and produces the trace shown in its pane.
-  const pointAlgorithm: PointSearchKey = algo === 'nearest' ? 'ucs' : algo
   const trace: TraceStep[] = []
   const reveal: { upto: number; path: string[] }[] = []
   const path: string[] = []
@@ -607,11 +729,14 @@ export function planRoute(input: PlanInput): RouteResult {
   let reached = 1
 
   for (let index = 0; index + 1 < sequence.length; index++) {
+    const legFrom = sequence[index]
+    const legTo = sequence[index + 1]
+    if (legFrom === undefined || legTo === undefined) break
     const leg = runPointSearch(
       pointAlgorithm,
       graph,
-      sequence[index],
-      sequence[index + 1],
+      legFrom,
+      legTo,
       conditions,
       heuristicScale,
     )
@@ -621,7 +746,7 @@ export function planRoute(input: PlanInput): RouteResult {
 
     if (!leg.found) {
       found = false
-      problem = whyBlocked(graph, sequence[index], sequence[index + 1], conditions)
+      problem = whyBlocked(graph, legFrom, legTo, conditions)
       if (sequence.length > 2) {
         problem = `Leg ${index + 1}/${sequence.length - 1} is blocked. ${problem}`
       }
@@ -654,16 +779,10 @@ export function planRoute(input: PlanInput): RouteResult {
       ms: +ms.toFixed(1),
       turnsBlocked,
       optimal: found
-        && algoOf(algo).optimal
+        && ALGOS[algo].optimal
         && stops.length === 0
         && !costIsFlat(conditions.weights),
     },
   }
 }
 
-/** Runs the selectable Nearest Neighbor trip algorithm directly. */
-export function nearestNeighborSearch(
-  input: Omit<PlanInput, 'algo' | 'optimiseOrder'>,
-): RouteResult {
-  return planRoute({ ...input, algo: 'nearest', optimiseOrder: true })
-}

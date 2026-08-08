@@ -7,7 +7,9 @@ padding, hashing), so the backend never needs the rest.
 import math
 from typing import Protocol
 
-_EARTH_RADIUS_KM = 6371.0
+# Mean Earth radius. Exported because ``shared/heuristics.py`` projects offsets
+# onto the same sphere, and two copies of the constant could drift apart.
+EARTH_RADIUS_KM = 6371.0
 
 
 class LatLng(Protocol):
@@ -25,4 +27,4 @@ def haversine(a: LatLng, b: LatLng) -> float:
         math.sin(d_lat / 2) ** 2
         + math.cos(math.radians(a.lat)) * math.cos(math.radians(b.lat)) * math.sin(d_lng / 2) ** 2
     )
-    return 2 * _EARTH_RADIUS_KM * math.asin(math.sqrt(h))
+    return 2 * EARTH_RADIUS_KM * math.asin(math.sqrt(h))

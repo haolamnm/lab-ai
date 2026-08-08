@@ -16,8 +16,9 @@ class Weights(Contract):
     Each is a non-negative multiplier. A negative weight would make some edges
     cheaper the worse they are and could drive an edge cost below zero, which
     silently breaks the optimality both UCS and A* rely on — the same reason
-    ``build_graph`` clamps congestion and risk. This endpoint is public and
-    unauthenticated, so the guarantee is enforced here rather than trusted.
+    :class:`~route_lab.contract.graph.GraphEdge` bounds congestion and risk.
+    This endpoint is public and unauthenticated, so the guarantee is enforced
+    here rather than trusted.
     """
 
     distance: float = Field(ge=0)

@@ -119,8 +119,12 @@ export function buildSampleGraph(): Graph {
 
   const edges: GraphEdge[] = []
   for (const [from, to, km, congestion, risk, roadClass] of EDGES) {
-    const a = byLabel.get(from)!
-    const b = byLabel.get(to)!
+    const a = byLabel.get(from)
+    const b = byLabel.get(to)
+    // Both tables are in this file, so a miss is a typo in `EDGES` rather than
+    // anything the running app can produce — but dropping the row keeps the
+    // network buildable instead of taking the whole pane down over it.
+    if (!a || !b) continue
     const shape: [number, number][] = [[a.lat, a.lng], [b.lat, b.lng]]
     // The edge name just uses the letter pair, so the explanation reads
     // exactly like the sample paragraph in the assignment: "segment E–F is
@@ -132,13 +136,18 @@ export function buildSampleGraph(): Graph {
 
   const adj: Record<string, GraphEdge[]> = {}
   for (const id of Object.keys(nodes)) adj[id] = []
-  for (const e of edges) adj[e.from].push(e)
+  for (const e of edges) adj[e.from]?.push(e)
 
   return { nodes, edges, adj, detail: 'coarse', bounds: boundsOf(NODES) }
 }
 
 /** Place data for a sample node, to feed directly into the start-point and destination-point picker. */
 export function samplePlace(label: string): Place {
-  const r = NODES.find(n => n.label === label)!
+  const r = NODES.find(n => n.label === label)
+  // Only the scenarios call this, and every label they name is a row above. A
+  // fallback coordinate would be worse than a stop: it would pin the trip
+  // somewhere real and wrong, and the scenario would look merely disappointing
+  // rather than broken.
+  if (!r) throw new Error(`The sample graph has no node labelled "${label}"`)
   return { name: `${r.label} · ${r.name}`, detail: 'Sample graph', lat: r.lat, lng: r.lng }
 }

@@ -41,6 +41,16 @@ web/src/
 - `lib/` must stay importable without React. If a module in `lib/` needs a hook, it belongs in
   `components/` or in the store instead.
 
+### The backend (`server/`)
+
+§2, §3, §5, and §6 are frontend rules and stop at `web/`. `server/` is Python: `snake_case`
+throughout, `uv` as the package manager, `ruff` for lint and format, and a layered-import contract
+that `import-linter` enforces mechanically. `cd server && make check` is its gate.
+
+Those rules are written down once, in [`server/README.md`](server/README.md), and are not repeated
+here. §1 (language), §4 (comment style), §7 (glossary), and §9 (commits) apply to both halves
+unchanged.
+
 ---
 
 ## 3. Identifier naming
@@ -107,8 +117,10 @@ Rules:
 
 ## 5. TypeScript
 
-- `strict` is on and stays on. `tsconfig.json` also sets `noUnusedLocals`/`noUnusedParameters` —
-  a build failure from those means delete the dead symbol, not silence the check.
+- `strict` is on and stays on. `tsconfig.json` also sets `noUnusedLocals`, `noUnusedParameters`, and
+  `noUncheckedIndexedAccess`. A failure from the first two means delete the dead symbol, not silence
+  the check. `noUncheckedIndexedAccess` types `array[i]` and `record[key]` as possibly `undefined`,
+  which is the truth — handle the `undefined` branch or narrow first; do not reach for `!`.
 - **No `any`.** Use `unknown` at boundaries you do not control (parsed JSON, API responses) and
   narrow with an explicit runtime check before use.
 - **Non-null assertion `!` requires a reason.** It is acceptable when an invariant a few lines
@@ -195,7 +207,16 @@ identifiers readable as one system.
 | dựng lại mạng lưới | **rebuild network** | |
 | đồ thị mẫu | **sample graph** | |
 | tối ưu | **optimal** | |
+| tối ưu hoá | **optimise**, **optimisation** | en-GB `-ise`, never `-ize`. See the spelling note below. |
 | bản đồ / sơ đồ / cây | **map** / **schematic** / **tree** | the three pane views |
+
+**Spelling is en-GB, and this one is not a preference.** The wire field is `optimiseOrder`, aliased
+from Python's `optimise_order`, so the contract itself is spelled `-ise` on both sides of the
+network boundary. A UI string reading "Optimize" next to a field named `optimiseOrder` makes the
+same word look like two different concepts, and the next person to search the codebase for one
+spelling misses half the occurrences. Renaming the wire field to `-ize` instead would be a breaking
+contract change to settle a spelling argument. So: `-ise` everywhere — identifiers, UI strings,
+comments, and docs. Consider this settled, not open.
 
 ---
 
@@ -204,9 +225,13 @@ identifiers readable as one system.
 - **Package manager is `bun`.** Use `bun install`, `bun run build`, `bunx`. Do not run `npm` or
   `yarn`; do not commit `package-lock.json` or `yarn.lock`. The lockfile is `bun.lock`.
 - Typecheck with `bunx tsc --noEmit`, build with `bun run build`. Both must pass before a commit.
-  There is no test suite; these two commands plus running the app are the verification.
-- Editor settings come from `.editorconfig`: UTF-8, LF endings, two-space indent, final newline,
-  no trailing whitespace. Do not fight it.
+  `web/` has no test suite; those two commands plus running the app are the frontend's verification.
+  `server/` does have one — `cd server && make check` is the backend gate, and it must pass before a
+  commit that touches it. CI runs both.
+- Editor settings come from `.editorconfig`: UTF-8, LF endings, final newline, no trailing
+  whitespace, and two-space indent **for the frontend**. Python is four spaces, because `ruff format`
+  writes four and will reformat anything else; `Makefile` recipes are tabs, because make requires it.
+  Both are declared in `.editorconfig`. Do not fight it.
 
 ---
 

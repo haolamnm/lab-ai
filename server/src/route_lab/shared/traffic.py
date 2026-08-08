@@ -93,7 +93,7 @@ VEHICLES: tuple[Vehicle, ...] = (
     ),
 )
 
-_VEHICLE_BY_KEY: dict[VehicleKey, Vehicle] = {v.key: v for v in VEHICLES}
+_VEHICLE_BY_KEY: dict[VehicleKey, Vehicle] = {vehicle.key: vehicle for vehicle in VEHICLES}
 
 
 def vehicle_of(key: VehicleKey) -> Vehicle:
@@ -115,12 +115,22 @@ PERIODS: tuple[Period, ...] = (
     Period(key="night", name="Night", jam=0.18),
 )
 
-_PERIOD_BY_KEY: dict[PeriodKey, Period] = {p.key: p for p in PERIODS}
+_PERIOD_BY_KEY: dict[PeriodKey, Period] = {period.key: period for period in PERIODS}
 
 
 def period_of(key: PeriodKey) -> Period:
     return _PERIOD_BY_KEY[key]
 
+
+# How much one step up the 1-5 congestion scale slows a vehicle, before the
+# vehicle's own jam sensitivity and the period's multiplier are applied. This is
+# a tuned constant with no measurement behind it — it was chosen so that a van on
+# a fully jammed major road at peak (congestion 5) crawls at just over a third of
+# the road's open speed, 9.7 km/h against 26, which is the worst case the app is
+# meant to portray.
+# Changing it moves every reported travel time, so it must stay identical to the
+# same constant in web/src/lib/traffic.ts.
+JAM_SLOWDOWN_PER_LEVEL = 0.42
 
 # Open-road speed by road class, km/h, before subtracting congestion.
 CLASS_SPEED: dict[RoadClass, float] = {
@@ -153,21 +163,15 @@ _PERIOD_CLOCK: dict[PeriodKey, int] = {
 }
 
 
-def clamp_congestion(n: float) -> float:
-    """Clamp to 1-5. Below 1 makes ``edge_cost`` negative, which silently breaks
-    the optimality guarantee UCS and A* rely on."""
-    return min(5.0, max(1.0, n))
-
-
-def clamp_risk(n: float) -> float:
-    """Clamp to 0-1, for the same reason ``clamp_congestion`` exists."""
-    return min(1.0, max(0.0, n))
-
-
-def cost_is_flat(w: Weights) -> bool:
+def cost_is_flat(weights: Weights) -> bool:
     """True when every weight is 0, so every route costs 0 and "optimal" would be
     a meaningless stamp. The planner withdraws the optimal claim in that case."""
-    return w.distance == 0 and w.time == 0 and w.congestion == 0 and w.risk == 0
+    return (
+        weights.distance == 0
+        and weights.time == 0
+        and weights.congestion == 0
+        and weights.risk == 0
+    )
 
 
 def _within(minute: int, window: tuple[int, int]) -> bool:
@@ -180,11 +184,12 @@ def _within(minute: int, window: tuple[int, int]) -> bool:
 
 def ban_reason(edge: GraphEdge, vehicle: VehicleKey, period: PeriodKey) -> str | None:
     """Why this vehicle cannot use this segment now, or None if it can."""
-    v = vehicle_of(vehicle)
-    if edge.road_class in v.banned:
-        return f"{v.name} is banned from {ROAD_LABEL[edge.road_class]}s"
-    if v.curfew and period in v.curfew.periods and edge.road_class in v.curfew.classes:
-        return v.curfew.note
+    driven = vehicle_of(vehicle)
+    if edge.road_class in driven.banned:
+        return f"{driven.name} is banned from {ROAD_LABEL[edge.road_class]}s"
+    curfew = driven.curfew
+    if curfew and period in curfew.periods and edge.road_class in curfew.classes:
+        return curfew.note
     return None
 
 
@@ -208,45 +213,51 @@ def turn_allowed(
     if turns is None or from_edge.way_id is None or to_edge.way_id is None:
         return True
     clock = _PERIOD_CLOCK[conditions.period]
-    mine = vehicle_of(conditions.vehicle).osm_except
+    exemptions = vehicle_of(conditions.vehicle).osm_except
 
     def active(rule: TurnRule) -> bool:
-        in_window = not rule.hours or any(_within(clock, h) for h in rule.hours)
-        exempt = any(x in mine for x in rule.except_)
+        in_window = not rule.hours or any(_within(clock, window) for window in rule.hours)
+        exempt = any(keyword in exemptions for keyword in rule.except_)
         return in_window and not exempt
 
     banned = turns.no.get(f"{via}|{from_edge.way_id}|{to_edge.way_id}")
-    if banned and any(active(r) for r in banned):
+    if banned and any(active(rule) for rule in banned):
         return False
 
     # An "only direction X" rule bans every other outgoing direction.
     only = turns.only.get(f"{via}|{from_edge.way_id}")
-    return not (only and any(active(r) and r.only_to != to_edge.way_id for r in only))
+    return not (only and any(active(rule) and rule.only_to != to_edge.way_id for rule in only))
 
 
-def edge_minutes(edge: GraphEdge, c: Conditions) -> float:
+def edge_minutes(edge: GraphEdge, conditions: Conditions) -> float:
     """Time to traverse the segment, in minutes."""
-    v = vehicle_of(c.vehicle)
+    vehicle = vehicle_of(conditions.vehicle)
     # Congestion pulls speed down; a motorbike is affected less because it weaves,
     # and the period sets whether the segment is congested right now.
-    jam = 1 + (edge.congestion - 1) * 0.42 * v.jam_sensitivity * period_of(c.period).jam
-    speed = (CLASS_SPEED[edge.road_class] * v.speed) / jam
+    jam = (
+        1
+        + (edge.congestion - 1)
+        * JAM_SLOWDOWN_PER_LEVEL
+        * vehicle.jam_sensitivity
+        * period_of(conditions.period).jam
+    )
+    speed = (CLASS_SPEED[edge.road_class] * vehicle.speed) / jam
     return (edge.km / speed) * 60
 
 
-def edge_cost(edge: GraphEdge, c: Conditions) -> float:
+def edge_cost(edge: GraphEdge, conditions: Conditions) -> float:
     """The weighted cost of a segment.
 
     Congestion and risk are multiplied by length, not added as a flat lump, so a
     route across many short blocks is not penalised for its intersection count.
     """
-    w = c.weights
-    v = vehicle_of(c.vehicle)
+    weights = conditions.weights
+    vehicle = vehicle_of(conditions.vehicle)
     return (
-        w.distance * edge.km
-        + w.time * edge_minutes(edge, c)
-        + w.congestion * edge.congestion * edge.km
-        + w.risk * edge.risk * v.risk_factor * edge.km
+        weights.distance * edge.km
+        + weights.time * edge_minutes(edge, conditions)
+        + weights.congestion * edge.congestion * edge.km
+        + weights.risk * edge.risk * vehicle.risk_factor * edge.km
     )
 
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { explain, toExportable } from '../lib/explain'
-import { algoOf } from '../lib/search'
+import { ALGOS } from '../lib/search'
 import type { Conditions } from '../lib/traffic'
 import { tripNames } from '../lib/tripNames'
 import { useStore } from '../store'
@@ -42,7 +42,9 @@ export function Explain() {
   // clearResults() breaks this.
   const resultKey = panes.map(p => `${p.algo}:${p.result ? p.result.trace.length : 'x'}`).join('|')
   const results = useMemo(
-    () => panes.filter(p => p.result).map(p => ({ algo: algoOf(p.algo).name, result: p.result! })),
+    // `flatMap` rather than filter-then-map: `filter` does not narrow, so the map
+    // that followed it had to assert away a null the filter had just removed.
+    () => panes.flatMap(p => (p.result ? [{ algo: ALGOS[p.algo].name, result: p.result }] : [])),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [resultKey],
   )

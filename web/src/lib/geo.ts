@@ -15,8 +15,12 @@ export function haversine(a: LatLng, b: LatLng): number {
 
 export function pathKm(points: [number, number][]): number {
   let km = 0
-  for (let i = 0; i + 1 < points.length; i++)
-    km += haversine({ lat: points[i][0], lng: points[i][1] }, { lat: points[i + 1][0], lng: points[i + 1][1] })
+  let previous: LatLng | null = null
+  for (const [lat, lng] of points) {
+    const point = { lat, lng }
+    if (previous) km += haversine(previous, point)
+    previous = point
+  }
   return km
 }
 

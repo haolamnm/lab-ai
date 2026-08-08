@@ -41,7 +41,7 @@ The assignment requires letting the user choose: start point, destination, inter
 
 **The machine speaks in monospace, people speak in regular type.** Every number, algorithm name, and step count is set in IBM Plex Mono. Labels, instructions, and descriptions are set in IBM Plex Sans. A glance tells you which is a measured value and which is the interface talking.
 
-The most important consequence: **what distinguishes the algorithms is not the route, but the exploration footprint.** UCS and A\* always return the same route, because both are optimal on the same cost function (UCS *is* Dijkstra, which is why it isn't split out as a separate algorithm). The difference lies in how many nodes must be expanded and the shape of the region that spreads out. Measured on the Bến Thành to Landmark 81 route: UCS expands 263 nodes, A\* expands 197, Greedy only 79. The interface must foreground the process — the final route is only the outcome.
+The most important consequence: **what distinguishes the algorithms is not the route, but the exploration footprint.** UCS and A\* always return the same route, because both are optimal on the same cost function (UCS *is* Dijkstra, which is why it isn't split out as a separate algorithm). The difference lies in how many nodes must be expanded and the shape of the region that spreads out. Measured on the Bến Thành to Landmark 81 route: UCS expands 263 nodes, A\* expands 197. The interface must foreground the process — the final route is only the outcome.
 
 So expanded nodes **fade over time** instead of staying at a fixed intensity — the viewer sees the direction of the spread, not just the region it has already covered.
 
@@ -86,7 +86,7 @@ The grid starts completely empty. No pane is pre-built, and there is only **one*
 
 ### Bento grid
 
-Each pane is an independent map with its own algorithm list, dragged by its header to reorder, dragged by its corner to resize, with its own close button. **Limited to 5 panes**: beyond that, each cell drops below 300px and the map loses its usefulness.
+Each pane is an independent map with its own algorithm list, dragged by its header to reorder, dragged by its corner to resize, with its own close button. **Limited to one pane per algorithm** (`MAX_PANES = ALGOS.length`, six today): a cap below the number of things there are to compare is an arbitrary limit rather than a design, and the grid wraps at two columns and scrolls, so an extra pane costs a row rather than the 300px each cell needs to stay readable.
 
 The view stays synced across every pane, and can be switched off with a button on the top bar when a spot needs a closer look.
 
@@ -106,7 +106,7 @@ Three tabs sit at the top of each pane, each mode answering a different question
 
 **Schematic** — strips the basemap away entirely, leaving just the road grid on a paper background, with edges receding to a neutral tone. With a clean background, the only color left is the algorithm's, and the exploration footprint stands out with nothing competing against it.
 
-**Tree** — lays out the search tree in a radial layout. Every node that gets expanded has a parent; the set of those parent–child pairs is a genuine tree, and **the shape of the tree is the algorithm's portrait**. DFS produces a long chain with almost no branching, BFS produces a fan spreading out evenly by layer, A\* produces a teardrop skewed toward the destination, Greedy produces one thin branch. Put four trees side by side and the difference is understood instantly, no words needed.
+**Tree** — lays out the search tree in a radial layout. Every node that gets expanded has a parent; the set of those parent–child pairs is a genuine tree, and **the shape of the tree is the algorithm's portrait**. DFS produces a long chain with almost no branching, BFS produces a fan spreading out evenly by layer, A\* produces a teardrop skewed toward the destination, UCS a circle. Put four trees side by side and the difference is understood instantly, no words needed.
 
 Uses a **radial layout by depth** rather than a force simulation: computed once and done, always identical across runs so the comparison stays meaningful, and it costs no physics iterations per frame. Traversed with an explicit stack, since a DFS tree runs hundreds of levels deep.
 
@@ -126,9 +126,8 @@ The numbers weren't picked at random. Measured on the A → J route, motorbike, 
 | DFS | 9 | 21.8 km | A→O→N→M→K→J |
 | UCS | 19 | 11.4 km | A→D→E→F→K→J |
 | A\* | 11 | 11.4 km | A→D→E→F→K→J |
-| Greedy | 7 | 13.1 km | A→D→E→G→H→K→J |
 
-Five algorithms produce four different routes. The four vehicle types also split into two: the motorbike threads through the E–F congestion cluster at Hàng Xanh because it can weave through, while the van, car, and truck all detour around via Landmark 81.
+Four algorithms produce three different routes. The four vehicle types also split into two: the motorbike threads through the E–F congestion cluster at Hàng Xanh because it can weave through, while the van, car, and truck all detour around via Landmark 81.
 
 The **Import file** button reloads the graph from JSON, so the team can hand-edit the dataset and reload it — genuinely "custom-designed."
 
@@ -202,7 +201,7 @@ Motorbikes are nearly immune, cars get blocked seven times as often at peak. It'
 
 **An approximation, and where it approximates.** Turn restrictions constrain a **pair** of road segments, while the search algorithm on the node graph only remembers one parent node per node. The handling here is therefore an approximation: it **never generates a route that breaks the rules**, but it may miss a cheaper legal route that would require entering that node from a different direction. Getting it exactly right would need to search on an edge graph, with the number of states growing with the degree of each node.
 
-This is deliberately **not** counted in the "optimal" column. Every run on a real road network hits at least one turn restriction somewhere, so folding it in would turn every result into "approximate" and the column would lose all ability to tell UCS apart from Greedy — the exact thing it exists to do. Instead, the block count is shown separately at the foot of the pane, and the explanation block states the limitation clearly.
+This is deliberately **not** counted in the "optimal" column. Every run on a real road network hits at least one turn restriction somewhere, so folding it in would turn every result into "approximate" and the column would lose all ability to tell UCS apart from DFS — the exact thing it exists to do. Instead, the block count is shown separately at the foot of the pane, and the explanation block states the limitation clearly.
 
 ### Time period must act through the congestion level, not through the base speed
 
@@ -280,11 +279,10 @@ Dragging all four sliders to 0 makes the cost function return 0 for every road s
 |---|---|---|
 | UCS | 11,4 km · OPTIMAL | **20,7 km · still OPTIMAL** |
 | A\* | 11,4 km · expands 11 nodes | 20,7 km · expands 10 nodes, identical to UCS |
-| Greedy | 13,1 km · expands 7 nodes | 20,7 km · identical to UCS |
 
 Mathematically, no statement here is false: the 20,7 km route genuinely does have the lowest cost, because every route costs 0. A\* degenerates because its heuristic multiplies distance by the lowest cost per kilometer, and that number is also 0, so h = 0. But a user who reads the word "optimal" next to a meandering route can only conclude the app is broken.
 
-Handling: `costIsFlat` detects this case, drops the "optimal" tag on all five algorithms, shows a warning right below the four sliders, and the explanation block states the cause instead of the usual claim of optimality. It doesn't block the user — they can still drag everything to 0 if they want to see what happens.
+Handling: `costIsFlat` detects this case, drops the "optimal" tag on every algorithm, shows a warning right below the four sliders, and the explanation block states the cause instead of the usual claim of optimality. It doesn't block the user — they can still drag everything to 0 if they want to see what happens.
 
 ### Truck curfew
 
@@ -407,15 +405,26 @@ timeline : { step, playing, speed, maxStep }
 
 Panes do **not** keep a copy of the query.
 
-The trace stores nodes as **indices** rather than string IDs: a single run over a network of a few hundred nodes generates tens of thousands of queue entries, and multiplied across five panes, storing strings would waste memory for nothing.
+The trace stores nodes as **indices** rather than string IDs: a single run over a network of a few hundred nodes generates tens of thousands of queue entries, and multiplied across six panes, storing strings would waste memory for nothing.
 
 ## 11. API contract
 
-**Current state: the frontend computes everything itself; it does not call the backend yet.**
+**Current state: the split is decided by `VITE_API_URL`.**
 
-The running build constructs the graph with `lib/overpass.ts` and runs all five algorithms with `lib/search.ts`, entirely in the browser. There is not a single call to the backend. This is a deliberate choice so the frontend isn't blocked, but it has to be stated plainly in this document, because the previous version of this section described it as if the integration were already done — anyone who read that, built a backend to match, and wired it in would find that it doesn't work.
+Graph construction is always in the browser: `lib/overpass.ts` queries OpenStreetMap and builds the
+weighted graph, and the backend never touches the network. Planning is the part that moved. When
+`VITE_API_URL` is set, `store.ts` sends every pane through `lib/planClient.ts` to `POST /plan` on the
+Python service in `server/` — every graph, the sample one included, so two panes on one screen can
+never be computed by two different planners. When it is unset, `lib/search.ts` runs BFS, DFS, UCS,
+and A\* in the browser as before, and a pane set to Held–Karp says it needs the backend rather than
+silently substituting a heuristic answer.
 
-When wiring it up, only the bodies of two functions need to change: `buildGraph` calls `GET /api/graph`, and `planRoute` calls `POST /api/search/batch`. The rest of the application stays the same.
+The endpoint sketch below is what this document *proposed*; it is not what shipped. The real
+contract is one endpoint, `POST /plan`, taking the whole graph in the request body — the service is
+stateless and has no `GET /api/graph` because it never builds a graph. See
+[`server/README.md`](../server/README.md) for the shipped request and response shapes. The
+requirements that follow the sketch — `nodeIds`, the `algo` field name, and a non-empty `trace` —
+all survived into it unchanged, and are the reason it works.
 
 ```
 GET  /api/graph?points=lat,lng;lat,lng&detail=coarse|medium|fine
@@ -435,7 +444,7 @@ node IDs, used as the lookup table for `trace`. The previous version of this
 document forgot this field entirely. Each step in `trace` stores a node by
 **its index in `nodeIds`**, not by node ID, because a single run over a
 network of a few hundred nodes generates tens of thousands of queue entries —
-multiplied across five panes, storing strings would waste memory for nothing.
+multiplied across six panes, storing strings would waste memory for nothing.
 The order of `nodeIds` must match the order of the `nodes` array returned by
 `GET /api/graph`, and must stay fixed for the entire session.
 
@@ -460,7 +469,7 @@ For algorithms that don't use a heuristic, `h` returns `null`; the interface hid
 the start and destination both pin to the same intersection. With this field, the interface
 can state the reason instead of showing "done at step 0, optimal," which looks like it's stuck.
 
-A single `batch` request serves all five panes, so every pane receives its result at the same
+A single `batch` request serves all six panes, so every pane receives its result at the same
 time and the shared timeline starts up in sync.
 
 ## 12. The multi-stop problem

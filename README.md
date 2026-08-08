@@ -5,7 +5,7 @@ street network of Ho Chi Minh City.
 
 Pick a pickup point, a dropoff point, and any number of intermediate stops. The app downloads the
 actual roads around your route from OpenStreetMap, builds a weighted graph out of them, and runs up
-to five search algorithms side by side on a shared timeline — so you watch BFS flood outward in
+to six search algorithms side by side on a shared timeline — so you watch BFS flood outward in
 every direction while A\* drives a narrow wedge straight at the goal, at the same step number, on the
 same map.
 
@@ -41,6 +41,7 @@ the amount of work spent finding it is.
 | **Bun** | 1.0 or newer. This project does **not** use npm or yarn — see [Package manager](#package-manager) below. |
 | **A modern browser** | Chrome, Edge, Firefox, or Safari. |
 | **An internet connection** | Road data, geocoding, map tiles, and fonts are all fetched live. Nothing is bundled offline. |
+| **uv** | Only for the Python backend in `server/`. The frontend runs standalone without it — see [Backend](#backend). |
 
 Install Bun if you do not have it:
 
@@ -68,6 +69,9 @@ bun run dev
 `bun run dev` starts the Vite dev server and **opens your browser automatically** (configured in
 `vite.config.ts`). If it does not, open the URL Vite prints, normally <http://localhost:5173>.
 
+That runs the frontend alone, on its built-in TypeScript planner. To bring the Python backend up
+alongside it, run `make dev` from the repository root instead — see [Backend](#backend) below.
+
 ### All commands
 
 Run these from the `web/` directory.
@@ -80,7 +84,9 @@ Run these from the `web/` directory.
 | `bun run preview` | Serve the built `dist/` locally, to check the production build. |
 | `bunx tsc --noEmit` | Typecheck only, without building. Fast. |
 
-There is **no test suite** in this project. Verification is `bunx tsc --noEmit` plus running the app.
+`web/` has **no test suite**. Verification there is `bunx tsc --noEmit` plus running the app. The
+backend does have one — `cd server && make check` runs lint, both type checkers, import layering,
+and `pytest`.
 
 ### First run, step by step
 
@@ -89,12 +95,12 @@ There is **no test suite** in this project. Verification is `bunx tsc --noEmit` 
 3. Press **Build network** (it reads *Rebuild network* once a network is loaded). The app queries
    Overpass for every road in a corridor between your two
    points. This takes a few seconds and is the slowest step; there is a hard 75-second cutoff.
-4. Press **Add the first pane**, then **Add pane** for each one after that, up to five. Each pane
+4. Press **Add the first pane**, then **Add pane** for each one after that, up to six. Each pane
    picks the next unused algorithm.
 5. Press **Run algorithms**. Watch the timeline at the bottom drive every pane at once.
 
 **No internet, or Overpass is down?** Press **Sample graph** instead of *Build network*. That uses
-a hand-built 20-node graph of real HCMC landmarks that needs no network access at all — see
+a hand-built 21-node graph of real HCMC landmarks that needs no network access at all — see
 [Sample graph](#sample-graph).
 
 ---
@@ -143,7 +149,10 @@ Custom. Set all four to zero and every route costs the same — the app detects 
 
 ---
 
-## The five algorithms
+## The six algorithms
+
+The first four are point-to-point searches, run once per leg. The last two are trip-level: they
+choose the *visit order* over the stops and leave the per-leg routing to a point search.
 
 | Algorithm | Priority | Optimal? | Character |
 |---|---|---|---|
@@ -151,7 +160,12 @@ Custom. Set all four to zero and every route costs the same — the app detects 
 | **DFS** | stack order | no | Plunges down one branch, usually a bad route |
 | **UCS** | `g(n)` | **yes** | Expands evenly in every direction |
 | **A\*** | `g(n) + h(n)` | **yes** | Same route as UCS, far fewer nodes expanded |
-| **Greedy Best-First** | `h(n)` | no | Expands very few nodes, no guarantee |
+| **Nearest Neighbor** | cheapest unvisited stop | no | Orders stops greedily by real route cost; each leg is UCS |
+| **Held–Karp DP** | bitmask dynamic programming | **yes** | The exact cheapest visit order, from Pairwise A\* costs. Backend only |
+
+Held–Karp is exponential in the number of stops, which is why it is exact and why it is not the
+default. It is also the one algorithm the in-browser planner refuses outright — a pane set to it
+without a backend configured says so rather than quietly returning a heuristic answer.
 
 **Why there is no Dijkstra entry.** On a graph with non-negative edge weights, Dijkstra and UCS are
 the same algorithm — the same priority function `g(n)`, the same expansion order, the same route.
@@ -205,8 +219,8 @@ because those four need four different fixes.
 
 ## Sample graph
 
-`lib/sampleGraph.ts` holds a hand-built graph: **20 nodes, 34 edges**, each node a real HCMC landmark
-labelled `A` through `T`, so a route can be described as `A → D → E → F → K → J` and traced by eye.
+`lib/sampleGraph.ts` holds a hand-built graph: **21 nodes, 36 edges**, each node a real HCMC landmark
+labelled `A` through `U`, so a route can be described as `A → D → E → F → K → J` and traced by eye.
 The numbers were chosen so the algorithms visibly disagree — a short route through the heavy
 congestion at Hàng Xanh, a longer free-flowing route past Landmark 81, and dead-end branches to the
 west for DFS to fall into.
@@ -252,8 +266,6 @@ UCS and A\* rely on — the app would keep stamping "optimal" on a route that is
 │   ├── design-spec.md          UI/UX design spec, with the reasoning behind each decision
 │   ├── ui-screenshot.png       the screenshot at the top of this file
 │   └── ui-overview.svg         annotated schematic of the same layout
-├── prototype/
-│   └── index.html              earlier single-file vanilla-JS prototype (see Status below)
 ├── web/                        the real application
 │   ├── index.html
 │   ├── package.json
@@ -266,37 +278,46 @@ UCS and A\* rely on — the app would keep stamping "optimal" on a route that is
 │       ├── store.ts            the single Zustand store — all query state lives here
 │       ├── styles.css          the whole design system
 │       ├── components/
-│       │   ├── Sidebar.tsx     every input that defines a run
-│       │   ├── MapPane.tsx     one algorithm's pane: map, schematic, and tree views
-│       │   ├── TreeView.tsx    radial search-tree layout
-│       │   ├── Timeline.tsx    the shared step control
-│       │   ├── Compare.tsx     side-by-side vehicle comparison
-│       │   ├── Explain.tsx     the generated explanation of the chosen route
-│       │   ├── PlaceField.tsx  debounced geocoding search box
-│       │   └── Segment.tsx     segmented-control primitive
-│       ├── lib/                pure logic — no React, no DOM
-│       │   ├── search.ts       all five algorithms, the heap, multi-leg planning
-│       │   ├── traffic.ts      vehicles, periods, road classes, the cost model
-│       │   ├── overpass.ts     OpenStreetMap fetching and graph construction
-│       │   ├── geocode.ts      address lookup
-│       │   ├── explain.ts      turns a run's numbers into sentences
-│       │   ├── tree.ts         search-tree layout
-│       │   ├── sampleGraph.ts  the offline sample network
-│       │   ├── geo.ts          haversine and bounds maths
-│       │   └── types.ts        shared types
+│       │   ├── Sidebar.tsx          every input that defines a run
+│       │   ├── MapPane.tsx          one algorithm's pane: map, schematic, and tree views
+│       │   ├── TreeView.tsx         radial search-tree layout
+│       │   ├── Timeline.tsx         the shared step control
+│       │   ├── Compare.tsx          side-by-side vehicle comparison
+│       │   ├── CompareAlgos.tsx     side-by-side algorithm comparison, best value marked
+│       │   ├── CompareCriteria.tsx  side-by-side weight-preset comparison
+│       │   ├── HeldKarpNotice.tsx   why a Held–Karp pane cannot run right now
+│       │   ├── Explain.tsx          the generated explanation of the chosen route
+│       │   ├── PlaceField.tsx       debounced geocoding search box
+│       │   └── Segment.tsx          segmented-control primitive
+│       ├── lib/                     pure logic — no React, no DOM
+│       │   ├── search.ts            BFS, DFS, UCS, A*, the heap, multi-leg planning
+│       │   ├── planClient.ts        the backend integration: POST /plan when VITE_API_URL is set
+│       │   ├── traffic.ts           vehicles, periods, road classes, the cost model
+│       │   ├── overpass.ts          OpenStreetMap fetching and graph construction
+│       │   ├── geocode.ts           address lookup
+│       │   ├── recentPlaces.ts      the last places picked, kept between sessions
+│       │   ├── explain.ts           turns a run's numbers into sentences
+│       │   ├── tripNames.ts         names a trip's points for the UI and the explanation
+│       │   ├── tree.ts              search-tree layout
+│       │   ├── viewSync.ts          the shared map viewport across panes
+│       │   ├── sampleGraph.ts       the offline sample network
+│       │   ├── sampleCases.ts       the scenarios that network exists to demonstrate
+│       │   ├── geo.ts               haversine and bounds maths
+│       │   └── types.ts             shared types
 │       └── icons/
 └── server/                     the Python planning backend — see Backend below
-    ├── README.md                the algorithms team's playground guide
+    ├── README.md               the algorithms team's playground guide
     ├── pyproject.toml
     ├── uv.lock
     ├── Makefile
+    ├── tests/                  pytest suite — the backend's verification, run by `make check`
     └── src/route_lab/
-        ├── contract/            Pydantic mirror of web/src/lib/types.ts
-        ├── shared/               cost model, haversine, heap, search harness — ported from lib/
-        ├── algorithms/           one file per algorithm; ucs.py is the worked reference
-        ├── planner.py            builds legs, dispatches algorithms, aggregates a RouteResult
-        ├── diagnostics.py        explains why a leg found no route
-        └── api.py                FastAPI app: POST /plan, GET /health
+        ├── contract/           Pydantic mirror of web/src/lib/types.ts
+        ├── shared/             cost model, haversine, heap, search harness — ported from lib/
+        ├── algorithms/         one file per algorithm; ucs.py is the worked reference
+        ├── planner.py          builds legs, dispatches algorithms, aggregates a RouteResult
+        ├── diagnostics.py      explains why a leg found no route
+        └── api.py              FastAPI app: POST /plan, GET /health
 ```
 
 `lib/` must stay importable without React. If something there needs a hook, it belongs in a component
@@ -318,26 +339,40 @@ playback speed was deliberately *not* implemented: it would destroy comparabilit
 point of the tool.
 
 **Traces store node indices, not id strings.** A single run over a few-hundred-node network produces
-tens of thousands of frontier entries; times five panes, storing strings would waste a lot of memory
+tens of thousands of frontier entries; times six panes, storing strings would waste a lot of memory
 for nothing. `RouteResult.nodeIds` maps back.
 
 ---
 
 ## Backend
 
-`server/` is a new Python/FastAPI service, managed with `uv`, that is becoming the real planning
-backend. `web/src/lib/search.ts` was a demo — all five algorithms running in the browser, no server
+`server/` is a Python/FastAPI service, managed with `uv`, and it is the real planning backend.
+`web/src/lib/search.ts` was a demo — BFS, DFS, UCS, and A\* running in the browser, no server
 involved — that proved the idea and shipped the first version of the app. The Python service speaks
-the identical JSON contract (`POST /plan` in, a `RouteResult` out) so it can replace that in-browser
+the identical JSON contract (`POST /plan` in, a `RouteResult` out) so it replaces that in-browser
 search without the frontend's request or response shapes changing. See
 [`server/README.md`](server/README.md) for the full playground guide, including how to implement an
 algorithm.
 
-Running both halves against each other, in two terminals:
+**`VITE_API_URL` is the switch.** Set it and the Run button sends every pane to the backend —
+including the sample graph, and including Held–Karp, which has no in-browser implementation; leave
+it unset and the built-in TypeScript planner runs instead. See
+[`web/.env.example`](web/.env.example).
+
+Running both halves against each other, from the repository root:
 
 ```bash
-cd server && uv run uvicorn route_lab.api:app --reload    # backend, http://localhost:8000
-cd web && VITE_API_URL=http://localhost:8000 bun run dev  # frontend, points at it
+make dev     # backend on http://127.0.0.1:8787, frontend on http://localhost:5173
+```
+
+One Ctrl-C stops both. `make` on its own lists the other whole-project targets
+(`install`, `check`, `test`, `lint`, `format`, `build`, `clean`).
+
+To run them separately instead, in two terminals:
+
+```bash
+cd server && make dev                                      # backend, http://127.0.0.1:8787
+cd web && VITE_API_URL=http://127.0.0.1:8787 bun run dev   # frontend, points at it
 ```
 
 ---
@@ -396,26 +431,26 @@ Two rules worth repeating here:
 - **Comment the decision, not the mechanics.** The code already says what it does. A comment earns
   its place by recording why this approach beat the obvious one, or what breaks if someone
   "simplifies" it.
-- **Both `bunx tsc --noEmit` and `bun run build` must pass before a commit.**
+- **Both `bunx tsc --noEmit` and `bun run build` must pass before a commit**, and `make check` too
+  if you touched `server/`. CI runs all of it.
 
 ---
 
 ## Status and known limitations
 
-The application in `web/` is the current, maintained implementation.
-
 **Known limitations:**
 
-- **`prototype/index.html` has drifted and is not maintained.** It still uses two models the real app
-  deliberately replaced: a cost function that does not scale congestion and risk by edge length, and
-  a time-of-day multiplier applied to base speed. Treat it as a historical UI reference only.
 - **The JSON export in `lib/explain.ts` uses Vietnamese object keys** (`dieuKien`, `mangLuoi`, …),
   which contradicts the language policy above. Left alone deliberately, because changing it changes
   the submission file format.
-- **Nearest-neighbour stop ordering is a heuristic**, so a trip with intermediate stops is never
-  claimed to be optimal even when each leg is. This is by design — solving the visit order exactly
-  is a travelling-salesman problem and out of scope.
-- **No automated tests.** Verification is `bunx tsc --noEmit`, `bun run build`, and running the app.
+- **Nearest-neighbour stop ordering is a heuristic**, so a trip ordered that way is not claimed to
+  be optimal even when each leg is. Held–Karp does solve the visit order exactly — it is the
+  travelling-salesman problem, and `server/src/route_lab/algorithms/held_karp.py` solves it by
+  bitmask dynamic programming — but it is exponential in the number of stops, so it is capped, and
+  it exists only in the Python backend.
+- **`web/` has no automated tests.** Verification there is `bunx tsc --noEmit`, `bun run build`, and
+  running the app. `server/` is covered by `pytest`; `cd server && make check` is its gate, and CI
+  runs both.
 
 **Recently fixed, worth knowing about if you read older notes:**
 
@@ -424,5 +459,5 @@ The application in `web/` is the current, maintained implementation.
   is legally turnable is tried instead of being shut out by the cheapest one.
 - Displayed totals could disagree with the search's own cost where two roads join the same pair of
   intersections. Statistics are now summed over the edge objects the search actually traversed.
-- Importing a graph left the trip pinned to the *previous* graph's node ids, which crashed A\* and
-  Greedy and made the other three silently report "unreachable".
+- Importing a graph left the trip pinned to the *previous* graph's node ids, which crashed the
+  guided searches and made the others silently report "unreachable".

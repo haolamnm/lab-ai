@@ -42,6 +42,8 @@ export function Icon({ name, size = 20, solid = false, className, style }: Props
       strokeLinecap="round" strokeLinejoin="round"
       className={className} style={style} aria-hidden="true" focusable="false"
     >
+      {/* Keyed by position, which here genuinely is the identity: one glyph's
+          shape list is a fixed literal that is never reordered or filtered. */}
       {ICONS[name].map((s, i) =>
         s.t === 'path'
           ? <path key={i} d={s.d} />

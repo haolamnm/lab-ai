@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from route_lab.contract.conditions import Conditions
 from route_lab.contract.graph import Contract, GraphPayload
@@ -28,3 +28,19 @@ class PlanRequest(Contract):
     # or null preserves the legacy goal-based behavior.
     return_to_start: bool | None = None
     conditions: Conditions
+
+    @field_validator("stops")
+    @classmethod
+    def _stops_are_distinct(cls, stops: list[str]) -> list[str]:
+        """Reject a repeated stop rather than letting each algorithm guess.
+
+        Held-Karp cannot express one location twice — its bitmask has one bit per
+        stop — while Nearest Neighbor used to drop the repeat as a side effect of
+        deduplicating consecutive legs. Two algorithms answering the same request
+        differently is worse than neither answering it, and asking to visit one
+        intersection twice is a client bug either way.
+        """
+        duplicates = sorted({stop for stop in stops if stops.count(stop) > 1})
+        if duplicates:
+            raise ValueError(f"stops must be distinct; repeated: {', '.join(duplicates)}")
+        return stops

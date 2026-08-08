@@ -35,10 +35,10 @@ uv --version
 ```bash
 cd server
 uv sync
-uv run uvicorn route_lab.api:app --reload
+uv run uvicorn route_lab.api:app --reload --port 8787
 ```
 
-This serves on <http://localhost:8000>. `uv sync` reads `pyproject.toml` and `uv.lock` and creates
+This serves on <http://127.0.0.1:8787>. `uv sync` reads `pyproject.toml` and `uv.lock` and creates
 a project-local virtual environment; `--reload` restarts the server on every source change, which
 matters while several people are editing files in `algorithms/` at once.
 
@@ -46,8 +46,13 @@ To connect the real frontend to it instead of the mock, run the frontend against
 
 ```bash
 cd web
-VITE_API_URL=http://localhost:8000 bun run dev
+VITE_API_URL=http://127.0.0.1:8787 bun run dev
 ```
+
+The port is 8787 rather than uvicorn's usual 8000 to stay clear of the range other local
+services tend to claim, and the URL says `127.0.0.1` rather than `localhost` on purpose: if
+anything else is listening on `::1`, the browser resolves `localhost` there first and
+`POST /plan` lands on that other server as a confusing 404.
 
 ### All commands
 
@@ -57,7 +62,7 @@ is a thin wrapper over one of these `uv run` commands, see `Makefile`).
 | Command | What it does |
 |---|---|
 | `make install` (`uv sync`) | Install dependencies and create the virtual environment. Reads `uv.lock`. |
-| `make dev` (`uv run uvicorn route_lab.api:app --reload`) | Dev server with hot reload. Your normal workflow. |
+| `make dev` (`uv run uvicorn route_lab.api:app --reload --port 8787`) | Dev server with hot reload. Your normal workflow. |
 | `make lint` (`uv run ruff check`) | Lint with Ruff. |
 | `make format` (`uv run ruff format`) | Reformat with Ruff. |
 | `make typecheck` (`uv run ty check` + `uv run basedpyright`) | Two independent strict type checkers. Both must pass. |
@@ -69,6 +74,25 @@ is a thin wrapper over one of these `uv run` commands, see `Makefile`).
 There is no `bun.lock` equivalent step to remember separately: `uv.lock` **is committed**, the same
 way `bun.lock` is on the frontend — see the root [`.gitignore`](../.gitignore).
 
+### Configuration
+
+One variable, read straight from the process environment by `_cors_origins()` in `api.py`:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `ROUTELAB_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated browser origins allowed to call this backend. Add your deployed frontend origin here in production. |
+
+Set it on the command line — there is deliberately **no `.env` file**:
+
+```bash
+ROUTELAB_CORS_ORIGINS=https://routelab.example make dev
+```
+
+There used to be a `server/.env.example`, and it did nothing: nothing in this package loads a `.env`,
+there is no `--env-file` on the uvicorn invocation, and `os.environ` never sees the file. A sample
+config that silently has no effect is worse than none, and one variable with a working default does
+not justify the machinery to make it real.
+
 ---
 
 ## Architecture
@@ -78,7 +102,7 @@ server/
 ├── pyproject.toml
 ├── uv.lock
 ├── Makefile
-├── .env.example
+├── tests/              The pytest suite `make test` and CI run. One module per unit under test.
 └── src/route_lab/
     ├── contract/       Pydantic models mirroring web/src/lib/types.ts — the JSON contract itself.
     ├── shared/         The algorithm kit (see below). Pure domain logic ported from lib/traffic.ts
@@ -86,8 +110,11 @@ server/
     │   ├── traffic.py   the cost model (edge_cost, passable, turn_allowed, min_cost_per_km),
     │   ├── geo.py       haversine, a min-heap, the frontier kit, the heuristic kit, the
     │   ├── heap.py      binary min-heap shared by priority-based algorithms.
-    │   ├── frontier.py  Stack / Queue / PriorityQueue — the three frontiers.
+    │   ├── frontier.py  Stack / Queue — the two order-only frontiers.
     │   ├── heuristics.py zero / haversine / euclidean / manhattan, selectable by name.
+    │   ├── pairwise.py  directed cost matrix over every pair of trip points, for the ordering
+    │   │                algorithms; each pair is one guided search.
+    │   ├── rounding.py  JavaScript-compatible rounding, so a metric matches the search.ts number.
     │   ├── problem.py   SearchProblem: one leg plus its plug-n-play cost and heuristic.
     │   ├── search.py    SearchMemory + next_states/remember/record_expansion/complete_leg.
     ├── algorithms/      One file per algorithm, uniform signature. The playground.
@@ -99,7 +126,8 @@ server/
     │   ├── dfs.py       ) The other three point searches. Each differs from ucs.py only in its
     │   ├── astar.py     ) frontier and the priority it pushes with.
     │   └── held_karp.py Trip-level, not a point search: consumes a directed cost matrix and
-    │                    returns the cheapest closed tour. Not in POINT_SEARCHES.
+    │                    returns the cheapest tour, open or closed, per `returnToStart`.
+    │                    Not in POINT_SEARCHES.
     ├── planner.py       plan_route(request) -> RouteResult: builds the leg sequence, dispatches
     │                   each leg through the registry, applies nearest-neighbour ordering,
     │                   aggregates metrics, and produces failure explanations.
@@ -147,24 +175,35 @@ A `Graph` (`shared/graph.py`) is intersections and road segments:
 * `graph.turns` holds turn restrictions, applied for you by the harness.
 
 A **trip** (pickup → stops → dropoff) is split into **legs**, and each leg is one
-[`SearchProblem`](#the-problem-cost-and-heuristic). Your algorithm solves a single leg; the planner
+[`SearchProblem`](#the-problem-cost-and-heuristic-sharedproblempy-sharedheuristicspy). Your algorithm solves a single leg; the planner
 runs the legs in order, joins the paths, and handles multi-stop ordering. You never deal with the
 whole trip — only start-to-goal on one graph.
 
 ### The frontier kit (`shared/frontier.py`)
 
-The three frontiers, all with the same `push` / `pop` / truthy-length interface, so `while frontier:`
-reads the same in every algorithm:
+The two order-only frontiers, with the same `push` / `pop` / truthy-length interface, so
+`while frontier:` reads the same in either algorithm:
 
 | Frontier | Discipline | Used by |
 |---|---|---|
 | `Queue` | FIFO — first in, first out | BFS (fewest hops) |
 | `Stack` | LIFO — last in, first out | DFS (deepest branch first) |
-| `PriorityQueue` | lowest priority first | UCS (`g`), A\* (`g + h`) |
 
-`PriorityQueue.push(state, priority)` takes the value to order by; the others take just the state.
-To "improve" a state in the priority queue, push it again with a lower priority — the stale entry is
-skipped when popped because the state is already closed by then (`ucs.py` shows the one-line check).
+The cost-ordered searches do **not** use a frontier class. UCS and A\* build a `Heap`
+(`shared/heap.py`) directly and drive it with `pop_fresh(frontier, memory)` from `shared/search.py`:
+
+```python
+frontier = Heap()
+frontier.push(memory.start_key, priority=0.0, cost=0.0)
+while (current := pop_fresh(frontier, memory)) is not None:
+    ...
+```
+
+The priority is the only difference between them — `g` for UCS, `g + h` for A\*. To "improve" a
+state, push it again with a lower priority rather than doing a decrease-key; the older, worse entry
+stays in the heap and `pop_fresh` discards it, because the state is closed by the time it surfaces.
+That is why the pop and the staleness check are one call instead of a `while` loop with an
+`if state in memory.closed: continue` at the top.
 
 ### The problem, cost, and heuristic (`shared/problem.py`, `shared/heuristics.py`)
 
@@ -248,8 +287,9 @@ Steps:
 2. Read `src/route_lab/algorithms/ucs.py` first. It is the complete worked reference: copy its shape,
    change only the frontier and the priority you push with.
 3. Build a `SearchMemory` with `create_search_memory(problem.graph, problem.start, problem.conditions)`,
-   pick a frontier from the kit, then loop:
-   - pop a state; skip it if it is already in `memory.closed` (a stale entry),
+   pick a frontier — `Queue`/`Stack` from the kit for an order-only search, a bare `Heap` popped
+   through `pop_fresh` for a cost-ordered one — then loop:
+   - pop a state (`pop_fresh` already skips the stale entries),
    - `record_expansion(memory, current)` to append the step to the trace the frontend animates
      (pass the heuristic value too for A\*, so the pane can show `h`),
    - test `memory.node_at[current] == problem.goal`,
@@ -283,11 +323,29 @@ Request body — one planning request, matching `PlanInput` in `web/src/lib/sear
 | `goal` | `string` | Node id of the dropoff point. |
 | `stops` | `string[]` | Node ids of intermediate stops, in the entered order when `optimiseOrder` is false. |
 | `optimiseOrder` | `boolean` | Whether to reorder all destinations (intermediate stops plus dropoff). Point searches use Nearest Neighbor; Held-Karp runs its exact optimizer. The `nearest` algorithm always reorders even when false. |
+| `returnToStart` | `boolean \| null` | Closed tour when true, open when false, legacy goal-based behaviour when omitted. Applies to the trip-level algorithms, `nearest` and `held_karp`. |
 | `conditions` | `Conditions` | Vehicle, time period, and the four cost weights. |
 
-Response body — a `RouteResult`: `path`, `trace`, `nodeIds`, `reveal`, `found`, `metrics`, and an
-optional `problem` string explaining a leg that could not be routed (or an algorithm not implemented
-yet). It is a strict superset of the frontend's own `RouteResult` type: the search-effort metrics
+**The contract validates rather than repairs.** Two things follow from that, and both surface as a
+422 rather than a quietly wrong route:
+
+* **Ranges are enforced** — `km` above zero, `congestion` 1–5, `risk` 0–1, latitude and longitude
+  within their real bounds. Out of range is rejected, not clamped. The frontend already clamps on
+  import (`store.ts`), so a bad value arriving here means the client is not the one this contract was
+  written for, and silently correcting it would hide that. A negative congestion produces a negative
+  edge cost, and negative edge costs break the optimality guarantee UCS and A\* are stamped with.
+* **Unknown fields are rejected** (`extra="forbid"`). A field the backend does not recognise is
+  version skew between the two halves of the contract, and a client sending `optimizeOrder` for
+  `optimiseOrder` gets a 422 naming the field instead of a silent `False`. `GraphPayload` is the one
+  exception: it ignores extras, so a client that forgets to strip the frontend's `adj` index — which
+  the backend rebuilds from `edges` anyway — still works.
+
+Response body — a `RouteResult`: `order`, `path`, `trace`, `nodeIds`, `reveal`, `found`, `metrics`,
+and an optional `problem` string explaining a leg that could not be routed (or an algorithm not
+implemented yet). `order` is the visit order after any reordering, and
+[`web/src/lib/types.ts`](../web/src/lib/types.ts) calls it authoritative: read the visit order from
+there and never re-derive it from `path`, which is the road-by-road route and knows nothing about
+stops. It is a strict superset of the frontend's own `RouteResult` type: the search-effort metrics
 `hops`, `generated`, `reopened`, and `maxFrontier` are always present here but optional in
 `web/src/lib/types.ts`, because the offline TypeScript planner does not report them.
 

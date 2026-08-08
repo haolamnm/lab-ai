@@ -3,10 +3,8 @@
 from route_lab.algorithms.ucs import uniform_cost_search
 from route_lab.contract.request import PlanRequest
 from route_lab.planner import plan_route
-from route_lab.shared.graph import build_graph
-from route_lab.shared.problem import build_problem
 
-from .fixtures import diamond_json, diamond_payload, diamond_request
+from .fixtures import diamond_json, diamond_problem, diamond_request
 
 
 def test_ucs_finds_the_one_cheapest_route() -> None:
@@ -59,12 +57,8 @@ def test_flat_cost_withdraws_the_optimal_claim() -> None:
 
 
 def test_ucs_returns_not_found_when_goal_is_unreachable() -> None:
-    graph = build_graph(diamond_payload())
-    conditions = diamond_request("ucs").conditions
     # Fixture edges point toward D, so there is no directed route back to A.
-    problem = build_problem(graph, "D", "A", conditions, guided=False)
-
-    result = uniform_cost_search(problem)
+    result = uniform_cost_search(diamond_problem("D", "A"))
 
     assert result.found is False
     assert result.path == []

@@ -1,22 +1,21 @@
 """Build directed pairwise route data for trip-level ordering algorithms.
 
 This module bridges point-search algorithms and trip-level optimizers without
-depending on a concrete search implementation.  Every ordered, non-diagonal
-location pair is searched independently with a guided ``SearchProblem``.
-Reachable pairs retain both their exact accumulated edge cost and the complete
-search result so callers can later reconstruct route legs.
+depending on a concrete search implementation: the search is a parameter, which
+is also what keeps ``shared`` from importing ``algorithms``. Every ordered,
+non-diagonal location pair is searched independently. Reachable pairs retain
+both their exact accumulated edge cost and the complete search result so callers
+can later reconstruct route legs.
 """
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
 from route_lab.contract.conditions import Conditions
 from route_lab.shared.graph import Graph
-from route_lab.shared.problem import SearchProblem, build_problem
+from route_lab.shared.problem import PointSearch, build_problem
 from route_lab.shared.search import SearchLegResult
-
-PointSearch = Callable[[SearchProblem], SearchLegResult]
 
 
 @dataclass(frozen=True)
@@ -62,7 +61,6 @@ def build_pairwise(
                 start=source,
                 goal=target,
                 conditions=conditions,
-                guided=True,
             )
             result = search(problem)
             if not result.found:

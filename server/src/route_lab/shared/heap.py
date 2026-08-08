@@ -32,9 +32,9 @@ class Heap:
     def size(self) -> int:
         return len(self._entries)
 
-    def push(self, id: str, priority: float, cost: float) -> None:
+    def push(self, state: str, priority: float, cost: float) -> None:
         entries = self._entries
-        entries.append(HeapEntry(id, priority, cost))
+        entries.append(HeapEntry(state, priority, cost))
         index = len(entries) - 1
         while index > 0:
             parent = (index - 1) >> 1

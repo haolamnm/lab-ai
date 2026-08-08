@@ -1,13 +1,16 @@
 import { create } from 'zustand'
 import { boundsOf, haversine } from './lib/geo'
 import { areaProblem, buildGraph, DETAIL_LABEL, GraphBuildError, snap } from './lib/overpass'
-import { backendEnabled, planRouteRemote } from './lib/planClient'
-import { sampleCaseOf } from './lib/sampleCases'
+import { backendEnabled, isRecord, messageOf, planRouteRemote } from './lib/planClient'
+import { sampleCaseOf, type SampleCaseKey } from './lib/sampleCases'
 import { buildSampleGraph, samplePlace } from './lib/sampleGraph'
 import { ALGOS, planRoute } from './lib/search'
-import { clampCongestion, clampRisk, CRITERIA, passable, type Conditions } from './lib/traffic'
+import {
+  clampCongestion, clampRisk, CRITERIA, passable, ROAD_LABEL, type Conditions,
+} from './lib/traffic'
 import type {
-  AlgoKey, CriterionKey, Detail, Graph, PeriodKey, Place, RouteResult, VehicleKey, Weights,
+  AlgoKey, CriterionKey, Detail, Graph, PeriodKey, Place, RoadClass, RouteResult, VehicleKey,
+  Weights,
 } from './lib/types'
 
 /**
@@ -83,7 +86,8 @@ interface State {
   step: number
   maxStep: number
   playing: boolean
-  speed: number
+  /** Multiplies the step delay, so a larger number plays back slower. */
+  slowdown: number
   syncView: boolean
   /** True while a remote run is in flight, so the Run button can lock like Build does. */
   running: boolean
@@ -97,12 +101,12 @@ interface State {
   setDetail: (d: Detail) => void
   build: () => Promise<void>
   /** Loads the sample network and applies one scenario. Defaults to the first. */
-  loadSample: (caseKey?: string) => void
+  loadSample: (caseKey?: SampleCaseKey) => void
   importGraph: (json: string) => void
   /** True when using the custom-built sample graph rather than OpenStreetMap data. */
   sample: boolean
   /** Which scenario is loaded, or null for an imported graph that matches none. */
-  sampleCase: string | null
+  sampleCase: SampleCaseKey | null
 
   setPeriod: (p: PeriodKey) => void
   setVehicle: (v: VehicleKey) => void
@@ -120,7 +124,7 @@ interface State {
   clearResults: () => void
   setStep: (s: number) => void
   setPlaying: (b: boolean) => void
-  setSpeed: (s: number) => void
+  setSlowdown: (s: number) => void
   toggleSync: () => void
 }
 
@@ -128,11 +132,8 @@ interface State {
  *
  *  This is a comparison tool, and a cap below the number of things there are to
  *  compare is an arbitrary limit rather than a design. The grid wraps at two
- *  columns and scrolls, so the fifth pane costs a row, not a layout. */
-export const MAX_PANES = ALGOS.length
-/** The order `addPane` hands algorithms out in — the useful ones first, so the
- *  first two panes are the two that produce an optimal route. */
-const ALGO_ORDER: AlgoKey[] = ['astar', 'ucs', 'bfs', 'dfs', 'nearest', 'held_karp']
+ *  columns and scrolls, so each further pane costs a row, not a layout. */
+export const MAX_PANES = Object.keys(ALGOS).length
 let seq = 0
 
 export const useStore = create<State>((set, get) => ({
@@ -141,7 +142,7 @@ export const useStore = create<State>((set, get) => ({
   sample: false, sampleCase: null,
   period: 'peak', vehicle: 'bike', criterion: 'balanced',
   weights: { ...CRITERIA.balanced.weights }, optimiseOrder: false,
-  panes: [], step: 0, maxStep: 0, playing: false, speed: 1, syncView: true,
+  panes: [], step: 0, maxStep: 0, playing: false, slowdown: 1, syncView: true,
   running: false, runError: null,
 
   setPlace: (role, place) => {
@@ -149,7 +150,7 @@ export const useStore = create<State>((set, get) => ({
     const anchor: Anchor | null = place
       ? { place, ...anchorTo(graph, place, vehicle, period) }
       : null
-    set({ [role]: anchor } as Pick<State, 'start' | 'goal'>)
+    set(role === 'start' ? { start: anchor } : { goal: anchor })
     get().clearResults()
   },
   addStop: place => {
@@ -215,7 +216,7 @@ export const useStore = create<State>((set, get) => ({
     } catch (e) {
       set({
         building: false,
-        buildError: e instanceof GraphBuildError ? e.message : `Failed to build road network: ${(e as Error).message}`,
+        buildError: e instanceof GraphBuildError ? e.message : `Failed to build road network: ${messageOf(e)}`,
       })
     }
   },
@@ -247,29 +248,60 @@ export const useStore = create<State>((set, get) => ({
 
   importGraph: json => {
     try {
-      const raw = JSON.parse(json)
-      const src = raw.mangLuoi ?? raw
-      const nodes: Record<string, Graph['nodes'][string]> = {}
-      for (const n of src.nut ?? src.nodes ?? []) nodes[n.id] = n
-      // Clamp congestion and risk to the domain the cost model assumes. The file is
-      // user-authored, so nothing about it is guaranteed, and a single edge carrying a
-      // negative congestion value is enough to produce a negative cost — which breaks
-      // optimality for both UCS and A* while both keep stamping "OPTIMAL" on the result.
+      const raw: unknown = JSON.parse(json)
+      // An exported file nests the network under `roadNetwork`; a hand-written one
+      // is usually just the network on its own, so both shapes are accepted.
+      const src = isRecord(raw) && isRecord(raw.roadNetwork) ? raw.roadNetwork : raw
+      if (!isRecord(src)) throw new Error('the file is not a JSON object')
+
+      // Nothing in this file is guaranteed — it is authored by whoever wrote it —
+      // and two different failures came out of trusting it. A negative congestion
+      // value produces a negative edge cost, which breaks the guarantee UCS and A*
+      // are built on while both keep stamping "OPTIMAL" on the result. And an edge
+      // naming a node the file never defines used to be read straight through to
+      // `.lat`, so the user's diagnosis of their own file was a raw TypeError.
+      // Everything is checked here, once; past this point it is a real Graph.
       const num = (v: unknown, fallback: number) => {
         const n = Number(v)
         return Number.isFinite(n) ? n : fallback
       }
-      const edges = (src.doanDuong ?? src.edges ?? []).map((e: Record<string, unknown>) => ({
-        from: e.tu ?? e.from, to: e.den ?? e.to, km: e.km,
-        roadClass: e.capDuong ?? e.roadClass ?? 'secondary',
-        congestion: clampCongestion(num(e.mucKetXe ?? e.congestion, 3)),
-        risk: clampRisk(num(e.ruiRo ?? e.risk, 0.2)),
-        name: e.ten ?? e.name ?? undefined,
-        shape: e.shape ?? [
-          [nodes[(e.tu ?? e.from) as string].lat, nodes[(e.tu ?? e.from) as string].lng],
-          [nodes[(e.den ?? e.to) as string].lat, nodes[(e.den ?? e.to) as string].lng],
-        ],
-      })) as Graph['edges']
+      const text = (v: unknown) => (typeof v === 'string' ? v : undefined)
+      const listOf = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
+
+      const nodes: Graph['nodes'] = {}
+      for (const n of listOf(src.nodes)) {
+        if (!isRecord(n)) continue
+        const id = text(n.id)
+        const lat = Number(n.lat), lng = Number(n.lng)
+        if (!id || !Number.isFinite(lat) || !Number.isFinite(lng)) continue
+        nodes[id] = { id, lat, lng, label: text(n.label), name: text(n.name) }
+      }
+
+      const edges: Graph['edges'] = []
+      for (const e of listOf(src.edges)) {
+        if (!isRecord(e)) continue
+        const from = text(e.from), to = text(e.to)
+        const km = Number(e.km)
+        const head = from ? nodes[from] : undefined
+        const tail = to ? nodes[to] : undefined
+        // An edge naming an undefined node has nowhere to start, nowhere to end,
+        // and no shape to be drawn along. Dropping it is the only reading of it.
+        if (!from || !to || !head || !tail || !Number.isFinite(km)) continue
+        const roadClass = text(e.roadClass)
+        // A shape that is not a list of coordinate pairs would reach Leaflet and
+        // take the whole grid down, so an unusable one falls back to the straight
+        // line between the two intersections, exactly as a missing one does.
+        const shape = listOf(e.shape).filter((p): p is [number, number] =>
+          Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+        edges.push({
+          from, to, km,
+          roadClass: roadClass && roadClass in ROAD_LABEL ? roadClass as RoadClass : 'secondary',
+          congestion: clampCongestion(num(e.congestion, 3)),
+          risk: clampRisk(num(e.risk, 0.2)),
+          name: text(e.name),
+          shape: shape.length > 1 ? shape : [[head.lat, head.lng], [tail.lat, tail.lng]],
+        })
+      }
       if (!Object.keys(nodes).length || !edges.length) throw new Error('no nodes or edges')
 
       const adj: Graph['adj'] = {}
@@ -279,7 +311,7 @@ export const useStore = create<State>((set, get) => ({
         nodes, edges, adj, detail: 'coarse', bounds: boundsOf(Object.values(nodes)),
       }
 
-      // Re-pin the three trip points onto the new graph, exactly as build() and loadSample() do.
+      // Re-pin every trip point onto the new graph, exactly as build() and loadSample() do.
       // Skip this step and start.nodeId still points at a node ID from the old graph: BFS, DFS,
       // and UCS silently return "unreachable" because adj[start] is empty, while A*
       // crashes outright — haversine reads .lat off a node that no longer exists.
@@ -294,7 +326,7 @@ export const useStore = create<State>((set, get) => ({
       })
       get().clearResults()
     } catch (e) {
-      set({ buildError: `Could not read graph file: ${(e as Error).message}` })
+      set({ buildError: `Could not read graph file: ${messageOf(e)}` })
     }
   },
 
@@ -328,7 +360,11 @@ export const useStore = create<State>((set, get) => ({
     const { panes } = get()
     if (panes.length >= MAX_PANES) return
     const used = panes.map(p => p.algo)
-    const algo = ALGO_ORDER.find(a => !used.includes(a)) ?? 'astar'
+    // The declaration order of ALGOS is the hand-out order. The cap above is the
+    // number of algorithms there are, so with room for a pane there is always one
+    // left; this guard only exists because `find` has no way to say so.
+    const algo = (Object.keys(ALGOS) as AlgoKey[]).find(a => !used.includes(a))
+    if (!algo) return
     const pane: Pane = {
       id: `pane-${++seq}`, algo, view: panes[0]?.view ?? 'map', result: null,
     }
@@ -352,6 +388,7 @@ export const useStore = create<State>((set, get) => ({
     const to = panes.findIndex(p => p.id === toId)
     if (from < 0 || to < 0 || from === to) return
     const [moved] = panes.splice(from, 1)
+    if (!moved) return
     panes.splice(to, 0, moved)
     set({ panes })
   },
@@ -377,8 +414,12 @@ export const useStore = create<State>((set, get) => ({
       const jobs = s.panes.map(p => ({ id: p.id, algo: p.algo }))
       set({ running: true, runError: null })
       try {
-        const results = await Promise.all(jobs.map(j => planRouteRemote({ ...input, algo: j.algo })))
-        const done = new Map(jobs.map((j, i) => [j.id, { algo: j.algo, result: results[i] }]))
+        // Each job carries its own result rather than being paired back up by
+        // array position afterwards, so the pane id and the plan it belongs to
+        // can never drift apart.
+        const settled = await Promise.all(jobs.map(async j =>
+          ({ ...j, result: await planRouteRemote({ ...input, algo: j.algo }) })))
+        const done = new Map(settled.map(j => [j.id, j]))
         const panes = get().panes.map(p => {
           const hit = done.get(p.id)
           // Apply only to a pane that still exists and still asks for that algorithm.
@@ -387,7 +428,7 @@ export const useStore = create<State>((set, get) => ({
         const maxStep = Math.max(0, ...panes.map(p => (p.result ? p.result.trace.length : 0)))
         set({ panes, maxStep, step: 0, playing: true, running: false, runError: null })
       } catch (e) {
-        set({ running: false, runError: `Could not reach the planning backend: ${(e as Error).message}` })
+        set({ running: false, runError: `Could not reach the planning backend: ${messageOf(e)}` })
       }
       return
     }
@@ -404,7 +445,7 @@ export const useStore = create<State>((set, get) => ({
   },
   setStep: step => set({ step, playing: false }),
   setPlaying: playing => set({ playing }),
-  setSpeed: speed => set({ speed }),
+  setSlowdown: slowdown => set({ slowdown }),
   toggleSync: () => set({ syncView: !get().syncView }),
 }))
 
@@ -446,11 +487,23 @@ function planForPane(
     planRouteRemote({ ...input, algo })
       .then(write)
       .catch((e: unknown) =>
-        set({ runError: `Could not reach the planning backend: ${(e as Error).message}` }))
+        set({ runError: `Could not reach the planning backend: ${messageOf(e)}` }))
     return
   }
   write(planRoute({ ...input, algo }))
 }
+
+/**
+ * The algorithm the comparison tables hold fixed.
+ *
+ * Each table varies one axis and freezes the rest, so it needs one algorithm to
+ * freeze, and the leftmost pane is the choice a user can predict without being
+ * told — it is already the pane the view sync realigns everyone to. Stated here
+ * once because two tables were each spelling out both the rule and its fallback.
+ * With no panes open there is nothing to read, so the algorithm the grid hands
+ * out first stands in.
+ */
+export const leadAlgo = (s: State): AlgoKey => s.panes[0]?.algo ?? 'astar'
 
 /** Bundles everything a run needs, or null if the conditions to run haven't been met yet. */
 function planInput(s: State): Omit<Parameters<typeof planRoute>[0], 'algo'> | null {
@@ -467,7 +520,8 @@ function planInput(s: State): Omit<Parameters<typeof planRoute>[0], 'algo'> | nu
 }
 
 /**
- * Re-pins all three trip points onto the current road network.
+ * Re-pins every trip point — pickup, dropoff, and each stop — onto the current
+ * road network.
  *
  * Changing the vehicle, changing the time period, and rebuilding the network all need exactly
  * this one operation, and those three call sites used to hand-copy three identical versions of
@@ -475,15 +529,23 @@ function planInput(s: State): Omit<Parameters<typeof planRoute>[0], 'algo'> | nu
  * the result still runs, it just pins to the wrong place.
  */
 function reanchorAll(
-  // Only the three trip points matter here. Taking the whole State would invite
-  // a future call site to read `s.graph` instead of the `graph` argument — and
+  // Only the trip points matter here. Taking the whole State would invite a
+  // future call site to read `s.graph` instead of the `graph` argument — and
   // build() and importGraph() both call this before the new graph is in state,
   // so that reading would silently pin against the graph being replaced.
   s: Pick<State, 'start' | 'goal' | 'stops'>,
   graph: Graph | null, vehicle: VehicleKey, period: PeriodKey,
 ) {
-  const re = (a: Anchor | null) => (a && graph ? { ...a, ...anchorTo(graph, a.place, vehicle, period) } : a)
-  return { start: re(s.start), goal: re(s.goal), stops: s.stops.map(a => re(a)!) }
+  // Takes and returns a real Anchor, because a stop is never null. The pickup and
+  // dropoff are, so they test for themselves rather than making every stop pass
+  // through a nullable signature it would then have to assert its way back out of.
+  const re = (a: Anchor): Anchor =>
+    (graph ? { ...a, ...anchorTo(graph, a.place, vehicle, period) } : a)
+  return {
+    start: s.start && re(s.start),
+    goal: s.goal && re(s.goal),
+    stops: s.stops.map(re),
+  }
 }
 
 function recount(set: (p: Partial<State>) => void, get: () => State) {

@@ -89,13 +89,13 @@ export default function App() {
             <b>network</b>
             <span><i className="swatch pin-start" /> pickup</span>
             <span><i className="swatch pin-goal" /> dropoff</span>
-            <span><i className="swatch" style={{ background: '#1f9d55' }} /> clear road</span>
-            <span><i className="swatch" style={{ background: '#d4342c' }} /> congested road</span>
+            <span><i className="swatch jam-clear" /> clear road</span>
+            <span><i className="swatch jam-heavy" /> congested road</span>
           </span>
           <span className="legend-group">
             <b>while searching</b>
             <span><i className="swatch hollow" /> frontier</span>
-            <span><i className="swatch" style={{ background: '#3b5bdb' }} /> expanded</span>
+            <span><i className="swatch opened" /> expanded</span>
           </span>
           <span className="legend-group">
             <b>result</b>

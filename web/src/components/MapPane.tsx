@@ -1,7 +1,7 @@
 import L from 'leaflet'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef } from 'react'
-import { algoOf, ALGOS, edgeBetween } from '../lib/search'
+import { ALGOS, edgeBetween } from '../lib/search'
 import { nodeNames, tripNames } from '../lib/tripNames'
 import { broadcastView, joinViewSync, resetViewSync, sharedView } from '../lib/viewSync'
 import { TreeView } from './TreeView'
@@ -37,7 +37,7 @@ const VIEW_HINT: Record<PaneView, string> = {
 /** The longer a node has been open, the fainter it gets — but only four bands, so we're not restyling on every frame. */
 const FADE = [0.95, 0.74, 0.55, 0.38]
 
-type NodeStyle = { radius: number; color: string; fill: string; opacity: number; weight: number }
+interface NodeStyle { radius: number; color: string; fill: string; opacity: number; weight: number }
 
 const UNTOUCHED_COLOR = '#b6bcc6'
 
@@ -90,7 +90,8 @@ const styleUntouched = (d: Dots, routed: boolean): NodeStyle => ({
 })
 const styleQueued  = (d: Dots): NodeStyle => ({ radius: d.queued, color: QUEUED, fill: '#ffffff', opacity: 1, weight: d.queuedWeight })
 const styleCurrent = (d: Dots): NodeStyle => ({ radius: d.current, color: CURRENT, fill: '#ffffff', opacity: 1, weight: 2.4 })
-const styleOpened  = (d: Dots, band: number): NodeStyle => ({ radius: d.opened, color: OPENED, fill: OPENED, opacity: FADE[band], weight: 0 })
+const styleOpened  = (d: Dots, opacity: number): NodeStyle =>
+  ({ radius: d.opened, color: OPENED, fill: OPENED, opacity, weight: 0 })
 /** An intersection the chosen route passes through — amber, like the route itself. */
 const stylePath    = (radius: number): NodeStyle => ({ radius, color: ROUTE_EDGE, fill: ROUTE, opacity: 1, weight: 1.2 })
 
@@ -99,9 +100,9 @@ const stylePath    = (radius: number): NodeStyle => ({ radius, color: ROUTE_EDGE
  *
  * Every pane runs the redraw effect below when a new network arrives, but only
  * the first one through should fit to it — the rest adopt the shared view that
- * first fit established, and so does any pane added later. Without this, adding
- * a seventh pane would refit to the whole network and drag the other six out of
- * whatever corner the user was studying.
+ * first fit established, and so does any pane added later. Without this, a pane
+ * added an hour into a session would refit to the whole network and drag every
+ * other pane out of whatever corner the user was studying.
  */
 let fittedTo: Graph | null = null
 
@@ -139,7 +140,6 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
   /** True while this pane is being moved by the sync rather than by the user. */
   const following = useRef(false)
 
-  /* ---- Create the map once ---- */
   useEffect(() => {
     if (!host.current || map.current) return
     // Zoom snapping is left at Leaflet's default. Fractional zoom (`zoomSnap: 0`)
@@ -216,7 +216,6 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
     return () => { ro.disconnect(); leave(); m.remove(); map.current = null }
   }, [pane.id])
 
-  /* ---- Redraw the network whenever a new network arrives ---- */
   useEffect(() => {
     const m = map.current
     if (!m) return
@@ -314,9 +313,9 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
    * Whether a route is currently drawn — the whole network gets quieter once
    * there is an answer to look at.
    */
-  const routed = !!pane.result?.reveal.some(rv => Math.min(step, pane.result!.trace.length) >= rv.upto)
+  const drawn = pane.result
+  const routed = !!drawn && drawn.reveal.some(rv => Math.min(step, drawn.trace.length) >= rv.upto)
 
-  /* ---- Show or hide the basemap, and stand back once a route exists ---- */
   useEffect(() => {
     const m = map.current
     if (!m || !tiles.current) return
@@ -340,7 +339,6 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
     // and the pending frame hit a canvas context that no longer existed.
   }, [pane.view, graph, routed])
 
-  /* ---- Pickup, dropoff, and stop markers ---- */
   useEffect(() => {
     const m = map.current
     if (!m) return
@@ -380,15 +378,13 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
     put(goal, 'goal', `Dropoff: ${goal?.place.name ?? ''}`)
   }, [start, goal, stops, graph])
 
-  /* ---- Lookup table of the step each node opened at, rebuilt whenever a new result arrives ---- */
   const openedAt = useMemo(() => {
     if (!pane.result) return null
     const at = new Int32Array(pane.result.nodeIds.length).fill(-1)
-    pane.result.trace.forEach((s, i) => { if (at[s.expanded] < 0) at[s.expanded] = i })
+    pane.result.trace.forEach((s, i) => { if ((at[s.expanded] ?? 0) < 0) at[s.expanded] = i })
     return at
   }, [pane.result])
 
-  /* ---- Update per step ---- */
   useEffect(() => {
     const m = map.current
     if (!m || !graph) return
@@ -406,8 +402,9 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
 
     const total = result.trace.length
     const s = Math.min(step, total)
-    const frontier = new Set(s > 0 ? result.trace[s - 1].frontier : [])
-    const current = s > 0 ? result.trace[s - 1].expanded : -1
+    const at = s > 0 ? result.trace[s - 1] : undefined
+    const frontier = new Set(at?.frontier ?? [])
+    const current = at?.expanded ?? -1
 
     let shown: { upto: number; path: string[] } | null = null
     for (const r of result.reveal) if (s >= r.upto) shown = r
@@ -445,10 +442,11 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
       if (!settled && idx === current) return ['cur', styleCurrent(dots)]
       if (dots.path !== null && onRoute.has(idx)) return ['path', stylePath(dots.path)]
       if (!settled) {
-        const at = openedAt[idx]
+        const at = openedAt[idx] ?? -1
         if (at >= 0 && at < s) {
-          const band = Math.min(3, Math.floor(((s - at) / Math.max(total, 1)) * 4))
-          return [`op${band}`, styleOpened(dots, band)]
+          const band = Math.min(FADE.length - 1, Math.floor(((s - at) / Math.max(total, 1)) * 4))
+          const fade = FADE[band]
+          if (fade !== undefined) return [`op${band}`, styleOpened(dots, fade)]
         }
         if (frontier.has(idx)) return ['q', styleQueued(dots)]
       }
@@ -458,21 +456,23 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
       return [shown ? 'idle-r' : 'idle', idle]
     }, result.nodeIds)
 
-    const line = shown ? shown.path.map(id => [graph.nodes[id].lat, graph.nodes[id].lng] as [number, number]) : []
+    const line = shown
+      ? shown.path.flatMap(id => {
+        const node = graph.nodes[id]
+        return node ? [[node.lat, node.lng] as [number, number]] : []
+      })
+      : []
     const geom = shown ? densify(graph, shown.path) : []
     routeCasing.current?.setLatLngs(geom.length ? geom : line).setStyle({ opacity: line.length ? 0.95 : 0 })
     routeCore.current?.setLatLngs(geom.length ? geom : line).setStyle({ opacity: line.length ? 1 : 0 })
   }, [step, pane.result, openedAt, graph])
 
-  const algo = algoOf(pane.algo)
-  // Held–Karp reports `ms` as the runtime of the A* legs it ended up choosing.
-  // That is neither the full pairwise search — which routes every ordered pair
-  // of trip points, most of which the winning tour never uses — nor the DP,
-  // which the backend does not time at all. Labelling it "total running time"
-  // would claim the algorithm did far less work than it did.
-  const msTitle = pane.algo === 'held_karp'
-    ? 'Runtime of the A* legs on the chosen tour — not the full pairwise search, and not the DP'
-    : 'Algorithm running time'
+  const algo = ALGOS[pane.algo]
+  // An algorithm whose runtime figure does not measure the whole search says so
+  // on the table itself. Held–Karp is the one that does: it times the A* legs it
+  // ended up choosing, which is neither the full pairwise search nor the DP, and
+  // "total running time" would claim it did far less work than it did.
+  const msTitle = algo.msNote ?? 'Algorithm running time'
   const r = pane.result
   const shown = r ? Math.min(step, r.trace.length) : 0
   const done = !!r && shown >= r.trace.length
@@ -535,7 +535,7 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
           onChange={e => setPaneAlgo(pane.id, e.target.value as AlgoKey)}
           aria-label="Algorithm"
         >
-          {ALGOS.map(a => <option key={a.key} value={a.key}>{a.name}</option>)}
+          {Object.values(ALGOS).map(a => <option key={a.key} value={a.key}>{a.name}</option>)}
         </select>
         <span className="pane-dot" />
         {/* Three tabs instead of one cycling button: to jump to the tree, click the
@@ -663,24 +663,23 @@ function applyAll(
   ids?: string[],
 ) {
   const list = ids ?? Object.keys(graph.nodes)
-  for (let i = 0; i < list.length; i++) {
+  list.forEach((id, i) => {
     const [key, style] = pick(i)
-    if (keys[i] === key) continue
+    if (keys[i] === key) return
     keys[i] = key
-    const layer = layers[list[i]]
-    if (!layer) continue
-    layer.setStyle(circleStyle(style))
-  }
+    layers[id]?.setStyle(circleStyle(style))
+  })
 }
 
 /** Stitch together each road segment's real shape so the route hugs the actual roads. */
 function densify(graph: Graph, path: string[]): [number, number][] {
   const out: [number, number][] = []
-  for (let i = 0; i + 1 < path.length; i++) {
-    const e = edgeBetween(graph, path[i], path[i + 1])
+  let previous: string | null = null
+  for (const node of path) {
+    const e = previous === null ? undefined : edgeBetween(graph, previous, node)
+    previous = node
     if (!e) continue
-    const seg = e.shape
-    out.push(...(out.length ? seg.slice(1) : seg))
+    out.push(...(out.length ? e.shape.slice(1) : e.shape))
   }
   return out
 }

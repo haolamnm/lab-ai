@@ -1,9 +1,19 @@
-"""The HTTP contract: /plan round-trips camelCase JSON into a RouteResult."""
+"""The HTTP surface: /plan round-trips camelCase JSON into a RouteResult.
+
+This endpoint is public and unauthenticated, so everything the cost model and the
+search assume about their inputs is enforced here rather than trusted, and every
+rejection is a 422 naming the field instead of a 500 further in.
+"""
+
+import json
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
-from route_lab.api import app
+from route_lab.api import app, cors_origins
+from route_lab.contract.graph import GraphPayload
 from route_lab.contract.request import PlanRequest
 
 from .fixtures import diamond_json
@@ -89,7 +99,89 @@ def test_goal_remains_required() -> None:
 
 
 def test_greedy_algorithm_is_rejected() -> None:
+    # `greedy` was a real key once and was removed. A client still pinned to the
+    # old build must get a 422 naming `algo`, not a 500 from a registry lookup.
     assert client.post("/plan", json=diamond_json("greedy")).status_code == 422
+
+
+def test_an_unknown_request_field_is_rejected() -> None:
+    # The misspelling that motivates `extra="forbid"`: silently ignoring it gave
+    # the client an unordered trip and no way to find out why.
+    payload = diamond_json("ucs")
+    payload["optimizeOrder"] = True
+
+    assert client.post("/plan", json=payload).status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        # A negative or zero-length segment drives the edge cost to zero or below,
+        # which breaks the "first settled arrival is the cheapest" invariant UCS
+        # and A* rest on. Congestion below 1 does the same through the cost
+        # formula, and a risk above 1 just misreports a route as more dangerous
+        # than the scale can express.
+        ("km", -5.0),
+        ("km", 0.0),
+        ("congestion", -5),
+        ("congestion", 6),
+        ("risk", 2.0),
+        ("risk", -0.1),
+    ],
+)
+def test_out_of_range_edge_values_are_rejected(field: str, value: float) -> None:
+    payload = diamond_json("ucs")
+    payload["graph"]["edges"][0][field] = value
+
+    assert client.post("/plan", json=payload).status_code == 422
+
+
+@pytest.mark.parametrize(("field", "value"), [("lat", 91.0), ("lng", -181.0)])
+def test_out_of_range_coordinates_are_rejected(field: str, value: float) -> None:
+    # The heuristics take a cosine of the latitude, so a nonsense coordinate
+    # makes every estimate nonsense too.
+    payload = diamond_json("ucs")
+    payload["graph"]["nodes"]["A"][field] = value
+
+    assert client.post("/plan", json=payload).status_code == 422
+
+
+def test_non_finite_geometry_is_rejected() -> None:
+    # JSON has no literal for infinity, but `1e999` decodes to one, so the only
+    # thing standing between a client and a graph of `nan` estimates — which lose
+    # every comparison A* orders its frontier with — is `allow_inf_nan=False`.
+    payload = json.loads('{"lat": 1e999, "lng": 1e999, "id": "A"}')
+    graph = diamond_json("ucs")["graph"]
+    graph["nodes"]["A"] = payload
+
+    with pytest.raises(ValidationError):
+        GraphPayload.model_validate(graph)
+
+
+@pytest.mark.parametrize("stops", [["B", "B"], ["B", "C", "B"]])
+def test_repeated_stops_are_rejected(stops: list[str]) -> None:
+    # Held-Karp cannot express one location twice and Nearest Neighbor used to
+    # drop the repeat by accident. One answer for every algorithm: refuse it.
+    payload = diamond_json("ucs")
+    payload["stops"] = stops
+
+    assert client.post("/plan", json=payload).status_code == 422
+
+
+@pytest.mark.parametrize("field", ["bounds", "detail"])
+def test_the_graph_viewport_fields_are_optional(field: str) -> None:
+    # Nothing in the planner reads either one; a caller that is not the app
+    # should not have to invent a map viewport to plan a route.
+    payload: dict[str, Any] = diamond_json("ucs")
+    del payload["graph"][field]
+
+    assert client.post("/plan", json=payload).status_code == 200
+
+
+def test_cors_origins_are_split_and_trimmed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ROUTELAB_CORS_ORIGINS", " https://a.example , ,https://b.example ")
+
+    assert cors_origins() == ["https://a.example", "https://b.example"]
 
 
 def test_negative_weight_is_rejected_at_the_boundary() -> None:

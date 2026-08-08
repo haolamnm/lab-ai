@@ -4,7 +4,7 @@
  * the app.
  *
  * Run:
- *   npx esbuild src/icons/makeSheet.ts --bundle --platform=node --format=esm \
+ *   bunx esbuild src/icons/makeSheet.ts --bundle --platform=node --format=esm \
  *     --outfile=/tmp/sheet.mjs && node /tmp/sheet.mjs src/icons/sheet.svg
  */
 import { writeFileSync } from 'node:fs'
@@ -38,7 +38,10 @@ names.forEach((n, i) => {
     </g>`
   }
 })
+const out = process.argv[2]
+if (!out) throw new Error('Pass the output path: node sheet.mjs src/icons/sheet.svg')
+
 const w = PAD * 2 + COL * CELL, h = PAD * 2 + rows * CELL
-writeFileSync(process.argv[2], `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+writeFileSync(out, `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
 <rect width="${w}" height="${h}" fill="#f0eadd"/>${body}</svg>`)
-console.log('wrote', process.argv[2])
+console.log('wrote', out)

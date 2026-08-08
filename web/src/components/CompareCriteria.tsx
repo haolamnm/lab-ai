@@ -1,16 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { exposureOn } from '../lib/explain'
-import { backendEnabled, planRouteRemote } from '../lib/planClient'
-import { algoOf, planRoute, type PlanInput } from '../lib/search'
-import { CRITERIA, periodOf, vehicleOf } from '../lib/traffic'
+import { exposureOn, routeLetters } from '../lib/explain'
+import { backendEnabled, messageOf, planRouteRemote } from '../lib/planClient'
+import { ALGOS, backendOnlyNote, planRoute, SETTLE_MS, type PlanInput } from '../lib/search'
+import { CRITERIA, PERIODS, VEHICLES } from '../lib/traffic'
 import type { CriterionKey, RouteResult, Weights } from '../lib/types'
-import { useStore } from '../store'
-
-/** Same idea as the vehicle table: one letter per distinct route. */
-const GROUP = ['A', 'B', 'C', 'D', 'E']
-
-/** Long enough that dragging a weight slider across its range costs one run, not thirty. */
-const SETTLE_MS = 350
+import { leadAlgo, useStore } from '../store'
 
 interface Row {
   key: CriterionKey
@@ -63,7 +57,7 @@ export function CompareCriteria() {
   const vehicle = useStore(s => s.vehicle)
   const weights = useStore(s => s.weights)
   const criterion = useStore(s => s.criterion)
-  const panes = useStore(s => s.panes)
+  const algo = useStore(leadAlgo)
   const optimiseOrder = useStore(s => s.optimiseOrder)
   const setCriterion = useStore(s => s.setCriterion)
 
@@ -71,11 +65,10 @@ export function CompareCriteria() {
   const [rows, setRows] = useState<Row[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const algo = panes[0]?.algo ?? 'astar'
 
-  // Held–Karp has no browser implementation, so with no backend configured there
-  // is nothing this table could run for it.
-  const unsupported = algo === 'held_karp' && !backendEnabled
+  // A backend-only algorithm has no browser implementation, so with no backend
+  // configured there is nothing this table could run for it.
+  const unsupported = !!ALGOS[algo].backendOnly && !backendEnabled
 
   // The presets, plus the user's own weights as a row of their own whenever they
   // have moved a slider. Dropping the custom row would mean the table silently
@@ -131,7 +124,7 @@ export function CompareCriteria() {
         .catch((e: unknown) => {
           if (!live) return
           setRows(null)
-          setError(`Could not reach the planning backend: ${(e as Error).message}`)
+          setError(`Could not reach the planning backend: ${messageOf(e)}`)
           setBusy(false)
         })
     }, SETTLE_MS)
@@ -152,15 +145,7 @@ export function CompareCriteria() {
 
   // Criteria that produce the same route share a letter, so it is obvious at a
   // glance when two cost functions were never going to disagree on this trip.
-  const groupOf = useMemo(() => {
-    const seen = new Map<string, number>()
-    return (path: string[]) => {
-      const k = path.join('>')
-      if (!k) return '—'
-      if (!seen.has(k)) seen.set(k, seen.size)
-      return GROUP[seen.get(k)!] ?? '?'
-    }
-  }, [rows])
+  const groupOf = useMemo(routeLetters, [rows])
 
   if (!graph || !start || !goal) return null
 
@@ -179,18 +164,14 @@ export function CompareCriteria() {
       <button className="compare-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
         <span className="compare-title">Compare cost functions</span>
         <span className="compare-sub">
-          {algoOf(algo).name} · {vehicleOf(vehicle).name.toLowerCase()} · {periodOf(period).name.toLowerCase()}
+          {ALGOS[algo].name} · {VEHICLES[vehicle].name.toLowerCase()} · {PERIODS[period].name.toLowerCase()}
         </span>
         <span className="compare-caret">{open ? 'Collapse' : 'Expand'}</span>
       </button>
 
       {open && unsupported && (
         <div className="compare-body">
-          <p className="note warn">
-            Held–Karp runs only on the Python backend, and none is configured, so this table
-            cannot plan for it. Set <code>VITE_API_URL</code>, or switch the first pane to
-            another algorithm.
-          </p>
+          <p className="note warn">{backendOnlyNote(algo)}</p>
         </div>
       )}
 
@@ -254,7 +235,7 @@ export function CompareCriteria() {
               ))}
             </tbody>
           </table>
-          <p className="note" style={{ marginTop: 9 }}>
+          <p className="note">
             Same trip, same vehicle, same hour, same algorithm — only the cost function changes.
             The four ranked columns are measured the same way for every row, so the best value in
             each is marked; <b>Own cost</b> is each row scored by its own weights and is

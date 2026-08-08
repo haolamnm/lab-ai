@@ -8,10 +8,16 @@
 install:
 	uv sync
 
-# Serves on http://localhost:8000. Point the frontend at it with
-# VITE_API_URL=http://localhost:8000 bun run dev (in ../web).
+# Serves on http://127.0.0.1:8787. Point the frontend at it with
+# VITE_API_URL=http://127.0.0.1:8787 bun run dev (in ../web).
+#
+# The port is 8787 rather than uvicorn's usual 8000 to stay clear of the range
+# other local services tend to claim, and the URLs say 127.0.0.1 rather than
+# localhost on purpose: if anything else is listening on ::1, a browser resolves
+# localhost there first and the app's POST /plan lands on the wrong server as a
+# puzzling 404 rather than a connection error.
 dev:
-	uv run uvicorn route_lab.api:app --reload
+	uv run uvicorn route_lab.api:app --reload --port 8787
 
 lint:
 	uv run ruff check

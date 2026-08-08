@@ -10,9 +10,9 @@ class TraceStep(Contract):
     """One node-expansion step, in the shape the map and tree timeline consume.
 
     Nodes are stored by index, not id: a single run over a few-hundred-node
-    network produces tens of thousands of frontier entries, and across five panes
-    the string ids would waste memory for nothing. ``RouteResult.node_ids`` maps
-    an index back to its id.
+    network produces tens of thousands of frontier entries, and across every open
+    pane the string ids would waste memory for nothing. ``RouteResult.node_ids``
+    maps an index back to its id.
     """
 
     expanded: int
@@ -68,7 +68,9 @@ class RouteResult(Contract):
     problem: str | None = None
     # Visit order. Explicit open tours end at the selected final stop; explicit
     # closed tours end at their starting node. Legacy requests keep their old
-    # goal-based shape.
+    # goal-based shape. A run that completed no leg reports an empty order, in
+    # step with its empty `path` and zero metrics — the one shape a reader can
+    # rely on is that `order` never names a point the trip did not reach.
     order: list[str] = Field(default_factory=list)
     path: list[str] = Field(default_factory=list)
     trace: list[TraceStep] = Field(default_factory=list)

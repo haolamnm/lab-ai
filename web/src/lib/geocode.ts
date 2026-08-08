@@ -2,9 +2,8 @@ import type { Place } from './types'
 
 /**
  * Look up coordinates from a place name. Uses OpenStreetMap's Nominatim
- * because it needs no API key. The submission should switch to Goong —
- * its Vietnamese address suggestions are much better — just by swapping
- * this function's body; the rest of the app stays unchanged.
+ * because it needs no API key, so the app runs from a fresh checkout with
+ * nothing to configure.
  */
 export async function findPlaces(text: string, signal?: AbortSignal): Promise<Place[]> {
   const url =
@@ -28,7 +27,12 @@ export async function findPlaces(text: string, signal?: AbortSignal): Promise<Pl
     // diagnosis. Drop the broken row and keep the usable ones.
     if (!r.display_name || !Number.isFinite(lat) || !Number.isFinite(lng)) continue
     const parts = r.display_name.split(',').map(s => s.trim())
-    places.push({ name: r.name || parts[0], detail: parts.slice(1, 4).join(', '), lat, lng })
+    places.push({
+      name: r.name || parts[0] || r.display_name,
+      detail: parts.slice(1, 4).join(', '),
+      lat,
+      lng,
+    })
   }
   return places
 }

@@ -18,16 +18,21 @@ class HeldKarpResult:
 
     found: bool
     order: tuple[str, ...]
-    cost: float | None
 
 
-def _validated_cost(value: object, source: str, target: str) -> float:
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
-        raise ValueError(f"cost for {source!r} -> {target!r} must be numeric")
-    numeric = float(value)
-    if not math.isfinite(numeric) or numeric < 0:
+def _validated_cost(value: float, source: str, target: str) -> float:
+    """Reject a transition cost the DP cannot compare.
+
+    A ``nan`` loses every comparison in the recurrence, so the state guarded by
+    ``candidate_cost > known_cost`` would be overwritten every time it was
+    reached and the tour would come out arbitrary rather than wrong-looking. A
+    negative or infinite cost cannot come out of Pairwise A*, whose edge costs
+    are non-negative and finite, so one arriving here means the caller built the
+    matrix from something else and the answer would be meaningless either way.
+    """
+    if not math.isfinite(value) or value < 0:
         raise ValueError(f"cost for {source!r} -> {target!r} must be finite and non-negative")
-    return numeric
+    return value
 
 
 def held_karp(
@@ -40,52 +45,45 @@ def held_karp(
     """Find a minimum-cost directed path or cycle through every stop exactly once.
 
     ``costs`` is a directed mapping: a missing ``(u, v)`` transition is
-    unreachable and no reverse edge is inferred. The warehouse is excluded from
-    the bitmask. For stop index ``last``, ``dp[(mask, last)]`` is the cheapest
-    cost from the warehouse that visits exactly ``mask`` and ends at ``last``.
-    A parent table reconstructs the result without storing paths per state. The
-    DP recurrence is shared: closed mode adds the final directed return cost,
-    while open mode stops at the best full-mask state.
+    unreachable and no reverse edge is inferred. Stops must be distinct, because
+    the bitmask carries one bit per entry and a repeat would be planned as two
+    unrelated visits; :class:`route_lab.contract.request.PlanRequest` rejects one
+    at the wire boundary. The warehouse is excluded from the bitmask and is the
+    one location a route may touch twice.
+
+    For stop index ``last``, ``dp[(mask, last)]`` is the cheapest cost from the
+    warehouse that visits exactly ``mask`` and ends at ``last``. A parent table
+    reconstructs the result without storing paths per state. The DP recurrence is
+    shared: closed mode adds the final directed return cost, while open mode
+    stops at the best full-mask state.
 
     Equal-cost tours are resolved lexicographically by stop index, hence by the
     order supplied in ``stops``. The algorithm runs in ``O(n² * 2ⁿ)`` time and
     ``O(n * 2ⁿ)`` space for ``n`` stops.
 
-    Args:
-        warehouse: Start location, and end location when closing the tour.
-        stops: Ordered location identifiers to visit exactly once.
-        costs: Finite, non-negative costs for available directed transitions.
-        return_to_start: Whether to close the route at ``warehouse``.
-
     Returns:
-        The optimal full path or cycle and its cost, or ``found=False`` when no
-        complete route exists.
+        The optimal full path or cycle, or ``found=False`` when no complete route
+        exists.
 
     Raises:
-        ValueError: If stops are duplicated, include the warehouse, or a relevant
-        transition has a non-numeric, non-finite, or negative cost.
+        ValueError: If the stops include the warehouse, or a relevant transition
+        has a non-finite or negative cost.
     """
     stop_ids = tuple(stops)
-    seen = {warehouse}
     for stop in stop_ids:
         if stop == warehouse:
             raise ValueError("warehouse must not appear in stops")
-        if stop in seen:
-            raise ValueError(f"duplicate stop: {stop}")
-        seen.add(stop)
 
     if not stop_ids:
-        return HeldKarpResult(found=True, order=(warehouse,), cost=0.0)
+        return HeldKarpResult(found=True, order=(warehouse,))
 
     locations = (warehouse, *stop_ids)
-    raw_costs: Mapping[tuple[str, str], object] = costs
     available: dict[tuple[str, str], float] = {}
     for source in locations:
         for target in locations:
-            if source == target or (source, target) not in raw_costs:
+            if source == target or (source, target) not in costs:
                 continue
-            value = raw_costs[(source, target)]
-            available[(source, target)] = _validated_cost(value, source, target)
+            available[(source, target)] = _validated_cost(costs[(source, target)], source, target)
 
     stop_count = len(stop_ids)
     full_mask = (1 << stop_count) - 1
@@ -160,7 +158,7 @@ def held_karp(
         best_lex = state_lex
 
     if best_last is None or best_cost is None:
-        return HeldKarpResult(found=False, order=(), cost=None)
+        return HeldKarpResult(found=False, order=())
 
     reverse_indices: list[int] = []
     mask = full_mask
@@ -178,4 +176,4 @@ def held_karp(
     order = (
         (warehouse, *ordered_stops, warehouse) if return_to_start else (warehouse, *ordered_stops)
     )
-    return HeldKarpResult(found=True, order=order, cost=best_cost)
+    return HeldKarpResult(found=True, order=order)

@@ -135,7 +135,7 @@ def test_build_pairwise_searches_all_ordered_non_diagonal_pairs() -> None:
     assert len(result.paths) == 6
 
 
-def test_build_pairwise_callback_receives_guided_problem() -> None:
+def test_build_pairwise_callback_receives_a_heuristic_bound_to_the_goal() -> None:
     seen: list[SearchProblem] = []
 
     def search(problem: SearchProblem) -> SearchLegResult:
