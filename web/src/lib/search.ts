@@ -641,19 +641,46 @@ export interface PlanInput {
   stops: string[]
   optimiseOrder: boolean
   /**
-   * Whether the two trip-level algorithms close the tour back onto the pickup.
+   * Whether the trip-level algorithms close the tour back onto the pickup.
    *
-   * Tri-state on purpose: left unset, the backend keeps its older behaviour of
-   * deciding from `goal` alone. Only the backend honours it — this local planner
-   * plans to `goal` either way, exactly as the four point searches do.
+   * Tri-state on purpose. Left unset, the trip is the older goal-based shape:
+   * the dropoff is simply the last destination. Set, the trip is described by
+   * its stops alone and `goal` drops out — `false` is an open route ending
+   * wherever the ordering put the last stop, `true` closes it back onto the
+   * pickup. Only the trip-level algorithms read it; the four point searches
+   * plan to `goal` regardless, on both planners.
    */
   returnToStart?: boolean
   conditions: Conditions
 }
 
+/**
+ * The valid zero-leg route that stays at the pickup.
+ *
+ * Only reachable under an explicit `returnToStart`, where a trip with no stops
+ * to make is a real answer rather than a malformed request. Distinct from the
+ * "same intersection" refusal below: this one is `found`.
+ */
+function trivialRoute(input: PlanInput): RouteResult {
+  const { graph, algo, start, conditions } = input
+  return {
+    algo,
+    order: [start],
+    path: [start],
+    trace: [],
+    reveal: [],
+    found: true,
+    nodeIds: indexer(graph).ids,
+    metrics: {
+      km: 0, minutes: 0, cost: 0, expanded: 0, ms: 0, turnsBlocked: 0,
+      optimal: ALGOS[algo].optimal && !costIsFlat(conditions.weights),
+    },
+  }
+}
+
 /** Runs one selected algorithm across every leg of the requested trip. */
 export function planRoute(input: PlanInput): RouteResult {
-  const { graph, algo, start, goal, stops, optimiseOrder, conditions } = input
+  const { graph, algo, start, goal, stops, optimiseOrder, returnToStart, conditions } = input
 
   // Held–Karp is a trip-level optimiser that exists only in the Python backend.
   // It needs an exact directed cost matrix over every pair of trip points, which
@@ -689,17 +716,35 @@ export function planRoute(input: PlanInput): RouteResult {
   const heuristicScale = pointAlgorithm === 'astar'
     ? shared(graph, `heuristic:${conditionsKey}`, () => minCostPerKm(graph, conditions))
     : 0
-  const destinations = [...stops, goal]
+  // `returnToStart` describes the trip, so only the algorithm that owns the trip
+  // reads it. Nearest Neighbor is the one left here — Held-Karp returned above —
+  // and it mirrors `_plan_nearest` in the backend's planner.py: once the flag is
+  // set the trip is its stops, and `goal` is no longer part of the shape.
+  const explicitTrip = algo === 'nearest' && returnToStart !== undefined
+  const destinations = explicitTrip ? [...stops] : [...stops, goal]
+
+  // A trip that names no stops at all is not a mistake under the explicit shape,
+  // it is the empty round: stay at the pickup. Saying "found" with no legs is the
+  // honest answer, and it is what the backend answers too.
+  if (explicitTrip && destinations.length === 0) return trivialRoute(input)
+
   const shouldOrderDestinations = (algo === 'nearest' || optimiseOrder)
     && destinations.length > 1
   const orderedDestinations = shouldOrderDestinations
     ? shared(graph, `order:${conditionsKey}|${JSON.stringify([start, destinations])}`,
       () => nearestNeighborOrder(graph, start, destinations, conditions))
     : destinations
-  const sequence = [start, ...orderedDestinations]
+  // Gated on `explicitTrip`, not on the flag alone: a point search handed
+  // `returnToStart: true` must still plan to `goal` and stop there, or the four
+  // basic panes would answer a different question from the two trip-level ones.
+  const closing = explicitTrip && returnToStart === true ? [start] : []
+  const sequence = [start, ...orderedDestinations, ...closing]
     .filter((node, index, all) => index === 0 || node !== all[index - 1])
 
   if (sequence.length < 2) {
+    // Under the explicit shape this is the empty round again, reached by a
+    // different door: every stop deduplicated away against the pickup.
+    if (explicitTrip) return trivialRoute(input)
     return {
       algo,
       order: sequence,
