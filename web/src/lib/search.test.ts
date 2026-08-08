@@ -53,13 +53,13 @@ test('a point-to-point trip runs on all five browser algorithms', () => {
   // backend it now plans this shape too, as an open path pinned to finish at J.
   const point = { ...base, stops: [], optimiseOrder: true, returnToStart: false }
 
-  expect(trip({ ...point, algo: 'bfs' })).toBe('12.4 AJ')
-  expect(trip({ ...point, algo: 'dfs' })).toBe('21.8 AJ')
-  expect(trip({ ...point, algo: 'ucs' })).toBe('11.4 AJ')
-  expect(trip({ ...point, algo: 'astar' })).toBe('11.4 AJ')
+  expect(trip({ ...point, algo: 'bfs' })).toBe('13.4 AJ')
+  expect(trip({ ...point, algo: 'dfs' })).toBe('22.9 AJ')
+  expect(trip({ ...point, algo: 'ucs' })).toBe('12.4 AJ')
+  expect(trip({ ...point, algo: 'astar' })).toBe('12.4 AJ')
   // Nearest Neighbor has nothing to order on a one-leg trip, so it must land on
   // the same route its Pairwise A* legs would have produced alone.
-  expect(trip({ ...point, algo: 'nearest' })).toBe('11.4 AJ')
+  expect(trip({ ...point, algo: 'nearest' })).toBe('12.4 AJ')
 
   expect(planRoute({ ...point, algo: 'held_karp' }).found).toBe(false)
 })
@@ -68,7 +68,7 @@ test('an open tour finishes at the dropoff', () => {
   // The dropoff is a destination, not a hint. Setting the flag used to discard it
   // outright, so this trip ended at whichever stop the ordering left last.
   const input = { ...base, algo: 'nearest' as const, stops: STOPS, optimiseOrder: true }
-  expect(trip({ ...input, returnToStart: false })).toBe('29.5 ACQMJ')
+  expect(trip({ ...input, returnToStart: false })).toBe('30.8 ACQMJ')
 })
 
 test('an open tour finishes at a dropoff the ordering would rather visit first', () => {
@@ -139,7 +139,7 @@ test('a point search closes the loop without gaining an ordering it should not h
   // order that was typed, and only the way home is added.
   const input = { ...base, algo: 'astar' as const, stops: STOPS, optimiseOrder: false }
 
-  expect(trip({ ...input, returnToStart: false })).toBe('36.7 ACMQJ')
+  expect(trip({ ...input, returnToStart: false })).toBe('37.9 ACMQJ')
   expect(planRoute({ ...input, returnToStart: true }).order).toEqual(
     ['A', 'C', 'M', 'Q', 'J', 'A'],
   )
@@ -164,10 +164,10 @@ test('optimising the visit order changes the route on all four point searches', 
   // cost. That row is the one a plausible "optimised is shorter" check would
   // quietly get wrong.
   const optimised: Record<PointSearchKey, string> = {
-    bfs: '29.5 ACQMJ', dfs: '54.2 ACQMJ', ucs: '29.5 ACQMJ', astar: '29.5 ACQMJ',
+    bfs: '30.8 ACQMJ', dfs: '56.0 ACQMJ', ucs: '30.8 ACQMJ', astar: '30.8 ACQMJ',
   }
   const typed: Record<PointSearchKey, string> = {
-    bfs: '38.5 ACMQJ', dfs: '43.9 ACMQJ', ucs: '36.7 ACMQJ', astar: '36.7 ACMQJ',
+    bfs: '40.0 ACMQJ', dfs: '45.5 ACMQJ', ucs: '37.9 ACMQJ', astar: '37.9 ACMQJ',
   }
 
   for (const algo of ['bfs', 'dfs', 'ucs', 'astar'] as const) {

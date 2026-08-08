@@ -71,7 +71,7 @@ export const SAMPLE_CASES: Record<SampleCaseKey, SampleCase> = {
   'cross-town': {
     key: 'cross-town',
     name: 'Cross-town haul',
-    about: 'Chợ Bến Thành to Chợ Thủ Đức, the full width of the network. A* and UCS agree on 11.4 km; BFS takes 12.4 km chasing the fewest hops, DFS 21.8 km.',
+    about: 'Chợ Bến Thành to Chợ Thủ Đức, the full width of the network. A* and UCS agree on 12.4 km; BFS takes 13.4 km chasing the fewest hops, DFS 22.9 km.',
     start: 'A', stops: [], goal: 'J',
     vehicle: 'bike', period: 'peak', criterion: 'balanced', optimiseOrder: true, returnToStart: false,
   },
@@ -99,21 +99,21 @@ export const SAMPLE_CASES: Record<SampleCaseKey, SampleCase> = {
   'truck-curfew': {
     key: 'truck-curfew',
     name: 'Truck at peak',
-    about: 'The same trip in a truck during the inner-city curfew, with branch and major roads closed to it. It is pushed out to 12.7 km and 78 minutes, against the motorbike’s 8.9 km and 41 minutes.',
+    about: 'The same trip in a truck during the inner-city curfew, with branch and major roads closed to it. It is pushed out to 12.8 km and 79 minutes, against the motorbike’s 8.9 km and 41 minutes.',
     start: 'A', stops: [], goal: 'M',
     vehicle: 'truck', period: 'peak', criterion: 'balanced', optimiseOrder: true, returnToStart: false,
   },
   'delivery-round': {
     key: 'delivery-round',
     name: 'Three-stop run',
-    about: 'Dinh Độc Lập, the airport and Chợ Bình Tây on the way to Chợ Thủ Đức, so the visit order is the whole problem. Optimised it runs 29.5 km; turn "Optimise visit order" off and the same algorithms follow the order you typed for 36.7 km. Nearest Neighbor ignores the switch — ordering is what it is.',
+    about: 'Dinh Độc Lập, the airport and Chợ Bình Tây on the way to Chợ Thủ Đức, so the visit order is the whole problem. Optimised it runs 30.8 km; turn "Optimise visit order" off and the same algorithms follow the order you typed for 37.9 km. Nearest Neighbor ignores the switch — ordering is what it is.',
     start: 'A', stops: ['C', 'M', 'Q'], goal: 'J',
     vehicle: 'bike', period: 'peak', criterion: 'balanced', optimiseOrder: true, returnToStart: false,
   },
   'depot-round': {
     key: 'depot-round',
     name: 'Round trip',
-    about: 'The three-stop run again, except the bike comes back to Chợ Bến Thành. Chợ Thủ Đức stops being the destination and becomes an ordinary stop, free to be visited second rather than last. Every greedy pane follows the same order for 40.9 km; Held-Karp visits them in the order that is actually cheapest, 39.2 km, and is the only one that can prove no tour is shorter.',
+    about: 'The three-stop run again, except the bike comes back to Chợ Bến Thành. Chợ Thủ Đức stops being the destination and becomes an ordinary stop, free to be visited third rather than last. Every greedy pane follows the same order for 43.2 km; Held-Karp visits them in the order that is actually cheapest, 41.6 km, and is the only one that can prove no tour is shorter.',
     start: 'A', stops: ['C', 'M', 'Q'], goal: 'J',
     vehicle: 'bike', period: 'peak', criterion: 'balanced', optimiseOrder: true, returnToStart: true,
   },
