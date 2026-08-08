@@ -133,6 +133,19 @@ test('changing the vehicle clears results rather than leaving stale ones', async
   expect(state.step).toBe(0)
 })
 
+test('toggling the round trip clears results rather than leaving stale ones', async () => {
+  useStore.getState().addPane()
+  await useStore.getState().run()
+  expect(useStore.getState().panes[0]!.result).not.toBeNull()
+
+  useStore.getState().setReturnToStart(true)
+
+  // An open route still on screen under a round trip would be answering the
+  // question the user just changed.
+  expect(useStore.getState().returnToStart).toBe(true)
+  expect(useStore.getState().panes.every(p => p.result === null)).toBe(true)
+})
+
 test('the criterion carries its own weights', () => {
   useStore.getState().setCriterion('time')
   const timeWeights = { ...useStore.getState().weights }
