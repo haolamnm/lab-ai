@@ -45,6 +45,7 @@ export function Compare() {
   const vehicle = useStore(s => s.vehicle)
   const algo = useStore(leadAlgo)
   const optimiseOrder = useStore(s => s.optimiseOrder)
+  const returnToStart = useStore(s => s.returnToStart)
   const setVehicle = useStore(s => s.setVehicle)
 
   const [open, setOpen] = useState(false)
@@ -95,7 +96,7 @@ export function Compare() {
             graph, algo,
             start: from.nodeId, goal: to.nodeId,
             stops: stops.map(x => anchorTo(graph, x.place, v.key, period).nodeId),
-            optimiseOrder,
+            optimiseOrder, returnToStart,
             conditions: { vehicle: v.key, period, weights },
           } satisfies PlanInput,
         }

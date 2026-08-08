@@ -52,6 +52,7 @@ for (const key of Object.keys(SAMPLE_CASES) as SampleCaseKey[]) {
       goal: scenario.goal,
       stops: scenario.stops,
       optimiseOrder: scenario.optimiseOrder,
+      returnToStart: scenario.returnToStart,
       conditions: {
         vehicle: scenario.vehicle,
         period: scenario.period,
@@ -83,6 +84,7 @@ test('A* and UCS agree on every sample case', () => {
       goal: scenario.goal,
       stops: scenario.stops,
       optimiseOrder: scenario.optimiseOrder,
+      returnToStart: scenario.returnToStart,
       conditions: {
         vehicle: scenario.vehicle,
         period: scenario.period,
@@ -111,6 +113,7 @@ test('the three-stop run matches both figures its write-up quotes', () => {
     start: scenario.start,
     goal: scenario.goal,
     stops: scenario.stops,
+    returnToStart: scenario.returnToStart,
     conditions: {
       vehicle: scenario.vehicle,
       period: scenario.period,

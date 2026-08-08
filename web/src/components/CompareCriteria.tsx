@@ -59,6 +59,7 @@ export function CompareCriteria() {
   const criterion = useStore(s => s.criterion)
   const algo = useStore(leadAlgo)
   const optimiseOrder = useStore(s => s.optimiseOrder)
+  const returnToStart = useStore(s => s.returnToStart)
   const setCriterion = useStore(s => s.setCriterion)
 
   const [open, setOpen] = useState(false)
@@ -102,7 +103,7 @@ export function CompareCriteria() {
     const timer = setTimeout(() => {
       const plan = (w: Weights) => {
         const input: PlanInput = {
-          graph, algo, start: from, goal: to, stops: via, optimiseOrder,
+          graph, algo, start: from, goal: to, stops: via, optimiseOrder, returnToStart,
           conditions: { vehicle, period, weights: w },
         }
         return backendEnabled ? planRouteRemote(input) : Promise.resolve(planRoute(input))
