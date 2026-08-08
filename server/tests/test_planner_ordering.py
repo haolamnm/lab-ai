@@ -183,6 +183,35 @@ def test_return_to_start_closes_the_loop_for_point_searches(algo: AlgoKey) -> No
     assert closed_tour.metrics.cost > open_tour.metrics.cost
 
 
+# W -> B is the cheapest first hop out of the pickup, so an ordering pass free to
+# place the dropoff anywhere opens with it and leaves the trip ending at a stop.
+_EDGES_DROPOFF_IS_NEAREST: list[tuple[str, str, float]] = [
+    ("W", "A", 5.0),
+    ("W", "B", 1.0),
+    ("A", "B", 1.0),
+    ("B", "A", 1.0),
+]
+
+
+@pytest.mark.parametrize("algo", ["bfs", "dfs", "ucs", "astar"])
+def test_an_optimised_open_point_search_still_finishes_at_the_dropoff(algo: AlgoKey) -> None:
+    # Optimising reorders the stops; it does not move the dropoff off the end.
+    # Only a round trip demotes the dropoff, and this request is not one.
+    result = planner.plan_route(
+        trip_request(
+            algo,
+            goal="B",
+            stops=["A"],
+            edges=_EDGES_DROPOFF_IS_NEAREST,
+            optimise_order=True,
+            return_to_start=False,
+        )
+    )
+
+    assert result.found is True
+    assert result.order == ["W", "A", "B"]
+
+
 @pytest.mark.parametrize("algo", ["bfs", "dfs", "ucs", "astar"])
 def test_a_closed_point_search_still_orders_by_the_toggle(algo: AlgoKey) -> None:
     # Ordering and shape are independent controls: closing the loop must not

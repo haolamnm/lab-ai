@@ -118,7 +118,10 @@ def test_nearest_uses_pairwise_astar_without_rerunning_selected_legs(
 
 
 def test_nearest_respects_directed_pairwise_costs(monkeypatch: pytest.MonkeyPatch) -> None:
-    request = _request(stops=["A"], goal="B")
+    # A closed tour, because that is the shape where the ordering has a free hand
+    # over every destination. On an open route the dropoff is pinned last, so a
+    # one-stop trip has no ordering decision left for the matrix to influence.
+    request = _request(stops=["A"], goal="B", return_to_start=True)
     graph = build_graph(request.graph)
     _stub_pairwise(
         monkeypatch,
@@ -130,18 +133,23 @@ def test_nearest_respects_directed_pairwise_costs(monkeypatch: pytest.MonkeyPatc
             ("W", "B"): 1.0,
             ("A", "B"): 0.1,
             ("B", "A"): 2.0,
+            ("A", "W"): 3.0,
+            ("B", "W"): 4.0,
         },
         paths={
             ("W", "B"): _leg(graph, "W", "B", 1),
             ("B", "A"): _leg(graph, "B", "A", 2),
+            ("A", "W"): _leg(graph, "A", "W", 3),
         },
     )
 
     result = planner.plan_route(request)
 
     assert result.found is True
-    assert result.order == ["W", "B", "A"]
-    assert result.path == ["W", "B", "A"]
+    # B before A: reading the pair (A, B) = 0.1 as if it were (B, A) would put A
+    # first, so the order proves the matrix is consulted in the right direction.
+    assert result.order == ["W", "B", "A", "W"]
+    assert result.path == ["W", "B", "A", "W"]
 
 
 def test_nearest_preserves_input_order_for_pairwise_cost_ties(
@@ -238,6 +246,64 @@ def test_closed_nearest_orders_the_goal_like_any_other_stop() -> None:
     assert result.metrics.optimal is False
 
 
+# W -> B is the cheapest first hop out of the pickup, so a greedy pass that is
+# free to place the dropoff anywhere opens with it. The default TRIP_EDGES cannot
+# show this: there W -> A is cheaper than W -> B, so greedy ends at the dropoff by
+# luck and a planner that never pins it passes the two tests above regardless.
+_EDGES_DROPOFF_IS_NEAREST: list[tuple[str, str, float]] = [
+    ("W", "A", 5.0),
+    ("W", "B", 1.0),
+    ("A", "B", 1.0),
+    ("B", "A", 1.0),
+]
+
+# The same graph with a way home, so a closed tour is possible at all.
+_EDGES_DROPOFF_IS_NEAREST_WITH_RETURN: list[tuple[str, str, float]] = [
+    *_EDGES_DROPOFF_IS_NEAREST,
+    ("A", "W", 1.0),
+    ("B", "W", 1.0),
+]
+
+
+def test_open_nearest_finishes_at_a_goal_it_would_rather_visit_first() -> None:
+    result = planner.plan_route(
+        _request(
+            stops=["A"],
+            goal="B",
+            return_to_start=False,
+            edges=_EDGES_DROPOFF_IS_NEAREST,
+        )
+    )
+
+    assert result.found is True
+    assert result.order == ["W", "A", "B"]
+    # Greedy would rather run W -> B -> A for 2.0, but that trip ends at a stop.
+    # Finishing where the request asked costs 3.0, and is the trip that was asked
+    # for; Nearest Neighbor is a heuristic over the order, not over the shape.
+    assert result.metrics.cost == 3.0
+    # The W -> A leg is routed through B, because A* prefers the two 1.0 hops to
+    # the direct 5.0 edge. Passing through the dropoff is not visiting it: the
+    # visit order above is what the trip promised, and B still ends it.
+    assert result.path == ["W", "B", "A", "B"]
+
+
+def test_closed_nearest_may_open_with_the_goal() -> None:
+    # The counterpart to the test above, on the same costs: a cycle has no last
+    # stop, so nothing is pinned and greedy is free to visit the dropoff first.
+    # The two shapes must not be ordered by the same rule.
+    result = planner.plan_route(
+        _request(
+            stops=["A"],
+            goal="B",
+            return_to_start=True,
+            edges=_EDGES_DROPOFF_IS_NEAREST_WITH_RETURN,
+        )
+    )
+
+    assert result.found is True
+    assert result.order == ["W", "B", "A", "W"]
+
+
 @pytest.mark.parametrize("return_to_start", [False, True])
 def test_nearest_refuses_a_trip_with_nowhere_to_go(return_to_start: bool) -> None:
     # No stops and a dropoff already at the pickup. The point searches answer this
@@ -320,7 +386,12 @@ def test_open_nearest_orders_the_goal_among_the_stops() -> None:
 @pytest.mark.parametrize(
     ("stops", "goal", "expected_order", "expected_locations"),
     [
-        (["A"], "W", ["W", "A"], ["W", "A"]),
+        # A dropoff already at the pickup makes the trip a loop however the toggle
+        # is set, so this one comes home. Nearest Neighbor used to be alone in
+        # answering ["W", "A"] here: greedy took the zero-cost (W, W) pair first
+        # and the leg home was then dropped as a consecutive duplicate. The other
+        # five algorithms all closed it, and now so does this one.
+        (["A"], "W", ["W", "A", "W"], ["W", "A"]),
         (["A", "B"], "B", ["W", "A", "B"], ["W", "A", "B"]),
     ],
 )
