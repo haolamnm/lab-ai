@@ -224,10 +224,14 @@ comments, and docs. Consider this settled, not open.
 
 - **Package manager is `bun`.** Use `bun install`, `bun run build`, `bunx`. Do not run `npm` or
   `yarn`; do not commit `package-lock.json` or `yarn.lock`. The lockfile is `bun.lock`.
-- Typecheck with `bunx tsc --noEmit`, build with `bun run build`. Both must pass before a commit.
-  `web/` has no test suite; those two commands plus running the app are the frontend's verification.
-  `server/` does have one — `cd server && make check` is the backend gate, and it must pass before a
-  commit that touches it. CI runs both.
+- Typecheck with `bunx tsc --noEmit`, test with `bun test`, build with `bun run build`. All three
+  must pass before a commit. `server/` has its own gate — `cd server && make check` — which must pass
+  before a commit that touches it. `make check` at the repository root runs both halves, and CI runs
+  the same steps in the same order.
+- **Frontend tests are `*.test.ts` beside the module they cover**, run by `bun test`, which needs no
+  runner dependency and no DOM. They live under `src/` rather than a sibling `tests/` directory so
+  `bunx tsc --noEmit` checks them like any other source file — a test that does not compile is not a
+  test. `lib/` staying free of React (§2) is what lets the store and the planner be driven headless.
 - Editor settings come from `.editorconfig`: UTF-8, LF endings, final newline, no trailing
   whitespace, and two-space indent **for the frontend**. Python is four spaces, because `ruff format`
   writes four and will reformat anything else; `Makefile` recipes are tabs, because make requires it.
