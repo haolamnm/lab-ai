@@ -2,7 +2,7 @@
  * The eight sample cases still produce the routes their write-ups describe.
  *
  * Each case carries an `about` string quoting real figures — "1.2 km", "A* and
- * UCS agree on 11.4 km", "7.2 km, 23 minutes". Those are the app's teaching
+ * UCS agree on 12.4 km", "7.2 km, 23 minutes". Those are the app's teaching
  * material: a student reads the blurb, runs the case, and checks the two agree.
  * Nothing kept them agreeing. A change to the cost model, the sample graph, or
  * a search would move the route and leave the prose describing a trip the app
@@ -33,13 +33,13 @@ const graph = buildSampleGraph()
  */
 const EXPECTED: Record<SampleCaseKey, { km: number; minutes: number; cost: number }> = {
   'two-blocks': { km: 1.2, minutes: 4, cost: 6.4 },
-  'cross-town': { km: 11.4, minutes: 35, cost: 63.9 },
+  'cross-town': { km: 12.4, minutes: 37, cost: 69.1 },
   'rush-hour': { km: 7.2, minutes: 23, cost: 61.2 },
   'after-dark': { km: 6.6, minutes: 13, cost: 13.2 },
   'alley': { km: 8.9, minutes: 37, cost: 8.9 },
-  'truck-curfew': { km: 12.7, minutes: 78, cost: 98.7 },
-  'delivery-round': { km: 29.5, minutes: 104, cost: 169.1 },
-  'depot-round': { km: 40.9, minutes: 139, cost: 233 },
+  'truck-curfew': { km: 12.8, minutes: 79, cost: 99.5 },
+  'delivery-round': { km: 30.8, minutes: 108, cost: 176.3 },
+  'depot-round': { km: 43.2, minutes: 146, cost: 245.4 },
 }
 
 for (const key of Object.keys(SAMPLE_CASES) as SampleCaseKey[]) {
@@ -107,8 +107,8 @@ test('A* and UCS agree on every sample case', () => {
 
 test('the three-stop run matches both figures its write-up quotes', () => {
   // This case exists to show what optimising the visit order buys, and its
-  // write-up names the pair: "Optimised it runs 29.5 km; turn 'Optimise visit
-  // order' off and the same algorithms follow the order you typed for 36.7 km."
+  // write-up names the pair: "Optimised it runs 30.8 km; turn 'Optimise visit
+  // order' off and the same algorithms follow the order you typed for 37.9 km."
   // Both halves are the lesson, so both are pinned.
   const scenario = SAMPLE_CASES['delivery-round']
   const input = {
@@ -125,6 +125,6 @@ test('the three-stop run matches both figures its write-up quotes', () => {
     },
   }
 
-  expect(planRoute({ ...input, optimiseOrder: true }).metrics.km).toBe(29.5)
-  expect(planRoute({ ...input, optimiseOrder: false }).metrics.km).toBe(36.7)
+  expect(planRoute({ ...input, optimiseOrder: true }).metrics.km).toBe(30.8)
+  expect(planRoute({ ...input, optimiseOrder: false }).metrics.km).toBe(37.9)
 })

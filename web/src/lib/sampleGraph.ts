@@ -68,7 +68,16 @@ const NODES: Row[] = [
   { label: 'U', name: 'Hẻm Đinh Tiên Hoàng',  lat: 10.7930, lng: 106.6923 },
 ]
 
-/** [from, to, km, congestion 1-5, risk 0-1, road class] */
+/**
+ * [from, to, km, congestion 1-5, risk 0-1, road class]
+ *
+ * `km` is authored here and the coordinates are authored in `NODES`, so the two
+ * have to be kept honest by hand: a road cannot be shorter than the straight
+ * line between the intersections it joins. Eight of these were, which quietly
+ * cost A* its optimality — its heuristic is the straight-line distance, and that
+ * is only a lower bound on the real route while this holds. `sampleGraph.test.ts`
+ * checks every row against the shape it draws, so a new one cannot reintroduce it.
+ */
 const EDGES: [string, string, number, number, number, RoadClass][] = [
   ['A', 'C', 0.7, 4, 0.10, 'secondary'],
   ['A', 'D', 1.0, 3, 0.10, 'primary'],
@@ -76,7 +85,7 @@ const EDGES: [string, string, number, number, number, RoadClass][] = [
   ['A', 'O', 4.4, 4, 0.20, 'primary'],
   ['B', 'C', 0.5, 2, 0.05, 'tertiary'],
   ['B', 'D', 1.0, 2, 0.05, 'tertiary'],
-  ['B', 'E', 1.1, 3, 0.10, 'secondary'],
+  ['B', 'E', 1.2, 3, 0.10, 'secondary'],
   ['C', 'L', 3.0, 4, 0.20, 'primary'],
   ['D', 'E', 1.6, 2, 0.10, 'primary'],
   ['D', 'T', 5.6, 3, 0.20, 'primary'],
@@ -86,11 +95,11 @@ const EDGES: [string, string, number, number, number, RoadClass][] = [
   ['F', 'K', 2.0, 4, 0.30, 'primary'],
   ['F', 'L', 1.5, 4, 0.30, 'secondary'],
   ['G', 'H', 0.8, 3, 0.10, 'primary'],
-  ['H', 'I', 1.4, 2, 0.10, 'motorway'],
-  ['H', 'K', 2.4, 3, 0.20, 'primary'],
+  ['H', 'I', 1.5, 2, 0.10, 'motorway'],
+  ['H', 'K', 2.8, 3, 0.20, 'primary'],
   ['I', 'J', 5.5, 2, 0.10, 'motorway'],
-  ['J', 'K', 5.2, 3, 0.20, 'primary'],
-  ['K', 'M', 6.5, 4, 0.30, 'primary'],
+  ['J', 'K', 6.2, 3, 0.20, 'primary'],
+  ['K', 'M', 6.6, 4, 0.30, 'primary'],
   ['L', 'M', 5.3, 4, 0.30, 'secondary'],
   ['L', 'N', 5.6, 3, 0.20, 'secondary'],
   ['M', 'N', 3.0, 3, 0.20, 'primary'],
@@ -99,11 +108,11 @@ const EDGES: [string, string, number, number, number, RoadClass][] = [
   ['O', 'P', 2.0, 4, 0.30, 'secondary'],
   ['O', 'R', 2.6, 3, 0.20, 'tertiary'],
   ['P', 'Q', 1.8, 5, 0.50, 'residential'],
-  ['P', 'S', 2.2, 4, 0.40, 'secondary'],
-  ['Q', 'R', 2.4, 3, 0.20, 'residential'],
+  ['P', 'S', 3.2, 4, 0.40, 'secondary'],
+  ['Q', 'R', 2.6, 3, 0.20, 'residential'],
   ['Q', 'S', 4.3, 3, 0.30, 'secondary'],
   ['S', 'T', 4.0, 2, 0.10, 'primary'],
-  ['T', 'H', 6.0, 2, 0.10, 'motorway'],
+  ['T', 'H', 7.6, 2, 0.10, 'motorway'],
   // The alley cut-through. Congestion 1 because alleys do not queue, risk high
   // because they are narrow and full of parked bikes — so it is cheap on the
   // congestion term and dear on the risk term, and which way that lands is

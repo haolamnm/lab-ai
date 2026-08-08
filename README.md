@@ -15,18 +15,18 @@ work each algorithm did to get there.
 
 ![Route Lab running the sample graph: a sidebar of query controls on the left, four algorithm panes comparing A*, UCS, BFS and DFS in the centre, the generated explanation below them, and one shared timeline across the bottom](docs/ui-screenshot.png)
 
-*The real application, paused at step 13 of 19 on the built-in sample graph.*
+*The real application, paused at step 13 of 20 on the built-in sample graph.*
 
 Reading the picture: the sidebar on the left is the only place a run is defined, so every pane
 provably ran on the same input. Each pane owns one algorithm and can show it as a map, a
 stripped-back schematic, or the search tree itself. The timeline at the bottom drives all of them at
 once — which is what makes the comparison honest.
 
-Look at what that single frozen step reveals. A\* has already finished, at step 11, with an 11.4 km
-route it can guarantee is optimal. UCS is still searching at step 13 and will need 19 — and when it
+Look at what that single frozen step reveals. A\* has already finished, at step 12, with a 12.4 km
+route it can guarantee is optimal. UCS is still searching at step 13 and will need 20 — and when it
 arrives it will produce **the identical route**, because both minimise the same cost. BFS is also
 still going and will return a route 1 km longer, because it counts hops rather than cost. DFS
-finished first, at step 9, with a 21.8 km route — nearly twice as long — and the footer marks it
+finished first, at step 9, with a 22.9 km route — nearly twice as long — and the footer marks it
 approximate rather than optimal.
 
 That is the whole argument of the tool in one screen: the route is rarely the interesting part,

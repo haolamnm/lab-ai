@@ -14,6 +14,15 @@ the arithmetic in a test is exact. With distance-only weights the one cheapest
 route is A -> B -> D at cost 2.0; the direct A -> D (3.0) and A -> C -> D (2.5)
 both lose.
 
+The coordinates are still not free. A* estimates the remaining cost as the
+straight-line distance to the goal, which is a lower bound only while no edge is
+shorter than the straight line it spans — so the nodes are packed within about
+110 m of each other, well inside the shortest 1.0 km edge. They used to be spread
+ten times wider, which made three of the five edges physically impossible and the
+heuristic inadmissible: A* still returned the right route on a graph this small,
+but it was not being tested under conditions where its guarantee held.
+``test_fixture_geometry.py`` pins this.
+
 Every edge is **one-way**: ``build_graph`` indexes an edge under ``from`` only,
 so listing ``A -> B`` does not create ``B -> A``. Nothing can be routed backwards
 through the diamond, which is what ``test_bfs_follows_one_way_streets`` and
@@ -36,10 +45,10 @@ from route_lab.shared.graph import build_graph
 from route_lab.shared.problem import SearchProblem, build_problem
 
 _NODES: dict[str, tuple[float, float]] = {
-    "A": (10.770, 106.700),
-    "B": (10.780, 106.700),
-    "C": (10.770, 106.710),
-    "D": (10.780, 106.710),
+    "A": (10.7700, 106.7000),
+    "B": (10.7710, 106.7000),
+    "C": (10.7700, 106.7010),
+    "D": (10.7710, 106.7010),
 }
 
 # (from, to, km) — each is a one-way "secondary" road a motorbike may use.
@@ -229,9 +238,9 @@ def turn_blocked_json() -> dict[str, Any]:
     return {
         "graph": {
             "nodes": {
-                "A": {"id": "A", "lat": 10.77, "lng": 106.70},
-                "B": {"id": "B", "lat": 10.78, "lng": 106.70},
-                "C": {"id": "C", "lat": 10.79, "lng": 106.70},
+                "A": {"id": "A", "lat": 10.7700, "lng": 106.70},
+                "B": {"id": "B", "lat": 10.7710, "lng": 106.70},
+                "C": {"id": "C", "lat": 10.7720, "lng": 106.70},
             },
             "edges": [
                 {
@@ -253,7 +262,7 @@ def turn_blocked_json() -> dict[str, Any]:
                     "wayId": 2,
                 },
             ],
-            "bounds": [[10.77, 106.70], [10.79, 106.70]],
+            "bounds": [[10.7700, 106.70], [10.7720, 106.70]],
             "detail": "coarse",
             "turns": {
                 "no": {"B|1|2": [{"kind": "no_straight_on", "hours": [], "except": []}]},

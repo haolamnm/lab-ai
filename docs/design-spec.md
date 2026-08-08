@@ -122,10 +122,10 @@ The numbers weren't picked at random. Measured on the A → J route, motorbike, 
 
 | Algorithm | Nodes expanded | Distance | Route |
 |---|---:|---:|---|
-| BFS | 19 | 12.4 km | A→C→L→F→K→J |
-| DFS | 9 | 21.8 km | A→O→N→M→K→J |
-| UCS | 19 | 11.4 km | A→D→E→F→K→J |
-| A\* | 11 | 11.4 km | A→D→E→F→K→J |
+| BFS | 20 | 13.4 km | A→C→L→F→K→J |
+| DFS | 9 | 22.9 km | A→O→N→M→K→J |
+| UCS | 20 | 12.4 km | A→D→E→F→K→J |
+| A\* | 12 | 12.4 km | A→D→E→F→K→J |
 
 Four algorithms produce three different routes. The four vehicle types also split into two: the motorbike threads through the E–F congestion cluster at Hàng Xanh because it can weave through, while the van, car, and truck all detour around via Landmark 81.
 
