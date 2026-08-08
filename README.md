@@ -115,6 +115,11 @@ it clears every pane's result, so you never see half-old, half-new numbers.
 optimise the visit order using a nearest-neighbour heuristic measured in real cost, not straight-line
 distance.
 
+**Round trip** — turns the whole trip into a loop. The route comes home to the pickup, and the
+dropoff stops being the destination: it becomes an ordinary stop, free to be visited in whatever
+position is cheapest. Every algorithm plans the shape the toggle asks for; the ordering ones choose
+where the dropoff falls in it.
+
 **Road network** — the detail level controls which road classes get downloaded:
 
 | Level | Road classes fetched |
