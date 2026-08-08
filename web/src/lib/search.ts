@@ -695,14 +695,24 @@ export function planRoute(input: PlanInput): RouteResult {
     ? shared(graph, `heuristic:${conditionsKey}`, () => minCostPerKm(graph, conditions))
     : 0
   // One list for both shapes, mirroring `_leg_sequence` and `_plan_nearest` in
-  // the backend's planner.py. The dropoff is a destination like any other, and
-  // when ordering is on it may be visited before another stop.
+  // the backend's planner.py. The dropoff is a destination like any other, and on
+  // a round trip the ordering may put it before another stop.
   const destinations = [...stops, goal]
   const shouldOrderDestinations = (algo === 'nearest' || optimiseOrder)
     && destinations.length > 1
+  // A closed tour has no last stop, so the dropoff is ordered with everything
+  // else. An open route is required to finish at it, so it is held out of the
+  // greedy pool and appended — `_greedy_order` in planner.py is the same rule,
+  // and a divergence here would mean the same trip planned two ways depending on
+  // whether VITE_API_URL happened to be set.
+  const pool = returnToStart ? destinations : destinations.filter(node => node !== goal)
+  const tail = returnToStart ? [] : [goal]
   const orderedDestinations = shouldOrderDestinations
-    ? shared(graph, `order:${conditionsKey}|${JSON.stringify([start, destinations])}`,
-      () => nearestNeighborOrder(graph, start, destinations, conditions))
+    ? [
+      ...shared(graph, `order:${conditionsKey}|${JSON.stringify([start, pool])}`,
+        () => nearestNeighborOrder(graph, start, pool, conditions)),
+      ...tail,
+    ]
     : destinations
   // Every algorithm reads the flag, point searches included. They do not get to
   // choose the order — that is what the trip-level algorithms are for — but they

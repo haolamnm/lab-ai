@@ -65,10 +65,33 @@ def _optimal(request: PlanRequest, *, found: bool) -> bool:
     return request.algo not in POINT_SEARCHES or not request.stops
 
 
+def _greedy_order(
+    request: PlanRequest,
+    destinations: Sequence[str],
+    costs: Mapping[tuple[str, str], float],
+) -> list[str]:
+    """Greedily order ``destinations`` for the trip shape ``request`` asked for.
+
+    The one place the dropoff's position is decided, because both callers below
+    were deciding it separately and neither was deciding it at all: they handed
+    the whole list to the greedy pass and took whatever came back.
+
+    A closed tour has no last stop, so the dropoff is an ordinary location and is
+    ordered with everything else. An open route is required to finish at the
+    dropoff, so it is held out of the greedy pool and appended — the same rule
+    Held-Karp applies through its ``end`` argument, rather than the two
+    trip-level algorithms reading one request differently.
+    """
+    if request.return_to_start:
+        return list(nearest_neighbor_order(request.start, destinations, costs))
+    pool = [location for location in destinations if location != request.goal]
+    return [*nearest_neighbor_order(request.start, pool, costs), request.goal]
+
+
 def _leg_sequence(request: PlanRequest, graph: Graph) -> list[str]:
     """The ordered list of points to visit, with consecutive duplicates removed."""
-    # The dropoff is a destination just like every intermediate stop. When
-    # ordering is enabled it may therefore be visited before another stop.
+    # The dropoff is a destination just like every intermediate stop, and on a
+    # round trip the ordering may put it before another stop.
     destinations = [*request.stops, request.goal]
     uses_optional_ordering = request.algo in POINT_SEARCHES and request.optimise_order
     if uses_optional_ordering and len(destinations) > 1:
@@ -78,7 +101,7 @@ def _leg_sequence(request: PlanRequest, graph: Graph) -> list[str]:
             conditions=request.conditions,
             search=a_star_search,
         )
-        ordered = list(nearest_neighbor_order(request.start, destinations, matrix.costs))
+        ordered = _greedy_order(request, destinations, matrix.costs)
     else:
         ordered = destinations
     raw = [request.start, *ordered]
@@ -252,7 +275,8 @@ def _plan_nearest(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteRe
     """Order every destination greedily by exact route cost, then route each leg."""
     route_kind: RouteKind = "closed tour" if request.return_to_start else "open route"
     # One list for both shapes. The dropoff is a destination like any other, and
-    # `return_to_start` only decides whether the trip comes home afterwards.
+    # `return_to_start` decides both whether the trip comes home afterwards and
+    # whether the dropoff is free to be ordered — see `_greedy_order`.
     destinations = [*request.stops, request.goal]
 
     matrix = build_pairwise(
@@ -261,7 +285,7 @@ def _plan_nearest(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteRe
         conditions=request.conditions,
         search=a_star_search,
     )
-    ordered = nearest_neighbor_order(request.start, destinations, matrix.costs)
+    ordered = _greedy_order(request, destinations, matrix.costs)
     raw_order = [request.start, *ordered]
     if request.return_to_start:
         raw_order.append(request.start)
