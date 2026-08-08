@@ -1,8 +1,10 @@
 name: CI
 
-# CONVENTIONS.md says the typecheck and the build must both pass before a
-# commit. This runs the same two commands so that rule is enforced rather than
-# merely written down.
+# CONVENTIONS.md §8 names two gates: `bunx tsc --noEmit` plus `bun run build`
+# for web/, and `make check` for server/. The two jobs below run exactly those,
+# so the rule is enforced rather than merely written down. Keep them in step:
+# the server job spells out the same steps `server/Makefile`'s `check` target
+# runs, in the same order, so a red build here reproduces locally.
 
 on:
   push:

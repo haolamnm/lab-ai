@@ -86,6 +86,7 @@ CLAUDE.md
 coverage/
 *.lcov
 .nyc_output/
+.coverage
 
 # ---------- Python ----------
 __pycache__/

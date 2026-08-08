@@ -19,11 +19,13 @@ or user action that triggered it.
 
 - [ ] `bunx tsc --noEmit` passes
 - [ ] `bun run build` passes
+- [ ] `server/`: `make check` passes — or n/a, if this PR does not touch `server/`
 - [ ] Exercised in the running app — describe what you actually clicked:
 
 <!--
-There is no test suite, so this section is the evidence. "Loaded the sample
-graph, added three panes, ran, paused at step 40" is useful. "Works" is not.
+`web/` has no test suite, so the last line is the evidence for a frontend
+change. "Loaded the sample graph, added three panes, ran, paused at step 40" is
+useful. "Works" is not.
 -->
 
 ## Left undone
