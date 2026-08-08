@@ -678,9 +678,14 @@ export function planRoute(input: PlanInput): RouteResult {
   }
 
   const conditionsKey = conditionKey(conditions)
-  // Nearest Neighbor picks the trip order; each leg between its chosen stops is
-  // then a plain point search, run here with UCS.
-  const pointAlgorithm: PointSearchKey = algo === 'nearest' ? 'ucs' : algo
+  // Nearest Neighbor chooses the trip order; the legs between its chosen stops
+  // are a plain point search, and A* is the one to use. The Python backend
+  // routes them with Pairwise A*, so picking anything else here would make the
+  // "nodes expanded" figure move when VITE_API_URL is set — the same trip, the
+  // same route, the same cost, but a different headline number depending on
+  // which planner answered. A* and UCS return the identical route because both
+  // are exact; A* just reaches it having opened fewer nodes.
+  const pointAlgorithm: PointSearchKey = algo === 'nearest' ? 'astar' : algo
   const heuristicScale = pointAlgorithm === 'astar'
     ? shared(graph, `heuristic:${conditionsKey}`, () => minCostPerKm(graph, conditions))
     : 0
