@@ -133,6 +133,24 @@ test('changing the vehicle clears results rather than leaving stale ones', async
   expect(state.step).toBe(0)
 })
 
+test('a scenario applies its trip shape along with its conditions', async () => {
+  useStore.getState().loadSample('depot-round')
+  useStore.getState().addPane()
+  await useStore.getState().run()
+
+  const state = useStore.getState()
+  expect(state.returnToStart).toBe(true)
+  // The shape has to reach the plan, not just the checkbox. A scenario that set
+  // the flag in state but planned an open tour would show a route contradicting
+  // its own write-up.
+  const order = state.panes[0]!.result?.order ?? []
+  expect(order[0]).toBe(order[order.length - 1])
+
+  // And it has to come back off again: the seven open cases must not inherit it.
+  useStore.getState().loadSample('cross-town')
+  expect(useStore.getState().returnToStart).toBe(false)
+})
+
 test('toggling the round trip clears results rather than leaving stale ones', async () => {
   useStore.getState().addPane()
   await useStore.getState().run()

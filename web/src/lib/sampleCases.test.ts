@@ -39,6 +39,7 @@ const EXPECTED: Record<SampleCaseKey, { km: number; minutes: number; cost: numbe
   'alley': { km: 8.9, minutes: 37, cost: 8.9 },
   'truck-curfew': { km: 12.7, minutes: 78, cost: 98.7 },
   'delivery-round': { km: 29.5, minutes: 104, cost: 169.1 },
+  'depot-round': { km: 40.9, minutes: 139, cost: 233 },
 }
 
 for (const key of Object.keys(SAMPLE_CASES) as SampleCaseKey[]) {
@@ -64,9 +65,12 @@ for (const key of Object.keys(SAMPLE_CASES) as SampleCaseKey[]) {
     expect(result.metrics.km, 'km').toBe(EXPECTED[key].km)
     expect(result.metrics.minutes, 'minutes').toBe(EXPECTED[key].minutes)
     expect(result.metrics.cost, 'cost').toBe(EXPECTED[key].cost)
-    // A route that reaches the goal has to start and end where it was asked to.
+    // A route has to start and end where it was asked to. On a round trip that
+    // is the pickup at both ends: the dropoff is an ordinary stop there, so
+    // asserting the route ends at it would be asserting the old shape.
     expect(result.path[0]).toBe(scenario.start)
-    expect(result.path[result.path.length - 1]).toBe(scenario.goal)
+    expect(result.path[result.path.length - 1])
+      .toBe(scenario.returnToStart ? scenario.start : scenario.goal)
     // Every case is reachable, so a search that expands nothing has broken.
     expect(result.metrics.expanded).toBeGreaterThan(0)
   })

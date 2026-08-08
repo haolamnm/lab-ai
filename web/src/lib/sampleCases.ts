@@ -17,12 +17,13 @@ import type { CriterionKey, PeriodKey, VehicleKey } from './types'
  * function. `about` says what to look at, because a route that is correct for
  * a reason you cannot see teaches nothing.
  *
- * Every case here is an open tour. A closed one cannot be written yet: a loop
- * can only be asked for by pinning the dropoff onto the pickup, which the
- * ordering then folds away — the dropoff sits zero cost from the start, so it is
- * ordered first, the consecutive-duplicate filter removes it, and the route never
- * comes home. The shape below names what each case is; making it mean something
- * is the next commit's job.
+ * `depot-round` is the one closed tour. It used to be impossible to write: a
+ * loop could only be asked for by pinning the dropoff onto the pickup, which the
+ * ordering then folded away — the dropoff sat zero cost from the start, so it was
+ * ordered first, the consecutive-duplicate filter removed it, and the route never
+ * came home. `returnToStart` describes the shape directly instead, and every
+ * algorithm reads it, so all six panes answer the same question. A scenario is
+ * only worth having if every pane is answering it.
  *
  * They all run on the same network, so two cases can be compared directly:
  * `rush-hour` and `after-dark` are the same two points in the same car under
@@ -39,7 +40,7 @@ import type { CriterionKey, PeriodKey, VehicleKey } from './types'
  *  error rather than a silent fall back to the first scenario. */
 export type SampleCaseKey =
   | 'two-blocks' | 'cross-town' | 'rush-hour' | 'after-dark' | 'alley'
-  | 'truck-curfew' | 'delivery-round'
+  | 'truck-curfew' | 'delivery-round' | 'depot-round'
 
 interface SampleCase {
   key: SampleCaseKey
@@ -108,6 +109,13 @@ export const SAMPLE_CASES: Record<SampleCaseKey, SampleCase> = {
     about: 'Dinh Độc Lập, the airport and Chợ Bình Tây on the way to Chợ Thủ Đức, so the visit order is the whole problem. Optimised it runs 29.5 km; turn "Optimise visit order" off and the same algorithms follow the order you typed for 36.7 km. Nearest Neighbor ignores the switch — ordering is what it is.',
     start: 'A', stops: ['C', 'M', 'Q'], goal: 'J',
     vehicle: 'bike', period: 'peak', criterion: 'balanced', optimiseOrder: true, returnToStart: false,
+  },
+  'depot-round': {
+    key: 'depot-round',
+    name: 'Round trip',
+    about: 'The three-stop run again, except the bike comes back to Chợ Bến Thành. Chợ Thủ Đức stops being the destination and becomes an ordinary stop, free to be visited second rather than last. Every greedy pane follows the same order for 40.9 km; Held-Karp visits them in the order that is actually cheapest, 39.2 km, and is the only one that can prove no tour is shorter.',
+    start: 'A', stops: ['C', 'M', 'Q'], goal: 'J',
+    vehicle: 'bike', period: 'peak', criterion: 'balanced', optimiseOrder: true, returnToStart: true,
   },
 }
 
