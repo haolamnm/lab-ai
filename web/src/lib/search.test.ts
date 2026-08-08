@@ -71,10 +71,33 @@ test('an open tour finishes at the dropoff', () => {
   expect(trip({ ...input, returnToStart: false })).toBe('29.5 ACQMJ')
 })
 
+test('an open tour finishes at a dropoff the ordering would rather visit first', () => {
+  // C is the cheapest first destination out of A, so an ordering pass free to
+  // place the dropoff anywhere opens with it and leaves the trip ending at Q or
+  // M. The J case above cannot catch that: there greedy ends at the dropoff by
+  // luck, so a planner that never pins it passes anyway.
+  const input = {
+    ...base, goal: 'C', stops: ['M', 'Q'], optimiseOrder: true, returnToStart: false,
+  }
+
+  for (const algo of ['bfs', 'dfs', 'ucs', 'astar', 'nearest'] as const) {
+    const result = planRoute({ ...input, algo })
+    expect(result.found, `${algo}`).toBe(true)
+    expect(result.order[result.order.length - 1], `${algo}`).toBe('C')
+  }
+
+  // The same costs closed: a cycle has no last stop, so nothing is pinned and the
+  // ordering is free to open with the dropoff. The two shapes must not be ordered
+  // by the same rule, which is why the fix cannot simply be "always visit C last".
+  expect(planRoute({ ...input, algo: 'nearest', returnToStart: true }).order)
+    .toEqual(['A', 'C', 'Q', 'M', 'A'])
+})
+
 test('a round trip demotes the dropoff to an ordinary stop and comes home', () => {
   // A cycle has no last stop, so J stops being the endpoint and takes whatever
-  // position the ordering gives it — here second, not last. That is the whole
-  // reason the dropoff cannot simply be pinned before the return leg.
+  // position the ordering gives it. On these stops that happens to be last again,
+  // which is why this case is asserted as a set — the C case above is the one
+  // that shows the ordering genuinely moving the dropoff off the end.
   const input = {
     ...base, algo: 'nearest' as const, stops: STOPS, optimiseOrder: true, returnToStart: true,
   }
