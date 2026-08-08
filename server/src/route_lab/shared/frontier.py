@@ -4,25 +4,26 @@ Every graph search is the same loop: take a state off the frontier, expand it,
 put its successors back. What changes between algorithms is *which* state comes
 off next, and that is decided entirely by the frontier's discipline:
 
-    BFS   -> Queue           first in, first out       (fewest hops)
-    DFS   -> Stack           last in, first out        (deepest branch)
-    UCS   -> PriorityQueue   lowest g                   (cheapest so far)
-    A*    -> PriorityQueue   lowest g + h               (cheapest + estimate)
+    BFS   -> Queue   first in, first out   (fewest hops)
+    DFS   -> Stack   last in, first out    (deepest branch)
+    UCS   -> Heap    lowest g              (cheapest so far)
+    A*    -> Heap    lowest g + h          (cheapest + estimate)
 
 So an algorithm here is: pick a frontier, decide the priority you push with, and
-write the loop. All three expose ``push`` / ``pop`` and a truthy length, so
-``while frontier:`` works the same for each.
+write the loop. The two frontiers defined below expose ``push`` / ``pop`` and a
+truthy length, so ``while frontier:`` works the same for each.
 
-The priority queue leaves stale entries behind when a state's cost improves,
-rather than doing a decrease-key; the caller skips them with a
-``if state in memory.closed`` check after popping (see ``algorithms/ucs.py``).
+The two cost-ordered searches take :class:`route_lab.shared.heap.Heap` directly
+rather than a wrapper, because they need more from it than a bare state: an
+improved state leaves a stale entry behind instead of a decrease-key, and
+``pop_fresh`` in ``shared/search.py`` recognises one by comparing the entry's
+recorded cost against the current best. A wrapper that returned only the state
+would throw away the value that check reads.
 """
 
 from __future__ import annotations
 
 from collections import deque
-
-from route_lab.shared.heap import Heap
 
 
 class Stack:
@@ -55,26 +56,3 @@ class Queue:
 
     def __len__(self) -> int:
         return len(self._items)
-
-
-class PriorityQueue:
-    """Min-first frontier — pop returns the lowest-priority state (UCS/A*).
-
-    Push the same state again with a lower priority to "improve" it; the older,
-    worse entry stays in the heap and is skipped when popped because the state is
-    already closed by then.
-    """
-
-    def __init__(self) -> None:
-        self._heap = Heap()
-
-    def push(self, state: str, priority: float) -> None:
-        # `cost` on the heap entry is unused here — the algorithm tracks the real
-        # cost in its SearchMemory — so priority is passed for both.
-        self._heap.push(state, priority, priority)
-
-    def pop(self) -> str:
-        return self._heap.pop().id
-
-    def __len__(self) -> int:
-        return self._heap.size

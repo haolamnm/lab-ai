@@ -5,10 +5,13 @@ team can write either. Focused on the plug-n-play distance heuristics.
 """
 
 import unittest
+from typing import get_args
 
 from route_lab.shared.graph import build_graph
 from route_lab.shared.heuristics import (
+    DEFAULT_HEURISTIC,
     HEURISTICS,
+    HeuristicName,
     euclidean_heuristic,
     haversine_heuristic,
     manhattan_heuristic,
@@ -51,10 +54,12 @@ class HeuristicKitTest(unittest.TestCase):
         ten = haversine_heuristic(self.graph, self.goal, 10.0)
         self.assertAlmostEqual(ten("A"), 10.0 * one("A"), places=6)
 
-    def test_registry_aliases_point_at_the_standard_metric(self) -> None:
-        self.assertIs(HEURISTICS["gauss"], HEURISTICS["euclidean"])
-        self.assertIs(HEURISTICS["hamilton"], HEURISTICS["manhattan"])
-        self.assertIn("haversine", HEURISTICS)
+    def test_the_registry_holds_exactly_the_named_heuristics(self) -> None:
+        # `HeuristicName` and `HEURISTICS` have to agree for the lookup in
+        # `build_problem` to be total; a name added to one only would either be
+        # unselectable or a KeyError at plan time.
+        self.assertEqual(set(HEURISTICS), set(get_args(HeuristicName)))
+        self.assertIn(DEFAULT_HEURISTIC, HEURISTICS)
 
 
 if __name__ == "__main__":

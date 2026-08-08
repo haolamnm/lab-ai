@@ -25,6 +25,21 @@ def test_equal_priorities_pop_in_insertion_order() -> None:
     assert [heap.pop().id for _ in range(3)] == ["c", "a", "b"]
 
 
+def test_a_deep_heap_pops_in_full_order() -> None:
+    # Three entries never reach a node with two children, so the sift-down never
+    # compares against a right child and half of `pop` stays unexecuted. Seven
+    # does, and every expansion count in this suite rests on that comparison
+    # picking the smaller of the two.
+    priorities = [7.0, 3.0, 9.0, 1.0, 8.0, 2.0, 5.0]
+    heap = Heap()
+    for index, priority in enumerate(priorities):
+        heap.push(f"n{index}", priority, priority)
+
+    popped = [heap.pop().priority for _ in range(len(priorities))]
+
+    assert popped == sorted(priorities)
+
+
 def test_size_tracks_pushes_and_pops() -> None:
     heap = Heap()
     assert heap.size == 0
