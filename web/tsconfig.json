@@ -12,10 +12,20 @@
     "typeRoots": ["./node_modules/@types"],
     "strict": true,
     "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    // Indexing an array or a `Record<string, T>` yields `T | undefined`. This
+    // codebase indexes both heavily — trace steps, node ids, adjacency lists —
+    // and every one of those lookups can genuinely miss. The rule is that a new
+    // error here is answered by narrowing or a real fallback, never by `!`,
+    // which would put the check back exactly where it was.
+    "noUncheckedIndexedAccess": true,
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
     "resolveJsonModule": true
   },
-  "include": ["src"]
+  // vite.config.ts is checked too. Left out, the one file that decides how
+  // everything else is built was the only file `bunx tsc --noEmit` never looked
+  // at, so the gate could pass over a broken build config.
+  "include": ["src", "vite.config.ts"]
 }

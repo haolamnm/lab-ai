@@ -2,13 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { findPlaces } from '../lib/geocode'
 import { forgetPlaces, recentPlaces, rememberPlace } from '../lib/recentPlaces'
 import type { Place } from '../lib/types'
+import type { Anchor } from '../store'
+
+/** Shortest query worth a round trip. Below this every Vietnamese place name
+ *  matches thousands of rows and none of them is the one being typed. */
+const MIN_QUERY = 3
+/** How long typing must stop before the geocoder is asked. Deliberately its own
+ *  value, not the comparison tables' settle time: this one trades a network call
+ *  against how soon suggestions appear, and retuning one must not move the other. */
+const QUERY_SETTLE_MS = 350
 
 interface Props {
   role: string
   /** Which endpoint this is, so the field can show the same glyph the map draws. */
   kind: 'start' | 'stop' | 'goal'
   placeholder: string
-  value?: { place: Place; nodeId: string | null; metres: number } | null
+  value?: Anchor | null
   autoFocus?: boolean
   onPick: (place: Place) => void
   onClear?: () => void
@@ -63,18 +72,18 @@ export function PlaceField({ role, kind, placeholder, value, autoFocus, onPick, 
   // Wait for the user to stop typing before querying, and cancel the previous query when a new one starts.
   useEffect(() => {
     const q = text.trim()
-    if (q.length < 3 || q === value?.place.name) { setResults(null); return }
+    if (q.length < MIN_QUERY || q === value?.place.name) { setResults(null); return }
     const ctrl = new AbortController()
     const timer = setTimeout(async () => {
       setBusy(true); setFailed(false)
       try {
         setResults(await findPlaces(q, ctrl.signal))
       } catch (e) {
-        if ((e as Error).name !== 'AbortError') { setResults([]); setFailed(true) }
+        if (!(e instanceof Error) || e.name !== 'AbortError') { setResults([]); setFailed(true) }
       } finally {
         setBusy(false)
       }
-    }, 350)
+    }, QUERY_SETTLE_MS)
     return () => { clearTimeout(timer); ctrl.abort() }
   }, [text, value?.place.name])
 

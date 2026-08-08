@@ -1,4 +1,4 @@
-import { edgeBetween } from './search'
+import { ALGOS, edgeBetween } from './search'
 import { costIsFlat, edgeCost, edgeMinutes, type Conditions } from './traffic'
 import type { Graph, RouteResult } from './types'
 
@@ -17,14 +17,14 @@ import type { Graph, RouteResult } from './types'
  * rather than reciting a script.
  */
 
-export interface Jam {
+interface Jam {
   name: string
   km: number
   congestion: number
   minutes: number
 }
 
-export interface Comparison {
+interface Comparison {
   algo: string
   km: number
   minutes: number
@@ -34,7 +34,7 @@ export interface Comparison {
   verdict: string
 }
 
-export interface Explanation {
+interface Explanation {
   /** The algorithm behind the cheapest route among the open panes. */
   winner: string
   headline: string
@@ -51,8 +51,10 @@ const fmt = (n: number, d = 1) => n.toFixed(d)
 /** The most congested segments on the route, grouped by road name. */
 function jamsOn(graph: Graph, path: string[], c: Conditions): Jam[] {
   const byName = new Map<string, Jam>()
-  for (let i = 0; i + 1 < path.length; i++) {
-    const e = edgeBetween(graph, path[i], path[i + 1])
+  let previous: string | null = null
+  for (const node of path) {
+    const e = previous === null ? undefined : edgeBetween(graph, previous, node)
+    previous = node
     if (!e || e.congestion < 4) continue
     const name = e.name ?? 'Unnamed segment'
     const hit = byName.get(name)
@@ -66,6 +68,30 @@ function jamsOn(graph: Graph, path: string[], c: Conditions): Jam[] {
     }
   }
   return [...byName.values()].sort((a, b) => b.congestion * b.km - a.congestion * a.km).slice(0, 3)
+}
+
+/** Route groups are named with letters, so it is obvious at a glance which rows
+ *  chose the same road. Five covers both tables: four vehicles, five cost functions. */
+const GROUP = ['A', 'B', 'C', 'D', 'E']
+
+/**
+ * Hands out one letter per distinct route, in the order the routes are first seen.
+ *
+ * Both comparison tables need exactly this and each carried its own copy, keyed
+ * off its own alphabet — which meant the same trick was tuned twice and the
+ * `seen.get(k)!` in each was asserting an invariant only the line above it knew.
+ * Returned as a closure because the numbering is per render of one table, not
+ * global: two tables must be free to both start at "A".
+ */
+export function routeLetters(): (path: string[]) => string {
+  const seen = new Map<string, number>()
+  return path => {
+    const k = path.join('>')
+    if (!k) return '—'
+    let i = seen.get(k)
+    if (i === undefined) { i = seen.size; seen.set(k, i) }
+    return GROUP[i] ?? '?'
+  }
 }
 
 /**
@@ -82,8 +108,10 @@ function jamsOn(graph: Graph, path: string[], c: Conditions): Jam[] {
 export function exposureOn(graph: Graph, path: string[]): { congestion: number; risk: number } {
   let congestion = 0
   let risk = 0
-  for (let i = 0; i + 1 < path.length; i++) {
-    const e = edgeBetween(graph, path[i], path[i + 1])
+  let previous: string | null = null
+  for (const node of path) {
+    const e = previous === null ? undefined : edgeBetween(graph, previous, node)
+    previous = node
     if (!e) continue
     congestion += e.congestion * e.km
     risk += e.risk * e.km
@@ -162,15 +190,13 @@ export function explain(
     }
   }
 
-  // Held–Karp is optimal in a different sense from UCS and A*, and that
-  // difference is the whole reason to run it: those two return the cheapest
-  // route between two points and say nothing about what order to visit stops
-  // in, while Held–Karp returns the cheapest order and leaves each leg to A*.
-  // The bare word "optimal" would let a reader assume whichever one they came
-  // in expecting, so this branch names the guarantee outright — and names what
-  // the timeline is showing, which is the chosen leg searches, not the DP.
-  let optimality = best.result.algo === 'held_karp'
-    ? `${best.algo} is exact over the visit order: it costs every ordered pair of trip points with A*, then evaluates every possible tour through them, so no closed tour over these stops is cheaper than this one. Each leg of the tour is itself an optimal A* route. The timeline replays those chosen leg searches — the bitmask DP table is not part of the result.`
+  // An algorithm whose guarantee is not the plain point-to-point one states it in
+  // its own words, carried on the algorithm table rather than tested for by key
+  // here. Held–Karp is the case that forced it: it is optimal in a different
+  // sense from UCS and A*, and that difference is the whole reason to run it.
+  const guarantee = ALGOS[best.result.algo].optimalityNote
+  let optimality = guarantee
+    ? `${best.algo} ${guarantee}`
     : m.optimal
       ? `${best.algo} guarantees optimality: every other route on this road network has a cost greater than or equal to this one.`
       : best.result.order.length > 2
@@ -211,30 +237,32 @@ export function toExportable(
   conditions: Conditions,
 ) {
   return {
-    dieuKien: conditions,
-    mangLuoi: {
-      soNut: Object.keys(graph.nodes).length,
-      soDoanDuong: graph.edges.length,
-      mucChiTiet: graph.detail,
-      nut: Object.values(graph.nodes),
-      doanDuong: graph.edges.map(e => ({
-        tu: e.from, den: e.to, km: e.km, capDuong: e.roadClass,
-        mucKetXe: e.congestion, ruiRo: e.risk, ten: e.name ?? null,
-        phut: +edgeMinutes(e, conditions).toFixed(2),
-        chiPhi: +edgeCost(e, conditions).toFixed(3),
+    conditions,
+    roadNetwork: {
+      nodeCount: Object.keys(graph.nodes).length,
+      edgeCount: graph.edges.length,
+      detail: graph.detail,
+      // The place names inside stay exactly as OpenStreetMap and the sample graph
+      // give them: `Bến Thành` is data, and translating data makes it wrong.
+      nodes: Object.values(graph.nodes),
+      edges: graph.edges.map(e => ({
+        from: e.from, to: e.to, km: e.km, roadClass: e.roadClass,
+        congestion: e.congestion, risk: e.risk, name: e.name ?? null,
+        minutes: +edgeMinutes(e, conditions).toFixed(2),
+        cost: +edgeCost(e, conditions).toFixed(3),
       })),
     },
-    ketQua: results.map(r => ({
-      thuatToan: r.algo,
-      timDuoc: r.result.found,
-      thuTuGhe: r.result.order,
-      tuyen: r.result.path,
-      soNutDaXet: r.result.metrics.expanded,
+    results: results.map(r => ({
+      algo: r.algo,
+      found: r.result.found,
+      visitOrder: r.result.order,
+      path: r.result.path,
+      expanded: r.result.metrics.expanded,
       km: r.result.metrics.km,
-      phut: r.result.metrics.minutes,
-      tongChiPhi: r.result.metrics.cost,
-      thoiGianXuLyMs: r.result.metrics.ms,
-      toiUu: r.result.metrics.optimal,
+      minutes: r.result.metrics.minutes,
+      cost: r.result.metrics.cost,
+      ms: r.result.metrics.ms,
+      optimal: r.result.metrics.optimal,
     })),
   }
 }

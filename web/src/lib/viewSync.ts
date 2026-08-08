@@ -20,7 +20,7 @@
  */
 
 /** What every pane's map agrees on: where it is centred, and how far in. */
-export interface MapView {
+interface MapView {
   lat: number
   lng: number
   zoom: number

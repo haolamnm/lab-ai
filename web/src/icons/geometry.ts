@@ -26,7 +26,7 @@ export type IconName =
   | 'panelLeft'
 
 export const ICONS: Record<IconName, Shape[]> = {
-  /* ---------- Vehicles ---------- */
+  // Vehicles
 
   // Motorbike: handlebar, body sloping down to the footrest, seat rising at the back.
   scooter: [
@@ -66,7 +66,7 @@ export const ICONS: Record<IconName, Shape[]> = {
     { t: 'circle', cx: 17.5, cy: 16.8, r: 2.4, node: true },
   ],
 
-  /* ---------- Time periods ---------- */
+  // Time periods
 
   // Peak: the sun straight overhead, eight even rays.
   peak: [
@@ -89,7 +89,7 @@ export const ICONS: Record<IconName, Shape[]> = {
     { t: 'path', d: 'M17.4 3.6l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7Z' },
   ],
 
-  /* ---------- Network detail levels ---------- */
+  // Network detail levels
   /* Four icons drawing exactly what they name: the same network, each step denser than the
      last, with the centre node shrinking as the mesh closes in around it. The ramp is the
      whole message — read side by side they say which level fetches more road, which is the
@@ -127,7 +127,7 @@ export const ICONS: Record<IconName, Shape[]> = {
     { t: 'circle', cx: 12, cy: 12, r: 1.3, node: true },
   ],
 
-  /* ---------- Interface ---------- */
+  // Interface
 
   // Folds the left-hand column away. The frame is the window and the rule inside it is the
   // column's edge, which is the same picture every desktop app draws for this — the one place

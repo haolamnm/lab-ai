@@ -33,8 +33,17 @@ export interface Vehicle {
   weakness: string
 }
 
-export const VEHICLES: Vehicle[] = [
-  {
+/**
+ * Keyed by `VehicleKey` rather than held in an array searched by key.
+ *
+ * The lookup used to be `VEHICLES.find(v => v.key === k)!`, and the assertion
+ * was the whole problem: adding a fifth vehicle to `VehicleKey` and forgetting
+ * the table produced `undefined` at runtime, several frames deep inside the cost
+ * function. A record keyed by the union is checked exhaustively, so the same
+ * omission is a compile error, and the lookup is an index with nothing to assert.
+ */
+export const VEHICLES: Record<VehicleKey, Vehicle> = {
+  bike: {
     key: 'bike', name: 'Motorbike',
     // The only vehicle type that can use alleys. Measured in central HCMC:
     // 4,345 alleys, and 37% of them are explicitly tagged `motorcar=no` or
@@ -44,21 +53,21 @@ export const VEHICLES: Vehicle[] = [
     strength: 'The only type that can use alleys, can weave through congestion, exempt from most turn restrictions',
     weakness: 'Banned from motorways, carries little, higher risk, loses to a car on an open road',
   },
-  {
+  van: {
     key: 'van', name: 'Van',
     speed: 1.0, jamSensitivity: 1.0, riskFactor: 1.0, banned: ['alley'],
     osmExcept: [],
     strength: 'Can use every street, not subject to the truck curfew',
     weakness: 'Not faster than anything under any condition, cannot enter alleys',
   },
-  {
+  car: {
     key: 'car', name: 'Car',
     speed: 1.10, jamSensitivity: 1.15, riskFactor: 0.8, banned: ['alley'],
     osmExcept: [],
     strength: 'Fastest on an open road, safe, can use motorways',
     weakness: 'Badly hurt by congestion, cannot enter alleys, subject to every turn restriction',
   },
-  {
+  truck: {
     // A light delivery truck can still use branch roads, it just can't fit
     // into alleys — so the all-day ban only covers `residential`. The real
     // constraint downtown is the truck curfew, and that's a time-based
@@ -73,8 +82,7 @@ export const VEHICLES: Vehicle[] = [
     strength: 'Carries the largest load',
     weakness: 'Banned from alleys and residential roads, subject to the truck curfew, slow, heavily penalised on risky segments',
   },
-]
-export const vehicleOf = (k: VehicleKey) => VEHICLES.find(v => v.key === k)!
+}
 
 /**
  * Four scales for comparing vehicles, all derived directly from the same
@@ -82,7 +90,7 @@ export const vehicleOf = (k: VehicleKey) => VEHICLES.find(v => v.key === k)!
  * someone adjusts one vehicle's coefficient, the scale updates automatically,
  * so the interface can never misrepresent the model.
  */
-export interface Trait { name: string; value: number; hue: string; hint: string }
+interface Trait { name: string; value: number; hue: string; hint: string }
 
 const scale = (v: number, lo: number, hi: number) =>
   Math.round(1 + 4 * Math.min(1, Math.max(0, (v - lo) / (hi - lo))))
@@ -90,11 +98,13 @@ const scale = (v: number, lo: number, hi: number) =>
 /** The bounds of a coefficient, taken from the vehicle table itself — hard-
  *  coding it risks a day where the coefficient changes but the scale doesn't,
  *  and the interface ends up misrepresenting the model. */
-const span = (pick: (v: Vehicle) => number): [number, number] =>
-  [Math.min(...VEHICLES.map(pick)), Math.max(...VEHICLES.map(pick))]
+const span = (pick: (v: Vehicle) => number): [number, number] => {
+  const all = Object.values(VEHICLES).map(pick)
+  return [Math.min(...all), Math.max(...all)]
+}
 
 export function traitsOf(key: VehicleKey): Trait[] {
-  const v = vehicleOf(key)
+  const v = VEHICLES[key]
   return [
     {
       name: 'Speed', value: scale(v.speed, ...span(x => x.speed)), hue: '#0a736f',
@@ -121,9 +131,11 @@ export function traitsOf(key: VehicleKey): Trait[] {
   ]
 }
 
-/* ------------------------------------------------------------------ */
+interface Period { key: PeriodKey; name: string; jam: number; hue: string }
 
 /**
+ * The three time periods, keyed by `PeriodKey` for the same reason `VEHICLES` is.
+ *
  * Time period acts through **congestion level**, not through base speed.
  *
  * An earlier version multiplied base speed directly by the time period, and
@@ -140,12 +152,11 @@ export function traitsOf(key: VehicleKey): Trait[] {
  * nearly vanishes, every vehicle runs at open-road speed, and at that point
  * a car is faster than a motorbike — exactly as in real life.
  */
-export const PERIODS: { key: PeriodKey; name: string; jam: number; hue: string }[] = [
-  { key: 'peak',    name: 'Peak',     jam: 1.00, hue: '#e85d5d' },
-  { key: 'offpeak', name: 'Off-peak', jam: 0.55, hue: '#c98a2e' },
-  { key: 'night',   name: 'Night',    jam: 0.18, hue: '#4f5d9e' },
-]
-export const periodOf = (k: PeriodKey) => PERIODS.find(p => p.key === k)!
+export const PERIODS: Record<PeriodKey, Period> = {
+  peak:    { key: 'peak',    name: 'Peak',     jam: 1.00, hue: '#e85d5d' },
+  offpeak: { key: 'offpeak', name: 'Off-peak', jam: 0.55, hue: '#c98a2e' },
+  night:   { key: 'night',   name: 'Night',    jam: 0.18, hue: '#4f5d9e' },
+}
 
 /** Open-road speed by road class, km/h — before subtracting congestion. */
 const CLASS_SPEED: Record<RoadClass, number> = {
@@ -220,8 +231,8 @@ export const ROAD_LABEL: Record<RoadClass, string> = {
  */
 const PERIOD_CLOCK: Record<PeriodKey, number> = {
   peak: 17 * 60 + 30,   // 17:30, evening peak
-  offpeak: 13 * 60,     // 13:00
-  night: 22 * 60,       // 22:00
+  offpeak: 13 * 60,
+  night: 22 * 60,
 }
 
 const within = (minute: number, [from, to]: [number, number]) =>
@@ -229,7 +240,7 @@ const within = (minute: number, [from, to]: [number, number]) =>
 
 /** Whether this vehicle is banned from that road class during that time period, with the reason. */
 export function banReason(edge: GraphEdge, vehicle: VehicleKey, period: PeriodKey): string | null {
-  const v = vehicleOf(vehicle)
+  const v = VEHICLES[vehicle]
   if (v.banned.includes(edge.roadClass)) return `${v.name} is banned from ${ROAD_LABEL[edge.roadClass]}s`
   if (v.curfew?.periods.includes(period) && v.curfew.classes.includes(edge.roadClass))
     return v.curfew.note
@@ -257,7 +268,7 @@ export function turnAllowed(
 ): boolean {
   if (!turns || from.wayId == null || to.wayId == null) return true
   const clock = PERIOD_CLOCK[c.period]
-  const mine = vehicleOf(c.vehicle).osmExcept
+  const mine = VEHICLES[c.vehicle].osmExcept
 
   const active = (r: TurnRule) =>
     (!r.hours.length || r.hours.some(h => within(clock, h)))
@@ -274,11 +285,11 @@ export function turnAllowed(
 
 /** Time to traverse the road segment, in minutes. */
 export function edgeMinutes(edge: GraphEdge, c: Conditions): number {
-  const v = vehicleOf(c.vehicle)
+  const v = VEHICLES[c.vehicle]
   // Congestion pulls speed down; a motorbike is affected less because it can
   // weave through, and the time period determines whether this segment is
   // actually congested right now.
-  const jam = 1 + (edge.congestion - 1) * 0.42 * v.jamSensitivity * periodOf(c.period).jam
+  const jam = 1 + (edge.congestion - 1) * 0.42 * v.jamSensitivity * PERIODS[c.period].jam
   const speed = (CLASS_SPEED[edge.roadClass] * v.speed) / jam
   return (edge.km / speed) * 60
 }
@@ -296,7 +307,7 @@ export function edgeMinutes(edge: GraphEdge, c: Conditions): number {
  * its heuristic becomes tight, and A* genuinely expands fewer nodes.
  */
 export function edgeCost(edge: GraphEdge, c: Conditions): number {
-  const w = c.weights, v = vehicleOf(c.vehicle)
+  const w = c.weights, v = VEHICLES[c.vehicle]
   return w.distance * edge.km
        + w.time * edgeMinutes(edge, c)
        + w.congestion * edge.congestion * edge.km

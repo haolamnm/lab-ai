@@ -1,4 +1,5 @@
 import { boundsOf, hash, haversine, paddedBounds, pathKm, type LatLng } from './geo'
+import { isRecord, messageOf } from './planClient'
 import { clampCongestion, clampRisk } from './traffic'
 import type { Detail, Graph, GraphEdge, GraphNode, RoadClass, TurnRule, TurnTable } from './types'
 
@@ -58,19 +59,41 @@ const BASE_RISK: Record<RoadClass, number> = {
   alley: 0.70,
 }
 
-/** One element returned by Overpass. The query asks for both ways and turn-
- *  restriction relations in a single pass, so both types come back in one array. */
-interface OsmElement {
-  type: 'way' | 'relation' | 'node'
+interface OsmPoint { lat: number; lon: number }
+
+interface OsmWay {
+  type: 'way'
   id: number
   tags?: Record<string, string>
-  geometry?: { lat: number; lon: number }[]
+  /** The road's polyline. Absent when the server answered without `out geom`. */
+  geometry?: OsmPoint[]
   /** OpenStreetMap node id, matching one-to-one with each point in `geometry`. */
   nodes?: number[]
+}
+
+interface OsmRelation {
+  type: 'relation'
+  id: number
+  tags?: Record<string, string>
   members?: { type: string; ref: number; role: string }[]
 }
-type OsmWay = OsmElement
-type OsmRelation = OsmElement
+
+interface OsmNode {
+  type: 'node'
+  id: number
+  tags?: Record<string, string>
+}
+
+/** One element returned by Overpass. The query asks for both ways and turn-
+ *  restriction relations in a single pass, so both types come back in one array.
+ *  Discriminated on `type`, so a relation's `members` and a way's `geometry` can
+ *  never be read off each other. */
+type OsmElement = OsmWay | OsmRelation | OsmNode
+
+/** A way that came back carrying a drawable polyline. Everything downstream of
+ *  the filter in `buildGraph` works on these, which is what lets the geometry be
+ *  read without a non-null assertion the compiler has no way to check. */
+type ShapedWay = OsmWay & { geometry: OsmPoint[] }
 
 const key = (lat: number, lon: number) => `${lat.toFixed(5)},${lon.toFixed(5)}`
 
@@ -78,12 +101,19 @@ const key = (lat: number, lon: number) => `${lat.toFixed(5)},${lon.toFixed(5)}`
 function parseHours(spec: string): [number, number][] {
   const out: [number, number][] = []
   for (const part of spec.split(',')) {
-    const m = part.trim().match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/)
-    if (!m) continue
-    out.push([+m[1] * 60 + +m[2], +m[3] * 60 + +m[4]])
+    const [, fromHour, fromMinute, toHour, toMinute] =
+      part.trim().match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/) ?? []
+    if (fromHour === undefined || fromMinute === undefined
+      || toHour === undefined || toMinute === undefined) continue
+    out.push([+fromHour * 60 + +fromMinute, +toHour * 60 + +toMinute])
   }
   return out
 }
+
+/** The two restriction families this app models. Written as a predicate rather
+ *  than a bare regex so the check that already ran also reaches the type: the
+ *  `only_` branch below reads the prefix again, and nothing else may. */
+const isTurnKind = (s: string): s is TurnRule['kind'] => /^(no|only)_/.test(s)
 
 /**
  * Reads turn-restriction relations into a lookup table.
@@ -104,13 +134,13 @@ function readTurns(relations: OsmRelation[]): TurnTable {
     let hours: [number, number][] = []
     if (!kind && cond) {
       // "no_left_turn @ (06:00-09:00,16:00-19:00)"
-      const m = cond.match(/^\s*([a-z_]+)\s*@\s*\((.+)\)\s*$/)
-      if (!m) continue
-      kind = m[1]
-      hours = parseHours(m[2])
+      const [, restriction, window] = cond.match(/^\s*([a-z_]+)\s*@\s*\((.+)\)\s*$/) ?? []
+      if (restriction === undefined || window === undefined) continue
+      kind = restriction
+      hours = parseHours(window)
       if (!hours.length) continue
     }
-    if (!kind || !/^(no|only)_/.test(kind)) continue
+    if (!kind || !isTurnKind(kind)) continue
 
     const from = rel.members?.find(m => m.role === 'from' && m.type === 'way')
     const to = rel.members?.find(m => m.role === 'to' && m.type === 'way')
@@ -147,8 +177,15 @@ function readTurns(relations: OsmRelation[]): TurnTable {
  * where a flyover and the road beneath it happen to share coordinates.
  * Using node ids makes that whole class of error disappear at no extra cost.
  */
-const pointId = (w: OsmWay, i: number): string =>
-  w.nodes?.[i] != null ? `n${w.nodes[i]}` : key(w.geometry![i].lat, w.geometry![i].lon)
+const pointId = (w: ShapedWay, i: number): string => {
+  const nodeId = w.nodes?.[i]
+  if (nodeId != null) return `n${nodeId}`
+  const point = w.geometry[i]
+  // A point past the end of the polyline cannot exist — every caller walks
+  // `geometry` itself — but it must still name something, and a coordinate key
+  // that no other point can match keeps two ways from being joined by accident.
+  return point ? key(point.lat, point.lon) : `${w.id}#${i}`
+}
 
 export class GraphBuildError extends Error {
   constructor(
@@ -188,7 +225,11 @@ export function corridorRadius(points: LatLng[], detail: Detail): number {
 
 function routeSpan(points: LatLng[]): number {
   let km = 0
-  for (let i = 0; i + 1 < points.length; i++) km += haversine(points[i], points[i + 1])
+  let previous: LatLng | null = null
+  for (const point of points) {
+    if (previous) km += haversine(previous, point)
+    previous = point
+  }
   return km
 }
 
@@ -257,25 +298,34 @@ async function fetchElements(query: string, signal?: AbortSignal): Promise<OsmEl
         continue
       }
       if (!res.ok) throw new GraphBuildError(`OpenStreetMap returned status ${res.status}. Wait a few minutes and try again.`)
-      const data = await res.json()
+      // The largest boundary in the app, so the answer is narrowed before it is
+      // trusted rather than declared to be `OsmElement[]` and hoped for. Only the
+      // envelope is checked; each element's own fields are guarded where they are
+      // read, since Overpass returns geometry-less ways as a matter of course.
+      const data: unknown = await res.json()
+      if (!isRecord(data)) {
+        last = new GraphBuildError('OpenStreetMap returned something that is not a query result.')
+        continue
+      }
+      const elements = Array.isArray(data.elements) ? (data.elements as OsmElement[]) : []
       // Overpass returns 200 with a `remark` when the query died partway
       // through on the server side (out of memory, timed out). Without
       // catching that here, an empty `elements` would be misread as "this
       // area has no roads", telling the user to change the detail level
       // when all they actually need is to click again.
-      if (!data.elements?.length && data.remark) {
-        last = new GraphBuildError(`OpenStreetMap reported an error mid-query: ${data.remark}`)
+      if (!elements.length && data.remark) {
+        last = new GraphBuildError(`OpenStreetMap reported an error mid-query: ${String(data.remark)}`)
         continue
       }
-      return data.elements || []
+      return elements
     } catch (e) {
       if (e instanceof GraphBuildError) throw e
-      const name = (e as Error).name
+      const name = e instanceof Error ? e.name : ''
       if (name === 'TimeoutError')
         throw new GraphBuildError('Loading the network took longer than 75 seconds and was stopped. Lower the detail level or pick two points closer together.')
       if (name === 'AbortError') throw e
       // A flaky connection is also worth retrying.
-      last = new GraphBuildError(`Could not reach OpenStreetMap: ${(e as Error).message}`)
+      last = new GraphBuildError(`Could not reach OpenStreetMap: ${messageOf(e)}`)
     }
   }
   throw last ?? new GraphBuildError('Could not load the road network.')
@@ -338,18 +388,22 @@ ${alleyClause}
 out geom;`
 
   const elements = await fetchElements(query, signal)
-  const ways = elements.filter(e => e.type === 'way' && (e.geometry?.length ?? 0) > 1)
-  const turns = readTurns(elements.filter(e => e.type === 'relation'))
+  // The runtime check was always here; written as a type predicate it also tells
+  // the type system, which is what retires the `w.geometry!` at every use below.
+  const ways = elements.filter((e): e is ShapedWay =>
+    e.type === 'way' && (e.geometry?.length ?? 0) > 1)
+  const turns = readTurns(elements.filter((e): e is OsmRelation => e.type === 'relation'))
   if (!ways.length)
     throw new GraphBuildError('This area has no roads at the selected detail level. Try increasing the detail level.')
 
   // A point shared by multiple ways is an intersection.
   const waysAtPoint = new Map<string, Set<number>>()
   for (const w of ways)
-    for (let i = 0; i < w.geometry!.length; i++) {
+    for (let i = 0; i < w.geometry.length; i++) {
       const k = pointId(w, i)
-      if (!waysAtPoint.has(k)) waysAtPoint.set(k, new Set())
-      waysAtPoint.get(k)!.add(w.id)
+      const here = waysAtPoint.get(k)
+      if (here) here.add(w.id)
+      else waysAtPoint.set(k, new Set([w.id]))
     }
 
   const nodes: Record<string, GraphNode> = {}
@@ -364,7 +418,7 @@ out geom;`
     const cls: RoadClass = raw === 'service'
       ? (tags.motorcar === 'yes' ? 'residential' : 'alley')
       : ((ALIAS[raw] ?? raw) as RoadClass)
-    const g = w.geometry!
+    const g = w.geometry
 
     // One-way. Three sources: the oneway tag, roundabouts, and
     // OpenStreetMap's implicit convention that a motorway defaults to
@@ -375,7 +429,7 @@ out geom;`
     // costs only one line.
     const reversed = tags.oneway === '-1' || tags.oneway === 'reverse'
     const oneway = reversed
-      || ['yes', 'true', '1'].includes(tags.oneway)
+      || ['yes', 'true', '1'].includes(tags.oneway ?? '')
       || tags.junction === 'roundabout' || tags.junction === 'circular'
       || (cls === 'motorway' && tags.oneway !== 'no')
 
@@ -390,7 +444,7 @@ out geom;`
       const bk = pointId(w, i)
       const shape = g.slice(anchorIdx, i + 1).map(p => [p.lat, p.lon] as [number, number])
       anchorIdx = i
-      if (a === bk) continue
+      if (a === bk || !head || !tail) continue
 
       const km = pathKm(shape)
       if (km < 0.001) continue
@@ -417,7 +471,7 @@ out geom;`
 
   const adj: Record<string, GraphEdge[]> = {}
   for (const id of Object.keys(nodes)) adj[id] = []
-  for (const e of edges) adj[e.from].push(e)
+  for (const e of edges) adj[e.from]?.push(e)
 
   const kept = bestComponent(nodes, adj, points)
   if (kept.size < 8)
@@ -430,11 +484,11 @@ out geom;`
       + `cluster is still ${worst.toFixed(0)} km from one of the points.`, true)
 
   const fNodes: Record<string, GraphNode> = {}
-  kept.forEach(id => (fNodes[id] = nodes[id]))
+  kept.forEach(id => { const node = nodes[id]; if (node) fNodes[id] = node })
   const fEdges = edges.filter(e => kept.has(e.from) && kept.has(e.to))
   const fAdj: Record<string, GraphEdge[]> = {}
   kept.forEach(id => (fAdj[id] = []))
-  for (const e of fEdges) fAdj[e.from].push(e)
+  for (const e of fEdges) fAdj[e.from]?.push(e)
 
   return {
     nodes: fNodes, edges: fEdges, adj: fAdj, detail, turns,
@@ -453,7 +507,12 @@ out geom;`
 function worstReach(points: LatLng[], ids: Iterable<string>, nodes: Record<string, GraphNode>): number {
   return Math.max(...points.map(p => {
     let best = Infinity
-    for (const id of ids) { const d = haversine(p, nodes[id]); if (d < best) best = d }
+    for (const id of ids) {
+      const node = nodes[id]
+      if (!node) continue
+      const d = haversine(p, node)
+      if (d < best) best = d
+    }
     return best
   }))
 }
@@ -497,10 +556,12 @@ function stronglyConnected(
     done.add(root)
     while (stack.length) {
       const top = stack[stack.length - 1]
+      if (!top) break
       const out = adj[top.id] ?? []
-      if (top.at < out.length) {
-        const next = out[top.at++].to
-        if (!done.has(next)) { done.add(next); stack.push({ id: next, at: 0 }) }
+      const edge = out[top.at]
+      if (edge) {
+        top.at++
+        if (!done.has(edge.to)) { done.add(edge.to); stack.push({ id: edge.to, at: 0 }) }
       } else {
         order.push(top.id)
         stack.pop()
@@ -513,13 +574,16 @@ function stronglyConnected(
   const out: Set<string>[] = []
   for (let i = order.length - 1; i >= 0; i--) {
     const root = order[i]
-    if (seen.has(root)) continue
+    if (root === undefined || seen.has(root)) continue
     const comp = new Set([root])
     const queue = [root]
     seen.add(root)
-    for (let head = 0; head < queue.length; head++)
-      for (const back of rev[queue[head]] ?? [])
+    for (let head = 0; head < queue.length; head++) {
+      const current = queue[head]
+      if (current === undefined) continue
+      for (const back of rev[current] ?? [])
         if (!seen.has(back)) { seen.add(back); comp.add(back); queue.push(back) }
+    }
     out.push(comp)
   }
   return out
@@ -541,14 +605,14 @@ function bestComponent(
   adj: Record<string, GraphEdge[]>,
   points: LatLng[],
 ): Set<string> {
-  const components = stronglyConnected(nodes, adj)
-  if (!components.length) return new Set()
+  const [first, ...rest] = stronglyConnected(nodes, adj)
+  if (!first) return new Set()
 
   // Every point in the trip must be reachable; use the worst-case distance as the score.
   const reach = (comp: Set<string>) => worstReach(points, comp, nodes)
 
-  let winner = components[0], score = reach(winner)
-  for (const comp of components.slice(1)) {
+  let winner = first, score = reach(winner)
+  for (const comp of rest) {
     const s = reach(comp)
     // Under 200m difference counts as a tie, in which case prefer the denser cluster.
     if (s < score - 0.2 || (Math.abs(s - score) <= 0.2 && comp.size > winner.size)) {

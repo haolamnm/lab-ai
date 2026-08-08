@@ -39,8 +39,14 @@
   --w-congestion: #e8760a;
   --w-risk: #d4342c;
 
-  /* Map data colours */
+  /* Map data colours. The two congestion-ramp ends and the expanded blue are
+     also spelled in MapPane, which paints them onto a Leaflet canvas rather
+     than through CSS; these exist so the legend can draw the same colours as
+     the map without an inline style per swatch. */
   --queued: #9db4f0;
+  --jam-clear: #1f9d55;
+  --jam-heavy: #d4342c;
+  --opened: #3b5bdb;
 
   /* Trip endpoints. Deliberately outside the congestion ramp (green through
      red) and away from the frontier blue, so a pin can never be misread as a
@@ -121,6 +127,9 @@ button { cursor: pointer; }
 .swatch { width: 8px; height: 8px; border-radius: 50%; }
 .swatch.hollow { background: var(--paper); box-shadow: inset 0 0 0 2px var(--queued); }
 .swatch.ink { background: var(--ink); }
+.swatch.jam-clear { background: var(--jam-clear); }
+.swatch.jam-heavy { background: var(--jam-heavy); }
+.swatch.opened { background: var(--opened); }
 /* Matches ROUTE/ROUTE_EDGE in MapPane and PATH in TreeView. The ring is what
    tells it apart from the congestion ramp's orange, which is the one other warm
    thing on the pane. */
@@ -158,10 +167,21 @@ button { cursor: pointer; }
 .field-row:last-child { margin-bottom: 0; }
 .field-row > label { color: var(--ink-soft); }
 
-.note { color: var(--mute); font-size: 11.5px; line-height: 1.5; }
+/* One gap above every note, everywhere. These used to be ~16 inline
+   `marginTop` values across four components, in three arbitrarily different
+   sizes, for the same kind of element. */
+.note { margin: 8px 0 0; color: var(--mute); font-size: 11.5px; line-height: 1.5; }
 .note strong { color: var(--ink); font-weight: 600; }
 .note.warn { color: var(--w-risk); }
 .note.lift { color: var(--ink-soft); border-left: 2px solid var(--rule); padding-left: 8px; }
+
+/* The vertical rhythm inside a sidebar block. This used to be three empty
+   spacer divs carrying an inline height, which put layout in the markup and
+   gave one gap two different sizes depending on which block you were in. */
+.segment + .segment,
+.segment + .button { margin-top: 10px; }
+.link-button + .place,
+.place + .place { margin-top: 8px; }
 
 /* ---------- Place picker ---------- */
 .place { position: relative; margin-bottom: 8px; }
@@ -345,7 +365,7 @@ button { cursor: pointer; }
 
 /* ---------- Sidebar footer ---------- */
 .sidebar-foot { flex: none; padding: 14px 18px; border-top: 1px solid var(--rule); background: var(--paper); }
-.sidebar-foot .note { margin-top: 8px; text-align: center; }
+.sidebar-foot .note { text-align: center; }
 
 /* ---------- Grid area ---------- */
 .stage { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -378,7 +398,6 @@ button { cursor: pointer; }
   animation: rise .26s var(--ease);
 }
 .pane:hover { box-shadow: 0 3px 14px rgba(35, 32, 27, .09); }
-.pane[data-dragging='true'] { opacity: .35; }
 .pane[data-over='true'] { border-color: var(--ink); }
 .pane-head {
   flex: none; display: flex; align-items: center; gap: 9px;
@@ -449,8 +468,7 @@ button { cursor: pointer; }
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: var(--paper); color: var(--mute); font-size: 12px; text-align: center; padding: 20px;
 }
-/* The schematic drops the map background entirely: just the road network on paper. */
-/* The three views sit side by side, the active one filled solid — the same visual language as
+/* The two views sit side by side, the active one filled solid — the same visual language as
    the vehicle and time-period pickers in the left column. */
 .pane-tabs {
   display: flex; flex: none; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden;

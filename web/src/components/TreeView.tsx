@@ -136,13 +136,20 @@ export function TreeView({ result, step, graph, nameOf }: Props) {
   const onPath = useMemo(() => {
     if (!result) return new Set<number>()
     const index = new Map(result.nodeIds.map((id, i) => [id, i]))
-    return new Set(result.path.map(id => index.get(id)!).filter(i => i !== undefined))
+    // No `!` on the lookup: asserting it typed the array `number[]`, which left the
+    // filter that exists precisely to drop the missing case invisible to the compiler.
+    return new Set(result.path
+      .map(id => index.get(id))
+      .filter((i): i is number => i !== undefined))
   }, [result])
 
   /** The letter this node carries on the map, when the graph has letters at all. */
   const letterOf = useMemo(() => {
     if (!result || !graph) return () => undefined as string | undefined
-    return (idx: number) => graph.nodes[result.nodeIds[idx]]?.label
+    return (idx: number) => {
+      const id = result.nodeIds[idx]
+      return id === undefined ? undefined : graph.nodes[id]?.label
+    }
   }, [result, graph])
 
   /** Looks a node up by index, the one place that walks `tree.at` to do it. */
@@ -242,7 +249,9 @@ export function TreeView({ result, step, graph, nameOf }: Props) {
     let lo = 0, hi = byOrder.length
     while (lo < hi) {
       const mid = (lo + hi) >> 1
-      if (byOrder[mid].order < shown) lo = mid + 1
+      // A slot past the end cannot be reached — `hi` starts at the length — but
+      // treating it as already revealed keeps the search terminating either way.
+      if ((byOrder[mid]?.order ?? shown) < shown) lo = mid + 1
       else hi = mid
     }
     return byOrder.slice(0, lo)
@@ -386,6 +395,12 @@ export function TreeView({ result, step, graph, nameOf }: Props) {
     if (node && node.order < shown && !called.some(c => c.idx === node.idx)) called.push(node)
   }
 
+  /** The intersection name for a trace index, when the index names a real node. */
+  const nameOfIndex = (idx: number) => {
+    const id = result.nodeIds[idx]
+    return id === undefined ? undefined : nameOf(id)
+  }
+
   const zoomBy = (factor: number) =>
     setCam(c => zoomAround(c, factor, { x: frame.x + frame.w / 2, y: frame.y + frame.h / 2 }))
 
@@ -427,7 +442,7 @@ export function TreeView({ result, step, graph, nameOf }: Props) {
               y={t.y}
               px={px}
               letter={letterOf(t.idx)}
-              name={result.nodeIds[t.idx] ? nameOf(result.nodeIds[t.idx]) : undefined}
+              name={nameOfIndex(t.idx)}
               lead={t.idx === current?.idx}
               // Hang it off whichever side has room. A node near the right edge
               // would otherwise put its numbers outside the pane, and the one

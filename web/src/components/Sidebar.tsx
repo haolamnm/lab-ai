@@ -5,7 +5,7 @@ import { Icon, VEHICLE_ICON, type IconName } from '../icons'
 import { useStore } from '../store'
 import { areaProblem, DETAIL_LABEL } from '../lib/overpass'
 import { SAMPLE_CASES } from '../lib/sampleCases'
-import { costIsFlat, CRITERIA, PERIODS, traitsOf, VEHICLES, vehicleOf } from '../lib/traffic'
+import { costIsFlat, CRITERIA, PERIODS, traitsOf, VEHICLES } from '../lib/traffic'
 import type { CriterionKey, Detail, PeriodKey, VehicleKey, Weights } from '../lib/types'
 import { HeldKarpNotice } from './HeldKarpNotice'
 import { PlaceField } from './PlaceField'
@@ -33,7 +33,7 @@ export function Sidebar() {
   const s = useStore(useShallow(st => ({
     graph: st.graph, start: st.start, goal: st.goal, stops: st.stops,
     detail: st.detail, building: st.building, buildError: st.buildError,
-    buildNote: st.buildNote, sample: st.sample, sampleCase: st.sampleCase, panes: st.panes,
+    buildNote: st.buildNote, sample: st.sample, sampleCase: st.sampleCase,
     running: st.running, runError: st.runError,
     period: st.period, vehicle: st.vehicle, criterion: st.criterion,
     weights: st.weights, optimiseOrder: st.optimiseOrder,
@@ -43,15 +43,21 @@ export function Sidebar() {
     setCriterion: st.setCriterion, setWeight: st.setWeight,
     setOptimiseOrder: st.setOptimiseOrder, run: st.run,
   })))
+  // Deliberately not part of the object above. `panes` is rewritten once per pane
+  // per result as a run lands, and including it re-rendered every section of the
+  // sidebar each time — while the count is all this component ever reads from it.
+  const paneCount = useStore(st => st.panes.length)
   const [adding, setAdding] = useState(false)
   const [cases, setCases] = useState(false)
-  const vehicle = vehicleOf(s.vehicle)
-  const ready = !!s.start && !!s.goal
+  const vehicle = VEHICLES[s.vehicle]
+  const { start, goal } = s
   const nodeCount = s.graph ? Object.keys(s.graph.nodes).length : 0
 
-  // Warn about an oversized area as soon as both points are picked — don't wait for the build click.
-  const oversize = ready
-    ? areaProblem([s.start!.place, ...s.stops.map(x => x.place), s.goal!.place], s.detail)
+  // Warn about an oversized area as soon as both points are picked — don't wait for
+  // the build click. Destructured above because narrowing through `s.start` does not
+  // survive into a mutable object property, so a `ready` boolean could not carry it.
+  const oversize = start && goal
+    ? areaProblem([start.place, ...s.stops.map(x => x.place), goal.place], s.detail)
     : null
 
   return (
@@ -65,7 +71,7 @@ export function Sidebar() {
             onPick={p => s.setPlace('start', p)} onClear={() => s.setPlace('start', null)}
           />
           {s.stops.map((stop, i) => (
-            <div className="stop-row" key={`${stop.place.lat}-${i}`}>
+            <div className="stop-row" key={`${stop.place.lat},${stop.place.lng}`}>
               <span>{stop.place.name}</span>
               <button onClick={() => s.removeStop(i)} aria-label="Remove this stop">Remove</button>
             </div>
@@ -79,14 +85,13 @@ export function Sidebar() {
           ) : (
             <button className="link-button" onClick={() => setAdding(true)}>Add a stop</button>
           )}
-          <div style={{ height: 8 }} />
           <PlaceField
             role="Dropoff" kind="goal" placeholder="Dropoff location" value={s.goal}
             onPick={p => s.setPlace('goal', p)} onClear={() => s.setPlace('goal', null)}
           />
           {s.stops.length > 0 && (
-            <label className="field-row" style={{ marginTop: 10 }}>
-              <span>Optimize visit order</span>
+            <label className="field-row">
+              <span>Optimise visit order</span>
               <input
                 type="checkbox" checked={s.optimiseOrder}
                 onChange={e => s.setOptimiseOrder(e.target.checked)}
@@ -113,10 +118,9 @@ export function Sidebar() {
               icon: <Icon name={DETAIL_ICON[d]} size={17} solid={s.detail === d} />,
             }))}
           />
-          <div style={{ height: 10 }} />
           <button
             className={`button wide${s.building ? ' busy' : ''}`}
-            disabled={!ready || s.building || !!oversize}
+            disabled={!start || !goal || s.building || !!oversize}
             onClick={() => s.build()}
           >
             {s.building ? 'Loading roads from OpenStreetMap…' : s.graph ? 'Rebuild network' : 'Build network'}
@@ -161,7 +165,7 @@ export function Sidebar() {
               once Build network has replaced it with OpenStreetMap data. */}
           {cases && s.sample && (
             <div className="cases" id="sample-cases" role="group" aria-label="Sample scenario">
-              {SAMPLE_CASES.map(c => (
+              {Object.values(SAMPLE_CASES).map(c => (
                 <button
                   key={c.key}
                   className="case"
@@ -175,19 +179,19 @@ export function Sidebar() {
             </div>
           )}
           {s.detail === 'alleys' && (
-            <p className="note lift" style={{ marginTop: 8 }}>
+            <p className="note lift">
               Also loads the alley network — passable only by motorbike. The graph gets about
               three times heavier, so this only works for trips under ~3 km.
             </p>
           )}
-          {!ready && <p className="note" style={{ marginTop: 8 }}>Pick a pickup and dropoff first.</p>}
-          {oversize && <p className="note warn" style={{ marginTop: 8 }}>{oversize}</p>}
-          {s.buildError && !oversize && <p className="note warn" style={{ marginTop: 8 }}>{s.buildError}</p>}
+          {(!start || !goal) && <p className="note">Pick a pickup and dropoff first.</p>}
+          {oversize && <p className="note warn">{oversize}</p>}
+          {s.buildError && !oversize && <p className="note warn">{s.buildError}</p>}
           {s.buildNote && !s.building && (
-            <p className="note lift" style={{ marginTop: 8 }}>{s.buildNote}</p>
+            <p className="note lift">{s.buildNote}</p>
           )}
           {s.graph && !s.building && !oversize && (
-            <p className="note" style={{ marginTop: 8 }}>
+            <p className="note">
               <span className="num">{nodeCount}</span> intersections,{' '}
               <span className="num">{s.graph.edges.length}</span> road segments.
               {nodeCount > 900 && ' Large network, so the animation will be long and run slowly. Lower the detail level if you need to record a video.'}
@@ -201,18 +205,17 @@ export function Sidebar() {
             label="Time period"
             value={s.period}
             onChange={(p: PeriodKey) => s.setPeriod(p)}
-            options={PERIODS.map(p => ({
+            options={Object.values(PERIODS).map(p => ({
               value: p.key, label: p.name, hue: p.hue,
               icon: <Icon name={PERIOD_ICON[p.key]} size={17} solid={s.period === p.key} />,
             }))}
           />
-          <div style={{ height: 10 }} />
           <Segment
             label="Delivery vehicle"
             value={s.vehicle}
             stacked
             onChange={(v: VehicleKey) => s.setVehicle(v)}
-            options={VEHICLES.map(v => ({
+            options={Object.values(VEHICLES).map(v => ({
               value: v.key,
               label: v.name,
               title: `${v.name} — ${v.strength}`,
@@ -233,13 +236,13 @@ export function Sidebar() {
               </div>
             ))}
           </dl>
-          <p className="note" style={{ marginTop: 10 }}>{vehicle.weakness}.</p>
+          <p className="note">{vehicle.weakness}.</p>
         </section>
 
         <section className="block">
           <h2>Criterion</h2>
           <Segment
-            label="Optimization criterion"
+            label="Optimisation criterion"
             value={s.criterion}
             columns={2}
             onChange={(c: CriterionKey) => s.setCriterion(c)}
@@ -247,7 +250,7 @@ export function Sidebar() {
               .map(c => ({ value: c as CriterionKey, label: CRITERIA[c].name }))}
           />
           {s.criterion === 'custom' && (
-            <p className="note" style={{ marginTop: 10 }}>Using the custom weights below.</p>
+            <p className="note">Using the custom weights below.</p>
           )}
         </section>
 
@@ -270,7 +273,7 @@ export function Sidebar() {
           {costIsFlat(s.weights) && (
             <p className="note warn">
               All four are at 0, so every route costs 0 and there's nothing left for any
-              algorithm to optimize. Drag at least one slider above 0.
+              algorithm to optimise. Drag at least one slider above 0.
             </p>
           )}
         </section>
@@ -279,18 +282,18 @@ export function Sidebar() {
       <div className="sidebar-foot">
         <button
           className={`button solid wide${s.running ? ' busy' : ''}`}
-          disabled={s.running || !s.graph || !s.panes.length || !s.start?.nodeId || !s.goal?.nodeId}
+          disabled={s.running || !s.graph || !paneCount || !s.start?.nodeId || !s.goal?.nodeId}
           onClick={() => s.run()}
         >
           {s.running ? 'Planning on the backend…' : 'Run algorithms'}
         </button>
-        {s.runError && <p className="note warn" style={{ marginTop: 8 }}>{s.runError}</p>}
+        {s.runError && <p className="note warn">{s.runError}</p>}
         <p className="note">
           {!s.graph
             ? 'Build the network before running.'
-            : !s.panes.length
+            : !paneCount
               ? 'Add at least one pane.'
-              : `${s.panes.length} panes comparing.`}
+              : `${paneCount} panes comparing.`}
         </p>
       </div>
     </aside>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { algoOf } from '../lib/search'
+import { ALGOS } from '../lib/search'
 import { tripNames } from '../lib/tripNames'
 import type { Metrics } from '../lib/types'
 import { useStore } from '../store'
@@ -65,7 +65,7 @@ export function CompareAlgos() {
     for (let i = 0; i < longest; i++) {
       // A row that has already ended counts as differing: a shorter tour visits
       // a different set of places, which is exactly a disagreement.
-      const first = orders[0][i]
+      const first = orders[0]?.[i]
       if (orders.some(o => o[i] !== first)) out.add(i)
     }
     return out
@@ -135,7 +135,7 @@ export function CompareAlgos() {
             </thead>
             <tbody>
               {rows.map(({ key, algo, result }) => {
-                const info = algoOf(algo)
+                const info = ALGOS[algo]
                 const m = result.metrics
                 const done = step >= result.trace.length
                 return (
@@ -151,6 +151,10 @@ export function CompareAlgos() {
                         {showOrder && (
                           <td className="compare-order">
                             {result.order.length > 2
+                              // Keyed on position because position *is* the identity
+                              // here: a visit order is a sequence, the same stop can
+                              // legitimately appear twice in a closed tour, and the
+                              // column marking disagreement is indexed by position too.
                               ? result.order.map((id, i) => (
                                 <span key={`${id}-${i}`}>
                                   {i > 0 && ' → '}
@@ -185,7 +189,7 @@ export function CompareAlgos() {
               })}
             </tbody>
           </table>
-          <p className="note" style={{ marginTop: 9 }}>
+          <p className="note">
             Every row is the same trip under the same cost function, so the columns are
             directly comparable; the best value in each is marked. In <b>Visit order</b>,
             a stop is <span className="order-differs">red</span> where the algorithms did

@@ -1,15 +1,6 @@
 import { backendEnabled } from '../lib/planClient'
+import { ALGOS, backendOnlyNote } from '../lib/search'
 import { useStore } from '../store'
-
-/**
- * Matches `MAX_HELD_KARP_STOPS` in `server/src/route_lab/planner.py`.
- *
- * The DP is O(n² · 2ⁿ) in the number of stops, so this is a ceiling the
- * algorithm imposes rather than a policy the UI is free to raise. It is stated
- * here only so the user hears about it before pressing Run — the backend is
- * still the one that enforces it.
- */
-const MAX_HELD_KARP_STOPS = 12
 
 /**
  * The trip rules that apply only when a pane is running Held–Karp.
@@ -40,16 +31,18 @@ export function HeldKarpNotice() {
   // compares, and two pins a few metres apart can still snap to one node.
   const openTour = !!start?.nodeId && !!goal?.nodeId && start.nodeId !== goal.nodeId
 
+  const maxStops = ALGOS.held_karp.maxStops
+
   return (
     <>
-      <p className="note lift" style={{ marginTop: 10 }}>
+      <p className="note lift">
         <strong>Held–Karp</strong> plans a closed tour: it always returns to the pickup
         warehouse, and it always chooses the cheapest visit order — whatever the
         setting above says.
       </p>
 
       {openTour && (
-        <p className="note warn" style={{ marginTop: 8 }}>
+        <p className="note warn">
           The dropoff is a different intersection from the pickup, so there is no closed
           tour to plan.{' '}
           <button className="link-button" onClick={() => setPlace('goal', start.place)}>
@@ -58,19 +51,14 @@ export function HeldKarpNotice() {
         </p>
       )}
 
-      {stops.length > MAX_HELD_KARP_STOPS && (
-        <p className="note warn" style={{ marginTop: 8 }}>
-          Held–Karp supports up to <span className="num">{MAX_HELD_KARP_STOPS}</span> stops;
+      {maxStops !== undefined && stops.length > maxStops && (
+        <p className="note warn">
+          Held–Karp supports up to <span className="num">{maxStops}</span> stops;
           this trip has <span className="num">{stops.length}</span>.
         </p>
       )}
 
-      {!backendEnabled && (
-        <p className="note warn" style={{ marginTop: 8 }}>
-          Held–Karp runs only on the Python backend, and none is configured. Set{' '}
-          <code>VITE_API_URL</code>, start the server in <code>server/</code>, then reload.
-        </p>
-      )}
+      {!backendEnabled && <p className="note warn">{backendOnlyNote('held_karp')}</p>}
     </>
   )
 }

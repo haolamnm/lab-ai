@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 
-export interface SegmentOption<T> {
+interface SegmentOption<T> {
   value: T
   label: string
   icon?: ReactNode
