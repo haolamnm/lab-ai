@@ -83,10 +83,11 @@ Run these from the `web/` directory.
 | `bun run build` | Typecheck (`tsc -b`) then produce a production bundle in `web/dist/`. |
 | `bun run preview` | Serve the built `dist/` locally, to check the production build. |
 | `bunx tsc --noEmit` | Typecheck only, without building. Fast. |
+| `bun test` | Run the frontend tests. No runner dependency, no DOM, well under a second. |
 
-`web/` has **no test suite**. Verification there is `bunx tsc --noEmit` plus running the app. The
-backend does have one — `cd server && make check` runs lint, both type checkers, import layering,
-and `pytest`.
+Both halves have tests. `bun test` covers the store and the planner; `cd server && make check` runs
+lint, both type checkers, import layering, and `pytest`. `make check` at the repository root runs
+everything in the order CI does.
 
 ### First run, step by step
 
@@ -431,8 +432,8 @@ Two rules worth repeating here:
 - **Comment the decision, not the mechanics.** The code already says what it does. A comment earns
   its place by recording why this approach beat the obvious one, or what breaks if someone
   "simplifies" it.
-- **Both `bunx tsc --noEmit` and `bun run build` must pass before a commit**, and `make check` too
-  if you touched `server/`. CI runs all of it.
+- **`bunx tsc --noEmit`, `bun test` and `bun run build` must all pass before a commit**, and
+  `make check` too if you touched `server/`. `make check` at the root runs the lot, as CI does.
 
 ---
 
@@ -440,17 +441,14 @@ Two rules worth repeating here:
 
 **Known limitations:**
 
-- **The JSON export in `lib/explain.ts` uses Vietnamese object keys** (`dieuKien`, `mangLuoi`, …),
-  which contradicts the language policy above. Left alone deliberately, because changing it changes
-  the submission file format.
 - **Nearest-neighbour stop ordering is a heuristic**, so a trip ordered that way is not claimed to
   be optimal even when each leg is. Held–Karp does solve the visit order exactly — it is the
   travelling-salesman problem, and `server/src/route_lab/algorithms/held_karp.py` solves it by
   bitmask dynamic programming — but it is exponential in the number of stops, so it is capped, and
   it exists only in the Python backend.
-- **`web/` has no automated tests.** Verification there is `bunx tsc --noEmit`, `bun run build`, and
-  running the app. `server/` is covered by `pytest`; `cd server && make check` is its gate, and CI
-  runs both.
+- **`web/`'s tests cover logic, not rendering.** `bun test` drives the store and the planner
+  headless; nothing checks that a component draws what it should. A render regression still needs a
+  human to load the app, so that remains part of reviewing any change under `components/`.
 
 **Recently fixed, worth knowing about if you read older notes:**
 

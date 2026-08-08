@@ -18,14 +18,15 @@ or user action that triggered it.
 ## How it was verified
 
 - [ ] `bunx tsc --noEmit` passes
+- [ ] `bun test` passes
 - [ ] `bun run build` passes
 - [ ] `server/`: `make check` passes — or n/a, if this PR does not touch `server/`
 - [ ] Exercised in the running app — describe what you actually clicked:
 
 <!--
-`web/` has no test suite, so the last line is the evidence for a frontend
-change. "Loaded the sample graph, added three panes, ran, paused at step 40" is
-useful. "Works" is not.
+`web/`'s tests cover the store and the planner, not rendering, so the last line
+is still the evidence for anything that draws. "Loaded the sample graph, added
+three panes, ran, paused at step 40" is useful. "Works" is not.
 -->
 
 ## Left undone
