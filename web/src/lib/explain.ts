@@ -44,6 +44,8 @@ interface Explanation {
   rivals: Comparison[]
   optimality: string
   order?: string
+  /** Street names along the chosen path, with consecutive duplicates collapsed. */
+  streets: string[]
 }
 
 const fmt = (n: number, d = 1) => n.toFixed(d)
@@ -68,6 +70,18 @@ function jamsOn(graph: Graph, path: string[], c: Conditions): Jam[] {
     }
   }
   return [...byName.values()].sort((a, b) => b.congestion * b.km - a.congestion * a.km).slice(0, 3)
+}
+
+/** Convert the node-by-node result path into a readable sequence of roads. */
+function streetsOn(graph: Graph, path: string[]): string[] {
+  const streets: string[] = []
+  for (let i = 1; i < path.length; i += 1) {
+    const edge = edgeBetween(graph, path[i - 1]!, path[i]!)
+    const name = edge?.name?.trim()
+    if (!name) continue
+    if (streets.at(-1) !== name) streets.push(name)
+  }
+  return streets
 }
 
 /** Route groups are named with letters, so it is obvious at a glance which rows
@@ -227,6 +241,7 @@ export function explain(
     rivals,
     optimality,
     order,
+    streets: streetsOn(graph, best.result.path),
   }
 }
 

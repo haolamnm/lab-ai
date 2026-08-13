@@ -111,7 +111,7 @@ server/
     │   ├── geo.py       haversine, a min-heap, the frontier kit, the heuristic kit, the
     │   ├── heap.py      binary min-heap shared by priority-based algorithms.
     │   ├── frontier.py  Stack / Queue — the two order-only frontiers.
-    │   ├── heuristics.py zero / haversine / euclidean / manhattan, selectable by name.
+    │   ├── heuristics.py scaled Haversine heuristic, selected through a registry.
     │   ├── pairwise.py  directed cost matrix over every pair of trip points, for the ordering
     │   │                algorithms; each pair is one guided search.
     │   ├── rounding.py  JavaScript-compatible rounding, so a metric matches the search.ts number.
@@ -224,25 +224,12 @@ class SearchProblem:
 * **Cost** is `problem.cost(edge)`. The default is the traffic cost model (`edge_cost` in
   `traffic.ts` terms: distance + time + congestion·km + risk·km, weighted). Swap it by building a
   `SearchProblem` with a different `CostFn` — nothing in any algorithm changes.
-* **Heuristic** is `problem.heuristic(node_id)` — an estimate of remaining cost to the goal. The kit
-  ships four, selectable by name in `HEURISTICS`:
-
-  | Name | What it is | Admissible? |
-  |---|---|---|
-  | `zero` | estimate nothing; turns A\* into UCS | yes (trivially) |
-  | `haversine` | great-circle distance, scaled — the default | yes |
-  | `euclidean` (alias `gauss`) | planar straight-line distance | yes, at city scale |
-  | `manhattan` (alias `hamilton`) | taxicab distance | **no** — can overestimate |
-
-  All are scaled by the cheapest cost-per-km in the network so a distance in km becomes a cost lower
-  bound. `manhattan` is included on purpose: running A\* with a non-admissible heuristic and watching
-  the optimality guarantee break is exactly the kind of comparison this lab is for — so do not stamp
-  a `manhattan`-guided A\* result "optimal".
-
-  Which heuristic a guided search gets is chosen in `build_problem` (`heuristic_name`, defaulting to
-  `DEFAULT_HEURISTIC = "haversine"`); the wire contract has no heuristic field today, so a run picks
-  one in code or a test, not from the request. Change the default there, or pass `heuristic_name`, to
-  compare heuristics.
+* **Heuristic** is `problem.heuristic(node_id)` — an estimate of remaining cost to the goal. The
+  production system supports scaled `haversine`: great-circle distance to the goal multiplied by
+  the cheapest cost per kilometre in the network. This converts kilometres into an admissible cost
+  lower bound. It is selected through `HEURISTICS` by `build_problem` (`heuristic_name`, defaulting
+  to `DEFAULT_HEURISTIC = "haversine"`), preserving the registry architecture for future extension.
+  The wire contract has no heuristic field, so API clients cannot select a different heuristic.
 
 ### The locked output schema
 

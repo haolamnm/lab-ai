@@ -117,6 +117,12 @@ export function Explain() {
           <p className="explain-row"><b>Visit order</b> {info.order}</p>
         )}
 
+        {info.streets.length > 0 && (
+          <p className="explain-row">
+            <b>Roads taken</b> {info.streets.join(' → ')}
+          </p>
+        )}
+
         {info.jams.length > 0 && (
           <p className="explain-row">
             <b>Most congested segment on the route</b>{' '}
