@@ -178,9 +178,11 @@ def test_nearest_preserves_input_order_for_pairwise_cost_ties(
     assert result.order == ["W", "B", "A"]
 
 
-def test_nearest_metrics_include_only_selected_cached_legs(
+def test_nearest_search_effort_includes_only_selected_cached_legs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    clock = iter((10.0, 10.00456))
+    monkeypatch.setattr(planner, "perf_counter", lambda: next(clock))
     request = _request()
     graph = build_graph(request.graph)
     unused = _leg(graph, "W", "B", 99)
@@ -204,7 +206,7 @@ def test_nearest_metrics_include_only_selected_cached_legs(
     result = planner.plan_route(request)
 
     assert result.path == ["W", "A", "B"]
-    assert result.metrics.ms == 3.0
+    assert result.metrics.ms == 4.6
     assert result.metrics.expanded == 3
     assert result.metrics.generated == 5
     assert result.metrics.reopened == 1

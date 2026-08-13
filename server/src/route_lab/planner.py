@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from itertools import pairwise
+from time import perf_counter
 from typing import Literal
 
 from route_lab.algorithms.astar import a_star_search
@@ -192,11 +193,10 @@ def _route_from_legs(
     trace: list[TraceStep] = []
     reveal: list[Reveal] = []
     path: list[str] = []
-    km = minutes = cost = ms = 0.0
+    km = minutes = cost = 0.0
     expanded = generated = reopened = max_frontier = turns_blocked = 0
 
     for leg in legs:
-        ms += leg.ms
         expanded += leg.stats.expanded
         generated += leg.stats.generated
         reopened += leg.stats.reopened
@@ -234,7 +234,10 @@ def _route_from_legs(
             generated=generated,
             reopened=reopened,
             max_frontier=max_frontier,
-            ms=js_round(ms, 1),
+            # Replaced at the public planner boundary with complete wall-clock
+            # planning time. Keeping the placeholder here makes this assembly
+            # helper independent of where its legs came from.
+            ms=0,
             optimal=_optimal(request, found=found),
             turns_blocked=turns_blocked,
         ),
@@ -252,8 +255,9 @@ def _assemble_cached_legs(
 ) -> RouteResult:
     """Assemble one route from selected cached legs only.
 
-    Pairwise searches that are not selected contribute neither search effort nor
-    runtime. Reported metrics describe only the cached legs in ``order``.
+    Pairwise searches that are not selected contribute no search-effort metrics.
+    Planner runtime is measured separately around the complete Pairwise,
+    ordering, and assembly pipeline.
     """
     selected_legs: list[SearchLegResult] = []
     for source, target in pairwise(order):
@@ -404,19 +408,32 @@ def plan_route(request: PlanRequest) -> RouteResult:
             "Rebuild the network or re-pin the trip.",
         )
 
+    # This is the user-visible backend planning runtime. Graph construction and
+    # trip-point validation are common request preparation, so the clock starts
+    # only after both have succeeded. Everything algorithm-specific from here
+    # on—including Pairwise searches and ordering—is inside the boundary.
+    started_at = perf_counter()
+
+    def finish(result: RouteResult) -> RouteResult:
+        elapsed_ms = js_round((perf_counter() - started_at) * 1000, 1)
+        metrics = result.metrics.model_copy(update={"ms": elapsed_ms})
+        return result.model_copy(update={"metrics": metrics})
+
     # Held-Karp is a trip-level optimiser; the point-search ordering toggle does
     # not disable its Pairwise A* matrix or dynamic-programming branch.
     if algo == "held_karp":
-        return _plan_held_karp(request, graph, ids)
+        return finish(_plan_held_karp(request, graph, ids))
     if algo == "nearest":
-        return _plan_nearest(request, graph, ids)
+        return finish(_plan_nearest(request, graph, ids))
 
     sequence = _leg_sequence(request, graph)
     if len(sequence) < 2:
-        return _stopped(
-            algo,
-            ids,
-            "The pickup and dropoff pin to the same intersection. Choose points farther apart.",
+        return finish(
+            _stopped(
+                algo,
+                ids,
+                "The pickup and dropoff pin to the same intersection. Choose points farther apart.",
+            )
         )
 
     search = POINT_SEARCHES[algo]
@@ -430,7 +447,7 @@ def plan_route(request: PlanRequest) -> RouteResult:
         try:
             leg = search(leg_problem)
         except AlgorithmNotImplemented as exc:
-            return _stopped(algo, ids, str(exc))
+            return finish(_stopped(algo, ids, str(exc)))
         legs.append(leg)
 
         if not leg.found:
@@ -443,4 +460,5 @@ def plan_route(request: PlanRequest) -> RouteResult:
             break
         reached = index + 2
 
-    return _route_from_legs(request, ids, sequence[:reached], legs, found=found, problem=problem)
+    result = _route_from_legs(request, ids, sequence[:reached], legs, found=found, problem=problem)
+    return finish(result)
