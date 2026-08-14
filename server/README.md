@@ -108,7 +108,7 @@ server/
     ├── shared/         The algorithm kit (see below). Pure domain logic ported from lib/traffic.ts
     │   ├── graph.py     and lib/geo.ts, plus the reusable search building blocks:
     │   ├── traffic.py   the cost model (edge_cost, passable, turn_allowed, min_cost_per_km),
-    │   ├── geo.py       haversine, a min-heap, the frontier kit, the heuristic kit, the
+    │   ├── geo.py       haversine, a min-heap, the frontier kit, and the
     │   ├── heap.py      binary min-heap shared by priority-based algorithms.
     │   ├── frontier.py  Stack / Queue — the two order-only frontiers.
     │   ├── heuristics.py scaled Haversine heuristic, selected through a registry.
