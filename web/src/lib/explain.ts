@@ -72,13 +72,19 @@ function jamsOn(graph: Graph, path: string[], c: Conditions): Jam[] {
   return [...byName.values()].sort((a, b) => b.congestion * b.km - a.congestion * a.km).slice(0, 3)
 }
 
-/** Convert the node-by-node result path into a readable sequence of roads. */
+/** Convert the node-by-node result path into a readable sequence of roads.
+ *
+ *  An unnamed way becomes 'Unnamed segment' rather than being skipped, matching
+ *  `jamsOn` above. Dropping it instead would splice the two named roads either
+ *  side into neighbours and collapse them if they share a name, so a trip down
+ *  Lê Lợi, through an unnamed alley, and back onto Lê Lợi would read as one
+ *  unbroken road — an adjacency the route does not have. On an OpenStreetMap
+ *  graph, residential ways and alleys frequently carry no `name` tag. */
 function streetsOn(graph: Graph, path: string[]): string[] {
   const streets: string[] = []
   for (let i = 1; i < path.length; i += 1) {
     const edge = edgeBetween(graph, path[i - 1]!, path[i]!)
-    const name = edge?.name?.trim()
-    if (!name) continue
+    const name = edge?.name?.trim() || 'Unnamed segment'
     if (streets.at(-1) !== name) streets.push(name)
   }
   return streets
