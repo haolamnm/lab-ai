@@ -234,9 +234,12 @@ def _route_from_legs(
             generated=generated,
             reopened=reopened,
             max_frontier=max_frontier,
-            # Replaced at the public planner boundary with complete wall-clock
-            # planning time. Keeping the placeholder here makes this assembly
-            # helper independent of where its legs came from.
+            # The one number not assembled here. `plan_route` overwrites it with
+            # complete wall-clock planning time at its single exit, so every
+            # caller reaching this helper is inside the clock; keeping the
+            # placeholder makes the assembly independent of where its legs came
+            # from. Reach this helper from outside `plan_route` and the result
+            # will report `ms: 0.0` as though it were a measurement.
             ms=0,
             optimal=_optimal(request, found=found),
             turns_blocked=turns_blocked,
@@ -386,54 +389,30 @@ def _plan_held_karp(request: PlanRequest, graph: Graph, ids: list[str]) -> Route
     )
 
 
-def plan_route(request: PlanRequest) -> RouteResult:
-    """Plan ``request.algo`` across the whole trip and return its full result."""
-    graph = build_graph(request.graph)
-    ids = node_ids(graph)
+def _plan_measured(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteResult:
+    """Everything the runtime figure covers, on an already-validated request.
+
+    Split out of :func:`plan_route` so the measurement cannot be forgotten. Every
+    exit here is inside the clock by construction, which is what makes the
+    ``ms=0`` placeholder in :func:`_route_from_legs` safe: no return path can
+    reach a caller without ``plan_route`` overwriting it.
+    """
     algo = request.algo
     conditions = request.conditions
-
-    # Every trip point must be an intersection in this graph. A stale pin — a
-    # start/goal/stop id from a graph that has since been rebuilt — would otherwise
-    # raise a KeyError on the first frontier expansion and surface as a bare 500;
-    # here it becomes a normal result whose `problem` says what to fix, the same
-    # way an unimplemented algorithm does below.
-    trip_points = list(dict.fromkeys([request.start, request.goal, *request.stops]))
-    unknown = [point for point in trip_points if point not in graph.nodes]
-    if unknown:
-        return _stopped(
-            algo,
-            ids,
-            f"These points are not intersections in this graph: {', '.join(unknown)}. "
-            "Rebuild the network or re-pin the trip.",
-        )
-
-    # This is the user-visible backend planning runtime. Graph construction and
-    # trip-point validation are common request preparation, so the clock starts
-    # only after both have succeeded. Everything algorithm-specific from here
-    # on—including Pairwise searches and ordering—is inside the boundary.
-    started_at = perf_counter()
-
-    def finish(result: RouteResult) -> RouteResult:
-        elapsed_ms = js_round((perf_counter() - started_at) * 1000, 1)
-        metrics = result.metrics.model_copy(update={"ms": elapsed_ms})
-        return result.model_copy(update={"metrics": metrics})
 
     # Held-Karp is a trip-level optimiser; the point-search ordering toggle does
     # not disable its Pairwise A* matrix or dynamic-programming branch.
     if algo == "held_karp":
-        return finish(_plan_held_karp(request, graph, ids))
+        return _plan_held_karp(request, graph, ids)
     if algo == "nearest":
-        return finish(_plan_nearest(request, graph, ids))
+        return _plan_nearest(request, graph, ids)
 
     sequence = _leg_sequence(request, graph)
     if len(sequence) < 2:
-        return finish(
-            _stopped(
-                algo,
-                ids,
-                "The pickup and dropoff pin to the same intersection. Choose points farther apart.",
-            )
+        return _stopped(
+            algo,
+            ids,
+            "The pickup and dropoff pin to the same intersection. Choose points farther apart.",
         )
 
     search = POINT_SEARCHES[algo]
@@ -447,7 +426,7 @@ def plan_route(request: PlanRequest) -> RouteResult:
         try:
             leg = search(leg_problem)
         except AlgorithmNotImplemented as exc:
-            return finish(_stopped(algo, ids, str(exc)))
+            return _stopped(algo, ids, str(exc))
         legs.append(leg)
 
         if not leg.found:
@@ -460,5 +439,37 @@ def plan_route(request: PlanRequest) -> RouteResult:
             break
         reached = index + 2
 
-    result = _route_from_legs(request, ids, sequence[:reached], legs, found=found, problem=problem)
-    return finish(result)
+    return _route_from_legs(request, ids, sequence[:reached], legs, found=found, problem=problem)
+
+
+def plan_route(request: PlanRequest) -> RouteResult:
+    """Plan ``request.algo`` across the whole trip and return its full result."""
+    graph = build_graph(request.graph)
+    ids = node_ids(graph)
+
+    # Every trip point must be an intersection in this graph. A stale pin — a
+    # start/goal/stop id from a graph that has since been rebuilt — would otherwise
+    # raise a KeyError on the first frontier expansion and surface as a bare 500;
+    # here it becomes a normal result whose `problem` says what to fix, the same
+    # way an unimplemented algorithm does below.
+    trip_points = list(dict.fromkeys([request.start, request.goal, *request.stops]))
+    unknown = [point for point in trip_points if point not in graph.nodes]
+    if unknown:
+        return _stopped(
+            request.algo,
+            ids,
+            f"These points are not intersections in this graph: {', '.join(unknown)}. "
+            "Rebuild the network or re-pin the trip.",
+        )
+
+    # This is the user-visible backend planning runtime. Graph construction and
+    # trip-point validation are common request preparation, so the clock starts
+    # only after both have succeeded. Everything algorithm-specific—including
+    # Pairwise searches and ordering—is inside the boundary, and the single exit
+    # below is why that stays true as the planner grows.
+    started_at = perf_counter()
+    result = _plan_measured(request, graph, ids)
+    elapsed_ms = js_round((perf_counter() - started_at) * 1000, 1)
+
+    metrics = result.metrics.model_copy(update={"ms": elapsed_ms})
+    return result.model_copy(update={"metrics": metrics})

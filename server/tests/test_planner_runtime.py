@@ -1,11 +1,22 @@
-"""The public runtime covers the complete post-validation planner pipeline."""
+"""The public runtime covers the complete post-validation planner pipeline.
+
+Every exit from ``_plan_measured`` is inside the clock by construction, so the
+tests below walk the ones that return early — a degenerate trip and an
+unimplemented algorithm — as well as the ones that plan a route. They are what
+would catch the placeholder ``ms=0`` in ``_route_from_legs`` escaping as though
+it were a measurement.
+"""
 
 from collections.abc import Iterator
 
 import pytest
 
 import route_lab.planner as planner
+from route_lab.algorithms.base import AlgorithmNotImplemented
+from route_lab.algorithms.registry import POINT_SEARCHES
 from route_lab.contract.request import AlgoKey, PlanRequest
+from route_lab.shared.problem import SearchProblem
+from route_lab.shared.search import SearchLegResult
 
 from .fixtures import diamond_json, trip_request
 
@@ -60,3 +71,63 @@ def test_failed_search_after_dispatch_reports_elapsed_planning_time(
 
     assert result.found is False
     assert result.metrics.ms == 6.0
+
+
+def test_degenerate_trip_reports_elapsed_planning_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pickup and dropoff pinning together still costs the work of finding out."""
+    _clock(monkeypatch, 50.0, 50.0021)
+    request = trip_request("ucs", start="W", goal="W")
+
+    result = planner.plan_route(request)
+
+    assert result.found is False
+    assert result.problem is not None
+    assert "same intersection" in result.problem
+    assert result.metrics.ms == 2.1
+
+
+def test_unimplemented_algorithm_reports_elapsed_planning_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stub's message is a result like any other, and a timed one.
+
+    This is the return path furthest from the measurement — raised inside a leg
+    search, caught mid-loop, and turned into a stopped result — so it is the one
+    a future refactor is likeliest to let out of the clock.
+    """
+
+    def unimplemented(problem: SearchProblem) -> SearchLegResult:
+        _ = problem
+        raise AlgorithmNotImplemented("bfs")
+
+    monkeypatch.setitem(POINT_SEARCHES, "bfs", unimplemented)
+    _clock(monkeypatch, 70.0, 70.00815)
+    request = PlanRequest.model_validate(diamond_json("bfs"))
+
+    result = planner.plan_route(request)
+
+    assert result.found is False
+    assert result.metrics.ms == 8.2
+
+
+def test_no_planned_result_reports_a_zero_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No exit from the planner may hand back the `_route_from_legs` placeholder.
+
+    Parametrised over every algorithm and over the early returns, so a new branch
+    added inside `_plan_measured` without a clock is caught here rather than
+    surfacing in a pane as a genuine-looking `0.0 ms`.
+    """
+    # A clock that advances by a fixed amount on each pair of reads, so every
+    # case below is measured without pinning a per-case figure.
+    ticks: Iterator[float] = iter(range(0, 1000))
+    monkeypatch.setattr(planner, "perf_counter", lambda: next(ticks) * 1000.0)
+
+    requests = [PlanRequest.model_validate(diamond_json(algo)) for algo in POINT_SEARCHES]
+    requests.append(PlanRequest.model_validate(diamond_json("nearest")))
+    requests.append(PlanRequest.model_validate(diamond_json("held_karp")))
+    requests.append(trip_request("ucs", start="W", goal="W"))
+
+    for request in requests:
+        assert planner.plan_route(request).metrics.ms > 0.0, request.algo
