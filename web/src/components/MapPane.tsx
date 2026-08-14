@@ -1,7 +1,8 @@
 import L from 'leaflet'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef } from 'react'
-import { ALGOS, edgeBetween } from '../lib/search'
+import { backendEnabled } from '../lib/planClient'
+import { ALGOS, edgeBetween, runtimeNote } from '../lib/search'
 import { nodeNames, tripNames } from '../lib/tripNames'
 import { broadcastView, joinViewSync, resetViewSync, sharedView } from '../lib/viewSync'
 import { TreeView } from './TreeView'
@@ -468,11 +469,12 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
   }, [step, pane.result, openedAt, graph])
 
   const algo = ALGOS[pane.algo]
-  // An algorithm whose runtime figure does not measure the whole search says so
-  // on the table itself. Held–Karp is the one that does: it times the A* legs it
-  // ended up choosing, which is neither the full pairwise search nor the DP, and
-  // "total running time" would claim it did far less work than it did.
-  const msTitle = algo.msNote ?? 'Algorithm running time'
+  const optimiseOrder = useStore(s => s.optimiseOrder)
+  // What the runtime figure counted depends on the run, not on the algorithm —
+  // which planner answered, and whether there was an ordering step. `optimiseOrder`
+  // is read from the store rather than off the result because `setOptimiseOrder`
+  // clears every result, so the flag cannot describe a run other than this one.
+  const msTitle = runtimeNote(pane.algo, { remote: backendEnabled, optimiseOrder })
   const r = pane.result
   const shown = r ? Math.min(step, r.trace.length) : 0
   const done = !!r && shown >= r.trace.length

@@ -18,10 +18,6 @@ interface AlgorithmInfo {
    *  O(n²·2ⁿ) in them. Mirrors `MAX_HELD_KARP_STOPS` in the Python planner, which
    *  is still the one that enforces it; this only warns before Run is pressed. */
   maxStops?: number
-  /** What the reported runtime actually measures, when it is not simply "the
-   *  search". A backend-only algorithm is timed at the planner boundary in
-   *  planner.py, so its figure covers the ordering work as well as the legs. */
-  msNote?: string
   /** How the optimality guarantee reads, when the bare word "optimal" would let a
    *  reader assume the wrong one. Prefixed with the algorithm's name where shown. */
   optimalityNote?: string
@@ -51,9 +47,39 @@ export const ALGOS: Record<AlgoKey, AlgorithmInfo> = {
     note: 'Exact cheapest visit order, from pairwise A* costs and bitmask DP. Backend only',
     backendOnly: true,
     maxStops: 12,
-    msNote: 'Complete backend planning time — the pairwise A* matrix, the bitmask DP, and the chosen legs',
     optimalityNote: 'is exact over the visit order: it costs every ordered pair of trip points with A*, then evaluates every possible tour through them, so no tour over these stops is cheaper than this one. Each leg of the tour is itself an optimal A* route. The timeline replays those chosen leg searches — the bitmask DP table is not part of the result.',
   },
+}
+
+/**
+ * What the reported runtime actually measured, for the run that produced it.
+ *
+ * Not a field on the algorithm table, because the boundary is not a property of
+ * the algorithm. It depends on which planner answered and on whether the run had
+ * an ordering step at all, and getting that wrong is not a vague label — it is a
+ * figure describing the opposite of the work it counted.
+ *
+ * The backend times its whole post-validation pipeline (`plan_route` in
+ * planner.py), so on a remote run the ordering search is inside the figure. The
+ * browser sums its leg searches only and computes the ordering outside that sum,
+ * so on a local run the same work is outside it. Held–Karp and Nearest Neighbor
+ * always order; a point search orders only when `optimiseOrder` is on, and then
+ * pays for the same pairwise matrix the other two do.
+ */
+export function runtimeNote(
+  algo: AlgoKey,
+  { remote, optimiseOrder }: { remote: boolean; optimiseOrder: boolean },
+): string {
+  const orders = algo === 'held_karp' || algo === 'nearest' || optimiseOrder
+  if (!orders) {
+    return remote ? 'Complete backend planning time' : 'Algorithm running time'
+  }
+  if (!remote) {
+    return 'Running time of the legs alone — the ordering search is not counted'
+  }
+  return algo === 'held_karp'
+    ? 'Complete backend planning time — the pairwise A* matrix, the bitmask DP, and the chosen legs'
+    : 'Complete backend planning time — the pairwise ordering search and the chosen legs'
 }
 
 /**
