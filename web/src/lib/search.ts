@@ -52,6 +52,19 @@ export const ALGOS: Record<AlgoKey, AlgorithmInfo> = {
 }
 
 /**
+ * Whether the run chose a visit order before routing anything.
+ *
+ * The two trip-level algorithms always do; a point search does it only when the
+ * user asks, and then pays for the same directed pairwise matrix they do. What
+ * makes this worth naming is that the ordering search sits inside the backend's
+ * runtime and outside its search-effort counts, so it is the dividing line for
+ * both what a runtime figure means and whether two of them can be compared.
+ */
+export function ordersTheTrip(algo: AlgoKey, optimiseOrder: boolean): boolean {
+  return algo === 'held_karp' || algo === 'nearest' || optimiseOrder
+}
+
+/**
  * What the reported runtime actually measured, for the run that produced it.
  *
  * Not a field on the algorithm table, because the boundary is not a property of
@@ -70,7 +83,7 @@ export function runtimeNote(
   algo: AlgoKey,
   { remote, optimiseOrder }: { remote: boolean; optimiseOrder: boolean },
 ): string {
-  const orders = algo === 'held_karp' || algo === 'nearest' || optimiseOrder
+  const orders = ordersTheTrip(algo, optimiseOrder)
   if (!orders) {
     return remote ? 'Complete backend planning time' : 'Algorithm running time'
   }

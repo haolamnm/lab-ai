@@ -11,7 +11,7 @@
  */
 
 import { expect, test } from 'bun:test'
-import { runtimeNote } from './search'
+import { ordersTheTrip, runtimeNote } from './search'
 
 const local = { remote: false, optimiseOrder: false }
 const remote = { remote: true, optimiseOrder: false }
@@ -43,6 +43,43 @@ test('a local ordering run says the ordering is not counted', () => {
   const note = 'Running time of the legs alone — the ordering search is not counted'
   expect(runtimeNote('nearest', local)).toBe(note)
   expect(runtimeNote('astar', { remote: false, optimiseOrder: true })).toBe(note)
+})
+
+/* `ordersTheTrip` decides two things at once: which words the runtime label
+ * gets, and whether CompareAlgos may rank one row's runtime against another's.
+ * The table itself needs a DOM to drive, so the predicate under it is what these
+ * pin — a wrong answer here marks the algorithm that skipped the pairwise search
+ * as the fastest one in the table. */
+
+test('the two trip-level algorithms always order', () => {
+  expect(ordersTheTrip('held_karp', false)).toBe(true)
+  expect(ordersTheTrip('nearest', false)).toBe(true)
+})
+
+test('a point search orders only when asked', () => {
+  expect(ordersTheTrip('astar', false)).toBe(false)
+  expect(ordersTheTrip('ucs', false)).toBe(false)
+  expect(ordersTheTrip('astar', true)).toBe(true)
+  expect(ordersTheTrip('bfs', true)).toBe(true)
+})
+
+test('optimiseOrder puts every algorithm on one footing', () => {
+  // What makes the CompareAlgos runtime column rankable again: with the flag on,
+  // no row is missing the pairwise search the others paid for.
+  const algos = ['astar', 'ucs', 'bfs', 'dfs', 'nearest', 'held_karp'] as const
+  expect(new Set(algos.map(a => ordersTheTrip(a, true))).size).toBe(1)
+  // With it off, the table is mixed — which is the case that must not be ranked.
+  expect(new Set(algos.map(a => ordersTheTrip(a, false))).size).toBe(2)
+})
+
+test('the label agrees with the predicate for every combination', () => {
+  const algos = ['astar', 'ucs', 'bfs', 'dfs', 'nearest', 'held_karp'] as const
+  for (const optimiseOrder of [false, true]) {
+    for (const algo of algos) {
+      const note = runtimeNote(algo, { remote: false, optimiseOrder })
+      expect(note.includes('not counted')).toBe(ordersTheTrip(algo, optimiseOrder))
+    }
+  }
 })
 
 test('no label claims the ordering is excluded when the backend counted it', () => {

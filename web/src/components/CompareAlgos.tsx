@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { ALGOS } from '../lib/search'
+import { backendEnabled } from '../lib/planClient'
+import { ALGOS, ordersTheTrip, runtimeNote } from '../lib/search'
 import { tripNames } from '../lib/tripNames'
 import type { Metrics } from '../lib/types'
 import { useStore } from '../store'
@@ -35,6 +36,7 @@ export function CompareAlgos() {
   const goal = useStore(s => s.goal)
   const stops = useStore(s => s.stops)
   const step = useStore(s => s.step)
+  const optimiseOrder = useStore(s => s.optimiseOrder)
   const [open, setOpen] = useState(true)
 
   const nameOf = useMemo(() => tripNames(start, goal, stops), [start, goal, stops])
@@ -71,30 +73,52 @@ export function CompareAlgos() {
     return out
   }, [rows])
 
+  /**
+   * Whether Runtime is measuring a different span in different rows.
+   *
+   * Every other ranked column answers one question per row. Runtime does not,
+   * on the backend: `plan_route` times the whole post-validation pipeline, so a
+   * row that chose a visit order has a full directed pairwise A* matrix inside
+   * its figure and a row that did not has only its legs. Ranking those against
+   * each other marks the algorithm that skipped the work as the fastest one.
+   *
+   * `optimiseOrder` makes every row order, which puts them back on equal terms.
+   * So does planning in the browser, where the figure is the leg sum either way.
+   */
+  const runtimeSpansDiffer = useMemo(() => {
+    if (!backendEnabled) return false
+    const spans = new Set(rows.map(r => ordersTheTrip(r.algo, optimiseOrder)))
+    return spans.size > 1
+  }, [rows, optimiseOrder])
+
   // The winning value in each ranked column, over the runs that found a route.
   // A column every row leaves blank has no winner, which is why this can be
   // undefined rather than defaulting to zero — marking "0 ms" as the best time
-  // when no row reported a time would be inventing a result.
+  // when no row reported a time would be inventing a result. Runtime drops out
+  // entirely when the rows are not measuring the same span: no mark at all is
+  // the honest answer, where a mark would be a claim the numbers cannot support.
   const best = useMemo(() => {
     const out: Partial<Record<Ranked, number>> = {}
     const found = rows.filter(r => r.result.found)
     for (const column of LOWER_IS_BETTER) {
+      if (column === 'ms' && runtimeSpansDiffer) continue
       const values = found
         .map(r => r.result.metrics[column])
         .filter((v): v is number => typeof v === 'number')
       if (values.length > 1) out[column] = Math.min(...values)
     }
     return out
-  }, [rows])
+  }, [rows, runtimeSpansDiffer])
 
   if (!rows.length) return null
 
-  /** A metric cell: monospace, right-aligned, marked when it is the best in its column. */
-  const cell = (m: Metrics, column: Ranked, text: (v: number) => string) => {
+  /** A metric cell: monospace, right-aligned, marked when it is the best in its column.
+   *  `title` is for the one column whose meaning is per-row rather than per-column. */
+  const cell = (m: Metrics, column: Ranked, text: (v: number) => string, title?: string) => {
     const value = m[column]
     if (typeof value !== 'number') return <td className="r num" key={column}>—</td>
     return (
-      <td className="r num" key={column} data-best={best[column] === value}>
+      <td className="r num" key={column} data-best={best[column] === value} title={title}>
         {text(value)}
       </td>
     )
@@ -129,7 +153,14 @@ export function CompareAlgos() {
                 <th className="r" title="States pushed onto the frontier. Backend only">Generated</th>
                 <th className="r" title="States reached again by a cheaper route. Backend only">Reopened</th>
                 <th className="r" title="Largest the frontier ever grew. Backend only">Peak frontier</th>
-                <th className="r">Runtime</th>
+                <th
+                  className="r"
+                  title={runtimeSpansDiffer
+                    ? 'What this counted differs by row — hover a value. Not comparable between rows'
+                    : runtimeNote(rows[0]!.algo, { remote: backendEnabled, optimiseOrder })}
+                >
+                  Runtime
+                </th>
                 <th>Verdict</th>
               </tr>
             </thead>
@@ -172,7 +203,8 @@ export function CompareAlgos() {
                         <td className="r num">{m.generated ?? '—'}</td>
                         <td className="r num">{m.reopened ?? '—'}</td>
                         <td className="r num">{m.maxFrontier ?? '—'}</td>
-                        {cell(m, 'ms', v => `${v.toFixed(1)} ms`)}
+                        {cell(m, 'ms', v => `${v.toFixed(1)} ms`,
+                          runtimeNote(algo, { remote: backendEnabled, optimiseOrder }))}
                         <td className="verdict-cell" data-optimal={m.optimal}>
                           {/* Held back until the run has played out, exactly as the pane
                               footer holds back the distance: the verdict is the answer. */}
@@ -196,6 +228,17 @@ export function CompareAlgos() {
             not all choose the same place at that point in the tour.{' '}<b>Generated</b>,{' '}
             <b>Reopened</b> and <b>Peak frontier</b> are measured by the Python backend only —
             they read “—” when the app is planning in the browser.
+            {runtimeSpansDiffer && (
+              <>
+                {' '}<b>Runtime</b> is the exception: the backend times the whole planning
+                pipeline, so the rows that choose a visit order — Held–Karp and Nearest
+                Neighbor — count a pairwise search over every pair of trip points that the
+                other rows never run, and that the search-effort columns beside it leave
+                out. Those rows are not answering the same question, so no best is marked;
+                hover a value for what it counted. Turning on <b>Optimise stop order</b>
+                {' '}puts every row on the same footing.
+              </>
+            )}
           </p>
         </div>
       )}
