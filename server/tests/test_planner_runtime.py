@@ -103,7 +103,9 @@ def test_unimplemented_algorithm_reports_elapsed_planning_time(
         raise AlgorithmNotImplemented("bfs")
 
     monkeypatch.setitem(POINT_SEARCHES, "bfs", unimplemented)
-    _clock(monkeypatch, 70.0, 70.00815)
+    # Well clear of a rounding tie: 8.15 would ride on `js_round` breaking ties
+    # upward and on the subtraction landing above the midpoint rather than below.
+    _clock(monkeypatch, 70.0, 70.00824)
     request = PlanRequest.model_validate(diamond_json("bfs"))
 
     result = planner.plan_route(request)
@@ -112,17 +114,22 @@ def test_unimplemented_algorithm_reports_elapsed_planning_time(
     assert result.metrics.ms == 8.2
 
 
-def test_no_planned_result_reports_a_zero_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No exit from the planner may hand back the `_route_from_legs` placeholder.
+def test_every_planned_result_reports_a_measured_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No planned result may hand back the `_route_from_legs` placeholder.
 
-    Parametrised over every algorithm and over the early returns, so a new branch
-    added inside `_plan_measured` without a clock is caught here rather than
-    surfacing in a pane as a genuine-looking `0.0 ms`.
+    A sweep rather than a guarantee: `plan_route` overwrites `ms` at its single
+    exit, so a branch added inside `_plan_measured` is measured by construction
+    and this cannot catch one. What it does catch is the placeholder reaching a
+    caller by some other route — a second public entry point, or `finish`-style
+    wrapping creeping back in — which would surface in a pane as a genuine
+    looking `0.0 ms` rather than as an error.
     """
-    # A clock that advances by a fixed amount on each pair of reads, so every
-    # case below is measured without pinning a per-case figure.
-    ticks: Iterator[float] = iter(range(0, 1000))
-    monkeypatch.setattr(planner, "perf_counter", lambda: next(ticks) * 1000.0)
+    # A clock that advances a full second per read, so every case is measured
+    # without this test pinning a per-case figure.
+    ticks: Iterator[float] = iter(range(1000))
+    monkeypatch.setattr(planner, "perf_counter", lambda: float(next(ticks)))
 
     requests = [PlanRequest.model_validate(diamond_json(algo)) for algo in POINT_SEARCHES]
     requests.append(PlanRequest.model_validate(diamond_json("nearest")))
@@ -131,3 +138,27 @@ def test_no_planned_result_reports_a_zero_runtime(monkeypatch: pytest.MonkeyPatc
 
     for request in requests:
         assert planner.plan_route(request).metrics.ms > 0.0, request.algo
+
+
+def test_request_preparation_stays_outside_the_measured_span() -> None:
+    """Only work after validation is timed, and the clock is read exactly twice.
+
+    The regression the refactor left possible: `plan_route` still has one return
+    ahead of `started_at`, and a second one added there would report `ms: 0.0`
+    the same way a missed `finish` used to. Counting the reads pins the boundary
+    from the other side — a clock started earlier, or a stray `perf_counter` put
+    back inside the pipeline, breaks this without needing a timing assertion.
+    """
+    reads = 0
+
+    def counted() -> float:
+        nonlocal reads
+        reads += 1
+        return float(reads)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(planner, "perf_counter", counted)
+        result = planner.plan_route(PlanRequest.model_validate(diamond_json("astar")))
+
+    assert result.found is True
+    assert reads == 2
