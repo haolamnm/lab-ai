@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
-import { backendEnabled } from '../lib/planClient'
-import { ALGOS, ordersTheTrip, runtimeNote } from '../lib/search'
+import { ALGOS, ordersTheTrip, planningNote, RUNTIME_NOTE } from '../lib/search'
 import { tripNames } from '../lib/tripNames'
 import type { Metrics } from '../lib/types'
 import { useStore } from '../store'
@@ -74,41 +73,37 @@ export function CompareAlgos() {
   }, [rows])
 
   /**
-   * Whether Runtime is measuring a different span in different rows.
+   * Whether Planning is measuring a different span in different rows.
    *
-   * Every other ranked column answers one question per row. Runtime does not,
-   * on the backend: `plan_route` times the whole post-validation pipeline, so a
-   * row that chose a visit order has a full directed pairwise A* matrix inside
-   * its figure and a row that did not has only its legs. Ranking those against
-   * each other marks the algorithm that skipped the work as the fastest one.
+   * Every ranked column answers one question per row, Runtime included now that
+   * both planners sum the same legs. Planning does not: it times the backend's
+   * whole pipeline, so a row that chose a visit order has a full directed
+   * pairwise A* matrix inside its figure and a row that did not has only its
+   * legs. That is why the column is shown but never ranked — marking a winner
+   * would name the algorithm that skipped the work as the fastest one.
    *
    * `optimiseOrder` makes every row order, which puts them back on equal terms.
-   * So does planning in the browser, where the figure is the leg sum either way.
    */
-  const runtimeSpansDiffer = useMemo(() => {
-    if (!backendEnabled) return false
-    const spans = new Set(rows.map(r => ordersTheTrip(r.algo, optimiseOrder)))
-    return spans.size > 1
-  }, [rows, optimiseOrder])
+  const planningSpansDiffer = useMemo(
+    () => new Set(rows.map(r => ordersTheTrip(r.algo, optimiseOrder))).size > 1,
+    [rows, optimiseOrder],
+  )
 
   // The winning value in each ranked column, over the runs that found a route.
   // A column every row leaves blank has no winner, which is why this can be
   // undefined rather than defaulting to zero — marking "0 ms" as the best time
-  // when no row reported a time would be inventing a result. Runtime drops out
-  // entirely when the rows are not measuring the same span: no mark at all is
-  // the honest answer, where a mark would be a claim the numbers cannot support.
+  // when no row reported a time would be inventing a result.
   const best = useMemo(() => {
     const out: Partial<Record<Ranked, number>> = {}
     const found = rows.filter(r => r.result.found)
     for (const column of LOWER_IS_BETTER) {
-      if (column === 'ms' && runtimeSpansDiffer) continue
       const values = found
         .map(r => r.result.metrics[column])
         .filter((v): v is number => typeof v === 'number')
       if (values.length > 1) out[column] = Math.min(...values)
     }
     return out
-  }, [rows, runtimeSpansDiffer])
+  }, [rows])
 
   if (!rows.length) return null
 
@@ -153,13 +148,14 @@ export function CompareAlgos() {
                 <th className="r" title="States pushed onto the frontier. Backend only">Generated</th>
                 <th className="r" title="States reached again by a cheaper route. Backend only">Reopened</th>
                 <th className="r" title="Largest the frontier ever grew. Backend only">Peak frontier</th>
+                <th className="r" title={RUNTIME_NOTE}>Runtime</th>
                 <th
                   className="r"
-                  title={runtimeSpansDiffer
-                    ? 'What this counted differs by row — hover a value. Not comparable between rows'
-                    : runtimeNote(rows[0]!.algo, { remote: backendEnabled, optimiseOrder })}
+                  title={planningSpansDiffer
+                    ? 'Complete backend planning time. What it counted differs by row — hover a value. Not comparable between rows'
+                    : planningNote(rows[0]!.algo, optimiseOrder)}
                 >
-                  Runtime
+                  Planning
                 </th>
                 <th>Verdict</th>
               </tr>
@@ -203,8 +199,12 @@ export function CompareAlgos() {
                         <td className="r num">{m.generated ?? '—'}</td>
                         <td className="r num">{m.reopened ?? '—'}</td>
                         <td className="r num">{m.maxFrontier ?? '—'}</td>
-                        {cell(m, 'ms', v => `${v.toFixed(1)} ms`,
-                          runtimeNote(algo, { remote: backendEnabled, optimiseOrder }))}
+                        {cell(m, 'ms', v => `${v.toFixed(1)} ms`, RUNTIME_NOTE)}
+                        {/* Never ranked, so it is a plain cell like the other three
+                            the backend alone reports — see `planningSpansDiffer`. */}
+                        <td className="r num" title={planningNote(algo, optimiseOrder)}>
+                          {m.planningMs === undefined ? '—' : `${m.planningMs.toFixed(1)} ms`}
+                        </td>
                         <td className="verdict-cell" data-optimal={m.optimal}>
                           {/* Held back until the run has played out, exactly as the pane
                               footer holds back the distance: the verdict is the answer. */}
@@ -212,7 +212,7 @@ export function CompareAlgos() {
                         </td>
                       </>
                     ) : (
-                      <td className="fail" colSpan={showOrder ? 11 : 10}>
+                      <td className="fail" colSpan={showOrder ? 12 : 11}>
                         {result.problem ?? 'no route'}
                       </td>
                     )}
@@ -226,19 +226,14 @@ export function CompareAlgos() {
             directly comparable; the best value in each is marked. In <b>Visit order</b>,
             a stop is <span className="order-differs">red</span> where the algorithms did
             not all choose the same place at that point in the tour.{' '}<b>Generated</b>,{' '}
-            <b>Reopened</b> and <b>Peak frontier</b> are measured by the Python backend only —
-            they read “—” when the app is planning in the browser.
-            {runtimeSpansDiffer && (
-              <>
-                {' '}<b>Runtime</b> is the exception: the backend times the whole planning
-                pipeline, so the rows that choose a visit order — Held–Karp and Nearest
-                Neighbor — count a pairwise search over every pair of trip points that the
-                other rows never run, and that the search-effort columns beside it leave
-                out. Those rows are not answering the same question, so no best is marked;
-                hover a value for what it counted. Turning on <b>Optimise stop order</b>
-                {' '}puts every row on the same footing.
-              </>
-            )}
+            <b>Reopened</b>, <b>Peak frontier</b> and <b>Planning</b> are measured by the
+            Python backend only — they read “—” when the app is planning in the browser.
+            {' '}<b>Runtime</b> is the leg searches, and both planners measure it the same
+            way, so it is ranked like the columns before it. <b>Planning</b> is the whole
+            backend pipeline — including the pairwise search that Held–Karp and Nearest
+            Neighbor run over every pair of trip points and a plain point search does not
+            — so the rows are not always answering the same question and no best is
+            marked; hover a value for what it counted.
           </p>
         </div>
       )}

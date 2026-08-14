@@ -1,5 +1,4 @@
-import { backendEnabled } from './planClient'
-import { ALGOS, edgeBetween, runtimeNote } from './search'
+import { ALGOS, edgeBetween, planningNote, RUNTIME_NOTE } from './search'
 import { costIsFlat, edgeCost, edgeMinutes, type Conditions } from './traffic'
 import type { Graph, GraphEdge, RouteResult } from './types'
 
@@ -308,11 +307,14 @@ export function toExportable(
       minutes: r.result.metrics.minutes,
       cost: r.result.metrics.cost,
       ms: r.result.metrics.ms,
-      // The export is what gets written up, and a bare millisecond figure is
-      // the one number in it that does not mean the same thing in every row.
-      // Carrying its own description is the only way it survives leaving the
-      // app, where there is no tooltip to hover.
-      msMeasured: runtimeNote(r.result.algo, { remote: backendEnabled, optimiseOrder }),
+      msMeasured: RUNTIME_NOTE,
+      // Absent on a browser-planned run, and the description travels with it:
+      // the export is what gets written up, and this is the figure whose span
+      // varies by row, in a file where there is no tooltip to hover.
+      planningMs: r.result.metrics.planningMs,
+      planningMsMeasured: r.result.metrics.planningMs === undefined
+        ? undefined
+        : planningNote(r.result.algo, optimiseOrder),
       optimal: r.result.metrics.optimal,
     })),
   }

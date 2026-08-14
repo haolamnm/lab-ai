@@ -193,10 +193,14 @@ def _route_from_legs(
     trace: list[TraceStep] = []
     reveal: list[Reveal] = []
     path: list[str] = []
-    km = minutes = cost = 0.0
+    km = minutes = cost = leg_ms = 0.0
     expanded = generated = reopened = max_frontier = turns_blocked = 0
 
     for leg in legs:
+        # Summed here rather than at the planner boundary, and summed over the
+        # legs this route is actually made of: `planRoute` in search.ts adds
+        # `leg.ms` over the same legs, which is what lets the two planners agree.
+        leg_ms += leg.ms
         expanded += leg.stats.expanded
         generated += leg.stats.generated
         reopened += leg.stats.reopened
@@ -234,13 +238,7 @@ def _route_from_legs(
             generated=generated,
             reopened=reopened,
             max_frontier=max_frontier,
-            # The one number not assembled here. `plan_route` overwrites it with
-            # complete wall-clock planning time at its single exit, so every
-            # caller reaching this helper is inside the clock; keeping the
-            # placeholder makes the assembly independent of where its legs came
-            # from. Reach this helper from outside `plan_route` and the result
-            # will report `ms: 0.0` as though it were a measurement.
-            ms=0,
+            ms=js_round(leg_ms, 1),
             optimal=_optimal(request, found=found),
             turns_blocked=turns_blocked,
         ),
@@ -462,14 +460,16 @@ def plan_route(request: PlanRequest) -> RouteResult:
             "Rebuild the network or re-pin the trip.",
         )
 
-    # This is the user-visible backend planning runtime. Graph construction and
-    # trip-point validation are common request preparation, so the clock starts
-    # only after both have succeeded. Everything algorithm-specific—including
-    # Pairwise searches and ordering—is inside the boundary, and the single exit
-    # below is why that stays true as the planner grows.
+    # Complete backend planning time, reported alongside `ms` rather than in
+    # place of it. Graph construction and trip-point validation are common
+    # request preparation, so the clock starts only after both have succeeded;
+    # everything algorithm-specific—including Pairwise searches and ordering—is
+    # inside the boundary, and the single exit below is why that stays true as
+    # the planner grows. `ms` keeps the leg-search sum the browser also reports,
+    # so one trip answers with one number whichever planner ran it.
     started_at = perf_counter()
     result = _plan_measured(request, graph, ids)
-    elapsed_ms = js_round((perf_counter() - started_at) * 1000, 1)
+    planning_ms = js_round((perf_counter() - started_at) * 1000, 1)
 
-    metrics = result.metrics.model_copy(update={"ms": elapsed_ms})
+    metrics = result.metrics.model_copy(update={"planning_ms": planning_ms})
     return result.model_copy(update={"metrics": metrics})

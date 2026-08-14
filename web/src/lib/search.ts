@@ -65,30 +65,30 @@ export function ordersTheTrip(algo: AlgoKey, optimiseOrder: boolean): boolean {
 }
 
 /**
- * What the reported runtime actually measured, for the run that produced it.
+ * What `metrics.ms` measured — one sentence, because it is now one measurement.
  *
- * Not a field on the algorithm table, because the boundary is not a property of
- * the algorithm. It depends on which planner answered and on whether the run had
- * an ordering step at all, and getting that wrong is not a vague label — it is a
- * figure describing the opposite of the work it counted.
- *
- * The backend times its whole post-validation pipeline (`plan_route` in
- * planner.py), so on a remote run the ordering search is inside the figure. The
- * browser sums its leg searches only and computes the ordering outside that sum,
- * so on a local run the same work is outside it. Held–Karp and Nearest Neighbor
- * always order; a point search orders only when `optimiseOrder` is on, and then
- * pays for the same pairwise matrix the other two do.
+ * This used to depend on which planner answered. The backend timed its whole
+ * pipeline while the browser summed its legs, so the same trip reported two
+ * different numbers depending on how the app was deployed, and no label could
+ * make that comparable. Both now sum the legs of the route they built, and the
+ * backend reports its wider figure as `planningMs` instead of in place of this
+ * one. Nothing was lost, and the number a pane ranks on means one thing.
  */
-export function runtimeNote(
-  algo: AlgoKey,
-  { remote, optimiseOrder }: { remote: boolean; optimiseOrder: boolean },
-): string {
-  const orders = ordersTheTrip(algo, optimiseOrder)
-  if (!orders) {
-    return remote ? 'Complete backend planning time' : 'Algorithm running time'
-  }
-  if (!remote) {
-    return 'Running time of the legs alone — the ordering search is not counted'
+export const RUNTIME_NOTE =
+  'Time inside the leg searches — the same measurement in the browser and on the backend'
+
+/**
+ * What `metrics.planningMs` measured, for the run that produced it.
+ *
+ * Backend only, and unlike `ms` its span really does vary by run: the pipeline
+ * it times includes the ordering search, which Held–Karp and Nearest Neighbor
+ * always run and a point search runs only when `optimiseOrder` is on. Two rows
+ * that differ on that are not answering the same question, so this is also the
+ * reason the comparison table will not rank the column.
+ */
+export function planningNote(algo: AlgoKey, optimiseOrder: boolean): string {
+  if (!ordersTheTrip(algo, optimiseOrder)) {
+    return 'Complete backend planning time — this run had no ordering step, so it is the legs and the assembly'
   }
   return algo === 'held_karp'
     ? 'Complete backend planning time — the pairwise A* matrix, the bitmask DP, and the chosen legs'

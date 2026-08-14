@@ -46,7 +46,18 @@ class Metrics(Contract):
     generated: int
     reopened: int
     max_frontier: int
+    # Time inside the leg searches, summed. Deliberately the narrow measurement:
+    # `planRoute` in web/src/lib/search.ts sums exactly the same thing, so this
+    # is the one figure a pane may rank across algorithms and the app may show
+    # without knowing which planner answered. Widening it here is what made a
+    # local and a remote run of one trip disagree; `planning_ms` is where the
+    # wider number belongs.
     ms: float
+    # Wall-clock time for the whole post-validation pipeline — the ordering
+    # search and the pairwise matrix as well as the legs. Optional because only
+    # this planner can measure it: the browser computes its ordering behind a
+    # memo, so the same span there would time the pane order, not the work.
+    planning_ms: float | None = None
     # Correctness and constraints.
     optimal: bool
     # How many times a direction was dropped because of a turn restriction.

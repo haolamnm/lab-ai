@@ -251,7 +251,12 @@ counts itself. The full set (`shared/search.py`, surfaced in the response `Metri
 | `max_frontier` | the largest the frontier ever grew (peak memory) |
 | `turns_blocked` | directions dropped because a turn restriction forbade them |
 
-The planner adds the route-quality numbers (`km`, `minutes`, `cost`, `hops`, `optimal`, `ms`). To add
+The planner adds the route-quality numbers (`km`, `minutes`, `cost`, `hops`, `optimal`), and two
+times. `ms` sums the leg searches the route is made of — `planRoute` in `web/src/lib/search.ts` sums
+the same legs, so one trip reports one figure whichever planner answered it, and that is the number
+the app ranks on. `planning_ms` is wall clock over the whole post-validation pipeline, the ordering
+search and its pairwise matrix included; only this planner can measure it, so it is optional on the
+wire and reads `—` in the app when the browser planned the trip. To add
 a new search-effort metric, add a field to `SearchStats` and to the response `Metrics` together, and
 count it in the harness — never inside a single algorithm.
 

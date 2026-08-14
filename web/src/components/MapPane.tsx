@@ -1,8 +1,7 @@
 import L from 'leaflet'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef } from 'react'
-import { backendEnabled } from '../lib/planClient'
-import { ALGOS, edgeBetween, runtimeNote } from '../lib/search'
+import { ALGOS, edgeBetween, planningNote, RUNTIME_NOTE } from '../lib/search'
 import { nodeNames, tripNames } from '../lib/tripNames'
 import { broadcastView, joinViewSync, resetViewSync, sharedView } from '../lib/viewSync'
 import { TreeView } from './TreeView'
@@ -469,12 +468,11 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
   }, [step, pane.result, openedAt, graph])
 
   const algo = ALGOS[pane.algo]
+  // `optimiseOrder` is read from the store rather than off the result because
+  // `setOptimiseOrder` clears every result, so the flag cannot describe a run
+  // other than the one on screen.
   const optimiseOrder = useStore(s => s.optimiseOrder)
-  // What the runtime figure counted depends on the run, not on the algorithm —
-  // which planner answered, and whether there was an ordering step. `optimiseOrder`
-  // is read from the store rather than off the result because `setOptimiseOrder`
-  // clears every result, so the flag cannot describe a run other than this one.
-  const msTitle = runtimeNote(pane.algo, { remote: backendEnabled, optimiseOrder })
+  const planningTitle = planningNote(pane.algo, optimiseOrder)
   const r = pane.result
   const shown = r ? Math.min(step, r.trace.length) : 0
   const done = !!r && shown >= r.trace.length
@@ -605,7 +603,12 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
           <>
             <dd className="running">searching</dd>
             <dd>expanded <span className="num">{shown}</span>/<span className="num">{r.metrics.expanded}</span> nodes</dd>
-            <dd title={msTitle}><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
+            <dd title={RUNTIME_NOTE}><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
+            {r.metrics.planningMs !== undefined && (
+              <dd title={planningTitle}>
+                planning <span className="num">{r.metrics.planningMs.toFixed(1)}</span> ms
+              </dd>
+            )}
           </>
         ) : ranNothing ? (
           <dd className="fail">did not run — see the reason below</dd>
@@ -616,7 +619,7 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
             {/* Same figure and the same boundary as a successful run's, so it
                 takes the same words — a failed leg does not make the ordering
                 search that preceded it stop counting. */}
-            <dd title={`${msTitle}, up to the point it gave up`}>
+            <dd title={`, up to the point it gave up`}>
               <span className="num">{r.metrics.ms.toFixed(1)}</span> ms
             </dd>
           </>
@@ -628,7 +631,12 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
               cost <span className="num">{r.metrics.cost.toFixed(1)}</span>
             </dd>
             <dd><span className="num">{shown}</span>/<span className="num">{r.metrics.expanded}</span> nodes</dd>
-            <dd title={msTitle}><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
+            <dd title={RUNTIME_NOTE}><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
+            {r.metrics.planningMs !== undefined && (
+              <dd title={planningTitle}>
+                planning <span className="num">{r.metrics.planningMs.toFixed(1)}</span> ms
+              </dd>
+            )}
             {r.metrics.turnsBlocked > 0 && (
               <dd title="Number of times a direction was ruled out by a turn restriction sign from OpenStreetMap">
                 <span className="num">{r.metrics.turnsBlocked}</span> turn restrictions
