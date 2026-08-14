@@ -1,4 +1,5 @@
-import { ALGOS, edgeBetween } from './search'
+import { backendEnabled } from './planClient'
+import { ALGOS, edgeBetween, runtimeNote } from './search'
 import { costIsFlat, edgeCost, edgeMinutes, type Conditions } from './traffic'
 import type { Graph, GraphEdge, RouteResult } from './types'
 
@@ -279,6 +280,7 @@ export function toExportable(
   graph: Graph,
   results: { algo: string; result: RouteResult }[],
   conditions: Conditions,
+  optimiseOrder: boolean,
 ) {
   return {
     conditions,
@@ -306,6 +308,11 @@ export function toExportable(
       minutes: r.result.metrics.minutes,
       cost: r.result.metrics.cost,
       ms: r.result.metrics.ms,
+      // The export is what gets written up, and a bare millisecond figure is
+      // the one number in it that does not mean the same thing in every row.
+      // Carrying its own description is the only way it survives leaving the
+      // app, where there is no tooltip to hover.
+      msMeasured: runtimeNote(r.result.algo, { remote: backendEnabled, optimiseOrder }),
       optimal: r.result.metrics.optimal,
     })),
   }

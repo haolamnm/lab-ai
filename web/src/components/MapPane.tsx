@@ -613,7 +613,10 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
           <>
             <dd className="fail">no route</dd>
             <dd>expanded <span className="num">{r.metrics.expanded}</span> nodes</dd>
-            <dd title="Algorithm running time before giving up">
+            {/* Same figure and the same boundary as a successful run's, so it
+                takes the same words — a failed leg does not make the ordering
+                search that preceded it stop counting. */}
+            <dd title={`${msTitle}, up to the point it gave up`}>
               <span className="num">{r.metrics.ms.toFixed(1)}</span> ms
             </dd>
           </>

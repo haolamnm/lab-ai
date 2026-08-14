@@ -25,6 +25,7 @@ export function Explain() {
   const vehicle = useStore(s => s.vehicle)
   const period = useStore(s => s.period)
   const weights = useStore(s => s.weights)
+  const optimiseOrder = useStore(s => s.optimiseOrder)
   const [open, setOpen] = useState(true)
 
   const conditions: Conditions = { vehicle, period, weights }
@@ -63,7 +64,7 @@ export function Explain() {
 
   const download = () => {
     const blob = new Blob(
-      [JSON.stringify(toExportable(graph, results, conditions), null, 2)],
+      [JSON.stringify(toExportable(graph, results, conditions, optimiseOrder), null, 2)],
       { type: 'application/json' },
     )
     const a = document.createElement('a')
