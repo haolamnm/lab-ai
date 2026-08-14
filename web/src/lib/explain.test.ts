@@ -99,3 +99,34 @@ test('a route made entirely of unnamed ways still reports a road', () => {
 test('a name that is only whitespace counts as unnamed', () => {
   expect(roadsTaken(['   ', 'Nguyễn Huệ'])).toEqual(['Unnamed segment', 'Nguyễn Huệ'])
 })
+
+test('an empty name counts as unnamed, the same as a missing one', () => {
+  // A loaded graph can carry `"name": ""` — `text()` in store.ts passes any
+  // string through — and `jamsOn` reads the same field through `roadName`.
+  expect(roadsTaken(['', 'Nguyễn Huệ'])).toEqual(['Unnamed segment', 'Nguyễn Huệ'])
+})
+
+test('a gap in the graph breaks the chain instead of naming a road', () => {
+  // The path and the graph disagreeing is not the same case as an unnamed way,
+  // and must not become an entry. The two Lê Lợi stretches stay separate: they
+  // are not one road, which is the whole claim the arrows make.
+  // A -> B -> C -> D, all one road, with the middle edge taken out from under
+  // the path so the gap falls between the two stretches rather than at the end.
+  const graph = chain(['Lê Lợi', 'Lê Lợi', 'Lê Lợi'])
+  const path = Object.keys(graph.nodes)
+  graph.adj['B'] = []
+  const result: RouteResult = {
+    algo: 'astar',
+    order: [path[0]!, path.at(-1)!],
+    path,
+    trace: [],
+    nodeIds: path,
+    reveal: [],
+    found: true,
+    metrics: { km: 1, minutes: 1, cost: 1, expanded: 1, ms: 1, optimal: true, turnsBlocked: 0 },
+  }
+
+  const info = explain(graph, [{ algo: 'A*', result }], conditions, id => id)
+
+  expect(info!.streets).toEqual(['Lê Lợi', 'Lê Lợi'])
+})
