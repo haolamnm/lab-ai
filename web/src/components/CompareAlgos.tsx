@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ALGOS } from '../lib/search'
+import { ALGOS, ordersTheTrip, planningNote, RUNTIME_NOTE } from '../lib/search'
 import { tripNames } from '../lib/tripNames'
 import type { Metrics } from '../lib/types'
 import { useStore } from '../store'
@@ -35,6 +35,7 @@ export function CompareAlgos() {
   const goal = useStore(s => s.goal)
   const stops = useStore(s => s.stops)
   const step = useStore(s => s.step)
+  const optimiseOrder = useStore(s => s.optimiseOrder)
   const [open, setOpen] = useState(true)
 
   const nameOf = useMemo(() => tripNames(start, goal, stops), [start, goal, stops])
@@ -71,6 +72,23 @@ export function CompareAlgos() {
     return out
   }, [rows])
 
+  /**
+   * Whether Planning is measuring a different span in different rows.
+   *
+   * Every ranked column answers one question per row, Runtime included now that
+   * both planners sum the same legs. Planning does not: it times the backend's
+   * whole pipeline, so a row that chose a visit order has a full directed
+   * pairwise A* matrix inside its figure and a row that did not has only its
+   * legs. That is why the column is shown but never ranked — marking a winner
+   * would name the algorithm that skipped the work as the fastest one.
+   *
+   * `optimiseOrder` makes every row order, which puts them back on equal terms.
+   */
+  const planningSpansDiffer = useMemo(
+    () => new Set(rows.map(r => ordersTheTrip(r.algo, optimiseOrder))).size > 1,
+    [rows, optimiseOrder],
+  )
+
   // The winning value in each ranked column, over the runs that found a route.
   // A column every row leaves blank has no winner, which is why this can be
   // undefined rather than defaulting to zero — marking "0 ms" as the best time
@@ -89,12 +107,13 @@ export function CompareAlgos() {
 
   if (!rows.length) return null
 
-  /** A metric cell: monospace, right-aligned, marked when it is the best in its column. */
-  const cell = (m: Metrics, column: Ranked, text: (v: number) => string) => {
+  /** A metric cell: monospace, right-aligned, marked when it is the best in its column.
+   *  `title` is for the one column whose meaning is per-row rather than per-column. */
+  const cell = (m: Metrics, column: Ranked, text: (v: number) => string, title?: string) => {
     const value = m[column]
     if (typeof value !== 'number') return <td className="r num" key={column}>—</td>
     return (
-      <td className="r num" key={column} data-best={best[column] === value}>
+      <td className="r num" key={column} data-best={best[column] === value} title={title}>
         {text(value)}
       </td>
     )
@@ -129,7 +148,15 @@ export function CompareAlgos() {
                 <th className="r" title="States pushed onto the frontier. Backend only">Generated</th>
                 <th className="r" title="States reached again by a cheaper route. Backend only">Reopened</th>
                 <th className="r" title="Largest the frontier ever grew. Backend only">Peak frontier</th>
-                <th className="r">Runtime</th>
+                <th className="r" title={RUNTIME_NOTE}>Runtime</th>
+                <th
+                  className="r"
+                  title={planningSpansDiffer
+                    ? 'Complete backend planning time. What it counted differs by row — hover a value. Not comparable between rows'
+                    : planningNote(rows[0]!.algo, optimiseOrder)}
+                >
+                  Planning
+                </th>
                 <th>Verdict</th>
               </tr>
             </thead>
@@ -172,7 +199,12 @@ export function CompareAlgos() {
                         <td className="r num">{m.generated ?? '—'}</td>
                         <td className="r num">{m.reopened ?? '—'}</td>
                         <td className="r num">{m.maxFrontier ?? '—'}</td>
-                        {cell(m, 'ms', v => `${v.toFixed(1)} ms`)}
+                        {cell(m, 'ms', v => `${v.toFixed(1)} ms`, RUNTIME_NOTE)}
+                        {/* Never ranked, so it is a plain cell like the other three
+                            the backend alone reports — see `planningSpansDiffer`. */}
+                        <td className="r num" title={planningNote(algo, optimiseOrder)}>
+                          {m.planningMs === undefined ? '—' : `${m.planningMs.toFixed(1)} ms`}
+                        </td>
                         <td className="verdict-cell" data-optimal={m.optimal}>
                           {/* Held back until the run has played out, exactly as the pane
                               footer holds back the distance: the verdict is the answer. */}
@@ -180,7 +212,7 @@ export function CompareAlgos() {
                         </td>
                       </>
                     ) : (
-                      <td className="fail" colSpan={showOrder ? 11 : 10}>
+                      <td className="fail" colSpan={showOrder ? 12 : 11}>
                         {result.problem ?? 'no route'}
                       </td>
                     )}
@@ -194,8 +226,14 @@ export function CompareAlgos() {
             directly comparable; the best value in each is marked. In <b>Visit order</b>,
             a stop is <span className="order-differs">red</span> where the algorithms did
             not all choose the same place at that point in the tour.{' '}<b>Generated</b>,{' '}
-            <b>Reopened</b> and <b>Peak frontier</b> are measured by the Python backend only —
-            they read “—” when the app is planning in the browser.
+            <b>Reopened</b>, <b>Peak frontier</b> and <b>Planning</b> are measured by the
+            Python backend only — they read “—” when the app is planning in the browser.
+            {' '}<b>Runtime</b> is the leg searches, and both planners measure it the same
+            way, so it is ranked like the columns before it. <b>Planning</b> is the whole
+            backend pipeline — including the pairwise search that Held–Karp and Nearest
+            Neighbor run over every pair of trip points and a plain point search does not
+            — so the rows are not always answering the same question and no best is
+            marked; hover a value for what it counted.
           </p>
         </div>
       )}

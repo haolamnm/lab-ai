@@ -1,7 +1,7 @@
 import L from 'leaflet'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef } from 'react'
-import { ALGOS, edgeBetween } from '../lib/search'
+import { ALGOS, edgeBetween, planningNote, RUNTIME_NOTE } from '../lib/search'
 import { nodeNames, tripNames } from '../lib/tripNames'
 import { broadcastView, joinViewSync, resetViewSync, sharedView } from '../lib/viewSync'
 import { TreeView } from './TreeView'
@@ -468,11 +468,11 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
   }, [step, pane.result, openedAt, graph])
 
   const algo = ALGOS[pane.algo]
-  // An algorithm whose runtime figure does not measure the whole search says so
-  // on the table itself. Held–Karp is the one that does: it times the A* legs it
-  // ended up choosing, which is neither the full pairwise search nor the DP, and
-  // "total running time" would claim it did far less work than it did.
-  const msTitle = algo.msNote ?? 'Algorithm running time'
+  // `optimiseOrder` is read from the store rather than off the result because
+  // `setOptimiseOrder` clears every result, so the flag cannot describe a run
+  // other than the one on screen.
+  const optimiseOrder = useStore(s => s.optimiseOrder)
+  const planningTitle = planningNote(pane.algo, optimiseOrder)
   const r = pane.result
   const shown = r ? Math.min(step, r.trace.length) : 0
   const done = !!r && shown >= r.trace.length
@@ -603,7 +603,12 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
           <>
             <dd className="running">searching</dd>
             <dd>expanded <span className="num">{shown}</span>/<span className="num">{r.metrics.expanded}</span> nodes</dd>
-            <dd title={msTitle}><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
+            <dd title={RUNTIME_NOTE}><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
+            {r.metrics.planningMs !== undefined && (
+              <dd title={planningTitle}>
+                planning <span className="num">{r.metrics.planningMs.toFixed(1)}</span> ms
+              </dd>
+            )}
           </>
         ) : ranNothing ? (
           <dd className="fail">did not run — see the reason below</dd>
@@ -611,7 +616,10 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
           <>
             <dd className="fail">no route</dd>
             <dd>expanded <span className="num">{r.metrics.expanded}</span> nodes</dd>
-            <dd title="Algorithm running time before giving up">
+            {/* Same figure and the same boundary as a successful run's, so it
+                takes the same words — a failed leg does not make the ordering
+                search that preceded it stop counting. */}
+            <dd title={`, up to the point it gave up`}>
               <span className="num">{r.metrics.ms.toFixed(1)}</span> ms
             </dd>
           </>
@@ -623,7 +631,12 @@ export function MapPane({ pane, onDragStart, onDropOn }: Props) {
               cost <span className="num">{r.metrics.cost.toFixed(1)}</span>
             </dd>
             <dd><span className="num">{shown}</span>/<span className="num">{r.metrics.expanded}</span> nodes</dd>
-            <dd title={msTitle}><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
+            <dd title={RUNTIME_NOTE}><span className="num">{r.metrics.ms.toFixed(1)}</span> ms</dd>
+            {r.metrics.planningMs !== undefined && (
+              <dd title={planningTitle}>
+                planning <span className="num">{r.metrics.planningMs.toFixed(1)}</span> ms
+              </dd>
+            )}
             {r.metrics.turnsBlocked > 0 && (
               <dd title="Number of times a direction was ruled out by a turn restriction sign from OpenStreetMap">
                 <span className="num">{r.metrics.turnsBlocked}</span> turn restrictions

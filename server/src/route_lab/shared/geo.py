@@ -7,8 +7,8 @@ padding, hashing), so the backend never needs the rest.
 import math
 from typing import Protocol
 
-# Mean Earth radius. Exported because ``shared/heuristics.py`` projects offsets
-# onto the same sphere, and two copies of the constant could drift apart.
+# Mean Earth radius, in the same units ``haversine`` returns. Its only consumer
+# is that function, directly below.
 EARTH_RADIUS_KM = 6371.0
 
 

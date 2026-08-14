@@ -206,7 +206,12 @@ def test_nearest_search_effort_includes_only_selected_cached_legs(
     result = planner.plan_route(request)
 
     assert result.path == ["W", "A", "B"]
-    assert result.metrics.ms == 4.6
+    # The unused W -> B leg cost 99 ms and contributes none of it: `ms` sums the
+    # legs the route is made of, exactly as the search-effort counts below do.
+    # `planning_ms` is the other question — it covers the whole pipeline, the
+    # pairwise searches this route did not select included.
+    assert result.metrics.ms == 3.0
+    assert result.metrics.planning_ms == 4.6
     assert result.metrics.expanded == 3
     assert result.metrics.generated == 5
     assert result.metrics.reopened == 1

@@ -18,10 +18,6 @@ interface AlgorithmInfo {
    *  O(n²·2ⁿ) in them. Mirrors `MAX_HELD_KARP_STOPS` in the Python planner, which
    *  is still the one that enforces it; this only warns before Run is pressed. */
   maxStops?: number
-  /** What the reported runtime actually measures, when it is not simply "the
-   *  search". Held–Karp times the legs it ended up choosing, which is neither the
-   *  full pairwise search nor the DP. */
-  msNote?: string
   /** How the optimality guarantee reads, when the bare word "optimal" would let a
    *  reader assume the wrong one. Prefixed with the algorithm's name where shown. */
   optimalityNote?: string
@@ -51,9 +47,52 @@ export const ALGOS: Record<AlgoKey, AlgorithmInfo> = {
     note: 'Exact cheapest visit order, from pairwise A* costs and bitmask DP. Backend only',
     backendOnly: true,
     maxStops: 12,
-    msNote: 'Runtime of the A* legs on the chosen tour — not the full pairwise search, and not the DP',
     optimalityNote: 'is exact over the visit order: it costs every ordered pair of trip points with A*, then evaluates every possible tour through them, so no tour over these stops is cheaper than this one. Each leg of the tour is itself an optimal A* route. The timeline replays those chosen leg searches — the bitmask DP table is not part of the result.',
   },
+}
+
+/**
+ * Whether the run chose a visit order before routing anything.
+ *
+ * The two trip-level algorithms always do; a point search does it only when the
+ * user asks, and then pays for the same directed pairwise matrix they do. What
+ * makes this worth naming is that the ordering search sits inside the backend's
+ * runtime and outside its search-effort counts, so it is the dividing line for
+ * both what a runtime figure means and whether two of them can be compared.
+ */
+export function ordersTheTrip(algo: AlgoKey, optimiseOrder: boolean): boolean {
+  return algo === 'held_karp' || algo === 'nearest' || optimiseOrder
+}
+
+/**
+ * What `metrics.ms` measured — one sentence, because it is now one measurement.
+ *
+ * This used to depend on which planner answered. The backend timed its whole
+ * pipeline while the browser summed its legs, so the same trip reported two
+ * different numbers depending on how the app was deployed, and no label could
+ * make that comparable. Both now sum the legs of the route they built, and the
+ * backend reports its wider figure as `planningMs` instead of in place of this
+ * one. Nothing was lost, and the number a pane ranks on means one thing.
+ */
+export const RUNTIME_NOTE =
+  'Time inside the leg searches — the same measurement in the browser and on the backend'
+
+/**
+ * What `metrics.planningMs` measured, for the run that produced it.
+ *
+ * Backend only, and unlike `ms` its span really does vary by run: the pipeline
+ * it times includes the ordering search, which Held–Karp and Nearest Neighbor
+ * always run and a point search runs only when `optimiseOrder` is on. Two rows
+ * that differ on that are not answering the same question, so this is also the
+ * reason the comparison table will not rank the column.
+ */
+export function planningNote(algo: AlgoKey, optimiseOrder: boolean): string {
+  if (!ordersTheTrip(algo, optimiseOrder)) {
+    return 'Complete backend planning time — this run had no ordering step, so it is the legs and the assembly'
+  }
+  return algo === 'held_karp'
+    ? 'Complete backend planning time — the pairwise A* matrix, the bitmask DP, and the chosen legs'
+    : 'Complete backend planning time — the pairwise ordering search and the chosen legs'
 }
 
 /**
@@ -744,6 +783,14 @@ export function planRoute(input: PlanInput): RouteResult {
   let km = 0
   let minutes = 0
   let cost = 0
+  // Summed leg search time, not wall-clock planning time — the one metric whose
+  // boundary deliberately differs from the backend's. `plan_route` in planner.py
+  // times everything after validation, ordering included; this cannot, because
+  // the `shared()` memo below hands the ordering to whichever pane asks first and
+  // returns it free to the rest, so a wall-clock span here would report the work
+  // of the pane order rather than of the algorithm. The figure ranks panes
+  // against each other within one run, and `backendEnabled` is fixed at build
+  // time, so no one ever sees a local and a remote number side by side.
   let ms = 0
   let turnsBlocked = 0
   let found = true

@@ -148,7 +148,11 @@ def test_held_karp_assembles_only_selected_cached_legs(
     assert len(result.trace) == 3
     assert result.metrics.km == 3.0
     assert result.metrics.cost == 3.0
-    assert result.metrics.ms == 7.0
+    # The three legs of the chosen tour, at 1, 2 and 3 ms. The unused W -> B leg
+    # cost 99 ms and is left out of `ms` the same way it is left out of the
+    # search-effort counts below; `planning_ms` is what covers it.
+    assert result.metrics.ms == 6.0
+    assert result.metrics.planning_ms == 7.0
     assert result.metrics.expanded == 6
     assert result.metrics.generated == 9
     assert result.metrics.reopened == 3

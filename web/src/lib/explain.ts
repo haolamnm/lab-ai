@@ -1,6 +1,6 @@
-import { ALGOS, edgeBetween } from './search'
+import { ALGOS, edgeBetween, planningNote, RUNTIME_NOTE } from './search'
 import { costIsFlat, edgeCost, edgeMinutes, type Conditions } from './traffic'
-import type { Graph, RouteResult } from './types'
+import type { Graph, GraphEdge, RouteResult } from './types'
 
 /**
  * Generates the explanation for the chosen route.
@@ -50,6 +50,17 @@ interface Explanation {
 
 const fmt = (n: number, d = 1) => n.toFixed(d)
 
+/** How a road segment is named wherever the explanation names one.
+ *
+ *  A way with no `name` tag is the common case on an OpenStreetMap graph, not
+ *  the exotic one, and a loaded graph can carry `""` or `"  "` as well —
+ *  `text()` in store.ts passes any string straight through. One helper so the
+ *  congested-segment list and the roads chain cannot disagree about what counts
+ *  as unnamed and render the same edge two different ways. */
+function roadName(edge: GraphEdge): string {
+  return edge.name?.trim() || 'Unnamed segment'
+}
+
 /** The most congested segments on the route, grouped by road name. */
 function jamsOn(graph: Graph, path: string[], c: Conditions): Jam[] {
   const byName = new Map<string, Jam>()
@@ -58,7 +69,7 @@ function jamsOn(graph: Graph, path: string[], c: Conditions): Jam[] {
     const e = previous === null ? undefined : edgeBetween(graph, previous, node)
     previous = node
     if (!e || e.congestion < 4) continue
-    const name = e.name ?? 'Unnamed segment'
+    const name = roadName(e)
     const hit = byName.get(name)
     const minutes = edgeMinutes(e, c)
     if (hit) {
@@ -72,14 +83,32 @@ function jamsOn(graph: Graph, path: string[], c: Conditions): Jam[] {
   return [...byName.values()].sort((a, b) => b.congestion * b.km - a.congestion * a.km).slice(0, 3)
 }
 
-/** Convert the node-by-node result path into a readable sequence of roads. */
+/** Convert the node-by-node result path into a readable sequence of roads.
+ *
+ *  Every adjacent pair in the result is a claim that the trip turned from one
+ *  road directly onto the next, so nothing on the route may be dropped. An
+ *  unnamed way is named by `roadName` rather than skipped: skipping it would
+ *  splice the roads either side into neighbours and collapse them when they
+ *  share a name, so a trip down Lê Lợi, through an unnamed alley and back onto
+ *  Lê Lợi would read as one unbroken road.
+ *
+ *  A missing edge is the other half of that contract and not the same case. It
+ *  means the path and the graph disagree, which `clearResults` on every rebuild
+ *  is what currently prevents — so rather than name a road that is not there,
+ *  it breaks the run: the roads either side stay separate entries even when
+ *  they share a name, and no entry claims to be the gap. */
 function streetsOn(graph: Graph, path: string[]): string[] {
   const streets: string[] = []
+  let previous: string | null = null
   for (let i = 1; i < path.length; i += 1) {
     const edge = edgeBetween(graph, path[i - 1]!, path[i]!)
-    const name = edge?.name?.trim()
-    if (!name) continue
-    if (streets.at(-1) !== name) streets.push(name)
+    if (!edge) {
+      previous = null
+      continue
+    }
+    const name = roadName(edge)
+    if (previous !== name) streets.push(name)
+    previous = name
   }
   return streets
 }
@@ -250,6 +279,7 @@ export function toExportable(
   graph: Graph,
   results: { algo: string; result: RouteResult }[],
   conditions: Conditions,
+  optimiseOrder: boolean,
 ) {
   return {
     conditions,
@@ -277,6 +307,14 @@ export function toExportable(
       minutes: r.result.metrics.minutes,
       cost: r.result.metrics.cost,
       ms: r.result.metrics.ms,
+      msMeasured: RUNTIME_NOTE,
+      // Absent on a browser-planned run, and the description travels with it:
+      // the export is what gets written up, and this is the figure whose span
+      // varies by row, in a file where there is no tooltip to hover.
+      planningMs: r.result.metrics.planningMs,
+      planningMsMeasured: r.result.metrics.planningMs === undefined
+        ? undefined
+        : planningNote(r.result.algo, optimiseOrder),
       optimal: r.result.metrics.optimal,
     })),
   }

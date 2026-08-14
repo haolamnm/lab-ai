@@ -457,7 +457,9 @@ the whole project: a backend very commonly returns just the final route and
 forgets `trace`, and without `trace` the entire step-by-step visualization —
 ten points on the grading rubric — simply doesn't exist.
 
-`metrics` consists of: `km`, `minutes`, `cost`, `expanded`, `ms`, `optimal`.
+`metrics` consists of: `km`, `minutes`, `cost`, `expanded`, `ms`, `optimal`. `ms` is the summed
+leg-search time, measured identically by both planners; the backend adds `planningMs` for its whole
+planning pipeline, which the browser cannot measure and therefore omits.
 
 `trace` is an array of steps:
 ```json
