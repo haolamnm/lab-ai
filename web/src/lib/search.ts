@@ -19,8 +19,8 @@ interface AlgorithmInfo {
    *  is still the one that enforces it; this only warns before Run is pressed. */
   maxStops?: number
   /** What the reported runtime actually measures, when it is not simply "the
-   *  search". Held–Karp times the legs it ended up choosing, which is neither the
-   *  full pairwise search nor the DP. */
+   *  search". A backend-only algorithm is timed at the planner boundary in
+   *  planner.py, so its figure covers the ordering work as well as the legs. */
   msNote?: string
   /** How the optimality guarantee reads, when the bare word "optimal" would let a
    *  reader assume the wrong one. Prefixed with the algorithm's name where shown. */
@@ -51,7 +51,7 @@ export const ALGOS: Record<AlgoKey, AlgorithmInfo> = {
     note: 'Exact cheapest visit order, from pairwise A* costs and bitmask DP. Backend only',
     backendOnly: true,
     maxStops: 12,
-    msNote: 'Runtime of the A* legs on the chosen tour — not the full pairwise search, and not the DP',
+    msNote: 'Complete backend planning time — the pairwise A* matrix, the bitmask DP, and the chosen legs',
     optimalityNote: 'is exact over the visit order: it costs every ordered pair of trip points with A*, then evaluates every possible tour through them, so no tour over these stops is cheaper than this one. Each leg of the tour is itself an optimal A* route. The timeline replays those chosen leg searches — the bitmask DP table is not part of the result.',
   },
 }
@@ -744,6 +744,14 @@ export function planRoute(input: PlanInput): RouteResult {
   let km = 0
   let minutes = 0
   let cost = 0
+  // Summed leg search time, not wall-clock planning time — the one metric whose
+  // boundary deliberately differs from the backend's. `plan_route` in planner.py
+  // times everything after validation, ordering included; this cannot, because
+  // the `shared()` memo below hands the ordering to whichever pane asks first and
+  // returns it free to the rest, so a wall-clock span here would report the work
+  // of the pane order rather than of the algorithm. The figure ranks panes
+  // against each other within one run, and `backendEnabled` is fixed at build
+  // time, so no one ever sees a local and a remote number side by side.
   let ms = 0
   let turnsBlocked = 0
   let found = true
