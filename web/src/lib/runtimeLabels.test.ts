@@ -16,12 +16,15 @@ import { ordersTheTrip, planningNote, RUNTIME_NOTE } from './search'
 
 const ALL = ['astar', 'ucs', 'bfs', 'dfs', 'nearest', 'held_karp'] as const
 
-test('the search-runtime figure names both greedy search strategies explicitly', () => {
+test('the search-runtime figure takes one description, not one per strategy', () => {
   // It reads the same for every run because it measures the same thing in every
-  // run — that is the whole reason `planningMs` exists as a separate field.
-  expect(RUNTIME_NOTE).toContain('multi-goal A*')
-  expect(RUNTIME_NOTE).toContain('candidate-based ordering')
-  expect(RUNTIME_NOTE).toContain('same boundary')
+  // run — that is the whole reason `planningMs` exists as a separate field. It
+  // needed a per-strategy carve-out only while an ordering pass could search a
+  // leg it then dropped; no planning path does that, so the sentence is one
+  // again and `ms` stays rankable across the panes.
+  expect(RUNTIME_NOTE).toContain('leg searches')
+  expect(RUNTIME_NOTE).toContain('both planners')
+  expect(RUNTIME_NOTE).not.toContain('candidate')
 })
 
 test('the two trip-level algorithms always order', () => {
@@ -44,7 +47,7 @@ test('optimiseOrder puts every algorithm on one footing', () => {
 
 test('the planning label says whether the ordering search is in the figure', () => {
   expect(planningNote('nearest', false)).toContain('multi-goal A*')
-  expect(planningNote('ucs', true)).toContain('candidate UCS')
+  expect(planningNote('ucs', true)).toContain('multi-goal UCS')
   expect(planningNote('held_karp', false)).toContain('bitmask DP')
   expect(planningNote('astar', false)).toContain('no ordering step')
   // The flag alone moves a point search from one description to the other.

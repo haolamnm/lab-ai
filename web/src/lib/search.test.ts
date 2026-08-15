@@ -162,6 +162,28 @@ test('a trip whose pickup and dropoff are one point is refused, not planned', ()
   }
 })
 
+test('a blocked greedy step still reports the search it ran', () => {
+  // A graph with no roads at all, so the very first greedy step fails with two
+  // destinations still outstanding. That step really did expand the pickup and
+  // build a trace for it, and `ms` counts its search; dropping the leg because
+  // it arrived nowhere would leave a run that spent time expanding nothing.
+  // `server/tests/test_planner_nearest.py` pins the same shape on the backend.
+  const empty: Graph = { ...graph, edges: [], adj: {} }
+  for (const node of Object.keys(empty.nodes)) empty.adj[node] = []
+
+  for (const algo of ['nearest', 'ucs'] as const) {
+    const result = planRoute({
+      ...base, graph: empty, algo, stops: ['C', 'M'], goal: 'J',
+      optimiseOrder: true, returnToStart: true,
+    })
+
+    expect(result.found, algo).toBe(false)
+    expect(result.path, algo).toEqual([])
+    expect(result.metrics.expanded, algo).toBeGreaterThanOrEqual(1)
+    expect(result.metrics.expanded, algo).toBe(result.trace.length)
+  }
+})
+
 test('optimising the visit order changes the route on all four point searches', () => {
   // The ordering toggle is a teaching control, so its effect has to be visible on
   // every algorithm that offers it — including DFS, where optimising makes the

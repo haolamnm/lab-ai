@@ -144,7 +144,7 @@ export function CompareAlgos() {
                 <th className="r">Distance</th>
                 <th className="r">Time</th>
                 <th className="r" title="Road segments in the chosen route">Hops</th>
-                <th className="r" title="Nodes expanded by the selected, replayable route legs">Expanded</th>
+                <th className="r" title="Nodes taken off the frontier and expanded">Expanded</th>
                 <th className="r" title="States pushed onto the frontier. Backend only">Generated</th>
                 <th className="r" title="States reached again by a cheaper route. Backend only">Reopened</th>
                 <th className="r" title="Largest the frontier ever grew. Backend only">Peak frontier</th>
@@ -228,13 +228,14 @@ export function CompareAlgos() {
             not all choose the same place at that point in the tour.{' '}<b>Generated</b>,{' '}
             <b>Reopened</b>, <b>Peak frontier</b> and <b>Planning</b> are measured by the
             Python backend only — they read “—” when the app is planning in the browser.
-            {' '}<b>Expanded</b> describes the selected route legs. NN runtime contains one
-            shared multi-goal A* per greedy step; candidate-based ordering counts every
-            search. Both planners use that same boundary, so Runtime is ranked like the
-            columns before it. <b>Planning</b>
-            is the whole backend pipeline, including comparisons and assembly (plus a
-            pairwise matrix where applicable), so no best is marked; hover a value for what
-            it counted.
+            {' '}<b>Runtime</b> is the leg searches, and both planners measure it the same
+            way, so it is ranked like the columns before it — an ordering pass searches one
+            leg per greedy step and never a leg it drops, so it is not charged for work the
+            other columns do not show. <b>Planning</b> is the whole backend pipeline —
+            including the pairwise search that Held–Karp and the ordered point searches run
+            over every pair of trip points and a plain point search does not — so the rows
+            are not always answering the same question and no best is marked; hover a value
+            for what it counted.
           </p>
         </div>
       )}

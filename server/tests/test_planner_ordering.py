@@ -131,12 +131,14 @@ def test_optional_ordering_excludes_pairwise_metrics(monkeypatch: pytest.MonkeyP
     assert result.metrics.ms < 10_000.0
 
 
+# UCS is absent here because it no longer orders through the pairwise matrix;
+# `test_optional_ordering_keeps_ucs_legs_on_dijkstra` below pins the same
+# guarantee for it against the search it does use.
 @pytest.mark.parametrize(
     ("algo", "search_name"),
     [
         ("bfs", "breadth_first_search"),
         ("dfs", "depth_first_search"),
-        ("ucs", "uniform_cost_search"),
         ("astar", "a_star_search"),
     ],
 )
@@ -160,6 +162,31 @@ def test_optional_ordering_does_not_change_leg_search(
 
     assert result.found is True
     assert calls == 2
+
+
+def test_optional_ordering_keeps_ucs_legs_on_dijkstra(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The invariant the parametrized test above states -- asking for an order
+    # must not quietly route the legs with some other algorithm -- still holds
+    # for UCS. What changed is that ordering and routing became the same search:
+    # `uniform_cost_multi_goal_search` is Dijkstra asked for a set of goals
+    # instead of one, so it settles the nearest and the legs stay UCS legs. That
+    # is also why the count is one call per leg rather than one per candidate.
+    real_search = planner.uniform_cost_multi_goal_search
+    calls: list[tuple[str, tuple[str, ...]]] = []
+
+    def search(problem: SearchProblem, goals: Sequence[str]) -> SearchLegResult:
+        calls.append((problem.start, tuple(goals)))
+        return real_search(problem, goals)
+
+    monkeypatch.setattr(planner, "uniform_cost_multi_goal_search", search)
+
+    result = planner.plan_route(_request("ucs", optimise_order=True))
+
+    assert result.found is True
+    assert result.order == ["W", "A", "B"]
+    # One step over both destinations, then the pinned dropoff. A search per
+    # candidate would have made three calls to reach the same two legs.
+    assert calls == [("W", ("A",)), ("A", ("B",))]
 
 
 # The same graph with a way home, so a closed tour is possible at all.

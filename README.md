@@ -157,9 +157,10 @@ Custom. Set all four to zero and every route costs the same — the app detects 
 
 ## The six algorithms
 
-The first four are point-to-point searches, normally run once per route leg. With
-`optimiseOrder`, UCS also evaluates every remaining candidate at each greedy step and retains the
-winning leg. The last two are trip-level strategies that choose the visit order over the stops.
+The first four are point-to-point searches, run once per route leg. With `optimiseOrder`, UCS
+orders the stops with UCS itself — one multi-goal search per greedy step, which both picks the
+next stop and routes the leg. The last two are trip-level strategies that choose the visit order
+over the stops.
 
 | Algorithm | Priority | Optimal? | Character |
 |---|---|---|---|

@@ -1,7 +1,5 @@
 """Nearest Neighbor ordering and its private A* heuristic."""
 
-from dataclasses import replace
-
 import pytest
 
 from route_lab.algorithms.nearest_neighbor import (
@@ -158,8 +156,11 @@ def test_multi_goal_astar_keeps_input_order_when_equal_cost_goals_settle_out_of_
     graph = build_graph(request.graph)
     goals = ["B", "A"]
     scale = nearest_neighbor_heuristic_scale(graph, request.conditions)
-    problem = replace(
-        build_problem(graph, "W", "A", request.conditions),
+    problem = build_problem(
+        graph,
+        "W",
+        "A",
+        request.conditions,
         heuristic=nearest_neighbor_multi_goal_heuristic(graph, goals, scale),
     )
 

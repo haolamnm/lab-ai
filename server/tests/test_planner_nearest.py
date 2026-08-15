@@ -141,6 +141,27 @@ def test_nearest_runtime_sums_one_multi_goal_search_per_step(
     assert result.metrics.expanded == len(result.trace)
 
 
+def test_a_blocked_greedy_step_still_reports_the_search_it_ran() -> None:
+    # Nothing leaves the warehouse, so the very first step fails with two
+    # destinations still outstanding. That step really did expand W and build a
+    # trace for it; dropping the leg because it arrived nowhere would report a
+    # failed run as having done no work at all, and `ms` would then be counting
+    # a search that no effort column admitted to.
+    result = planner.plan_route(
+        _request(
+            stops=["A", "B"],
+            goal="B",
+            return_to_start=True,
+            edges=[("A", "B", 1.0), ("B", "A", 1.0)],
+        )
+    )
+
+    assert result.found is False
+    assert result.metrics.expanded >= 1
+    assert result.metrics.expanded == len(result.trace)
+    assert result.path == []
+
+
 def test_nearest_explains_an_unreachable_leg_instead_of_naming_the_cache() -> None:
     # W reaches both stops but nothing leaves A, so the A -> B leg has no route.
     result = planner.plan_route(

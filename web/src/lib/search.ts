@@ -55,7 +55,8 @@ export const ALGOS: Record<AlgoKey, AlgorithmInfo> = {
  * Whether the run chose a visit order before routing anything.
  *
  * The two trip-level algorithms always do; a point search does it only when the
- * user asks. NN uses multi-goal A*, while Held–Karp uses a pairwise matrix.
+ * user asks. NN and optional-order UCS each use one multi-goal search per greedy
+ * step, while Held–Karp and the remaining point searches use a pairwise matrix.
  * This predicate is used to explain what the wider backend planning timer covered.
  */
 export function ordersTheTrip(algo: AlgoKey, optimiseOrder: boolean): boolean {
@@ -68,13 +69,13 @@ export function ordersTheTrip(algo: AlgoKey, optimiseOrder: boolean): boolean {
  * This used to depend on which planner answered. The backend timed its whole
  * pipeline while the browser summed its legs, so the same trip reported two
  * different numbers depending on how the app was deployed, and no label could
- * make that comparable. Both now sum the same algorithm search calls: selected
- * route legs for fixed-order point searches, one multi-goal A* per NN step, and
- * every candidate call for greedy UCS ordering. The backend reports its wider
- * wall-clock figure as `planningMs`.
+ * make that comparable. Both now sum the leg searches: one per leg for a
+ * fixed-order point search, one per greedy step for an ordering pass, and never
+ * a search whose leg was dropped. The backend reports its wider wall-clock
+ * figure as `planningMs`.
  */
 export const RUNTIME_NOTE =
-  'Time inside algorithm search calls — NN uses one multi-goal A* per step; candidate-based ordering counts every search; both planners use the same boundary'
+  'Time inside the leg searches, and both planners measure it the same way'
 
 /**
  * What `metrics.planningMs` measured, for the run that produced it.
@@ -94,7 +95,7 @@ export function planningNote(algo: AlgoKey, optimiseOrder: boolean): string {
     : algo === 'nearest'
       ? 'Complete backend planning time — all multi-goal A* steps, greedy updates, and route assembly'
       : algo === 'ucs'
-        ? 'Complete backend planning time — all live candidate UCS searches, greedy comparisons, and route assembly'
+        ? 'Complete backend planning time — all multi-goal UCS steps, greedy updates, and route assembly'
         : 'Complete backend planning time — the pairwise ordering search and the chosen legs'
 }
 
@@ -555,30 +556,37 @@ export function nearestNeighborMultiGoalHeuristic(
 }
 
 /**
- * NN-specific multi-goal A*: one shared search returns the cheapest goal.
+ * One search that answers for a whole set of goals at once.
  *
- * Equal-cost goals keep their input order. After the first goal is settled the
- * search only continues while another frontier state can still match its cost,
- * so a discarded per-candidate search never builds a separate frontier trace.
+ * A greedy step asks which remaining destination is nearest. Answering it with
+ * a search per candidate repeats the work around the origin once per candidate
+ * and discards every losing trace; one shared frontier costs one search per
+ * step instead, and the step's only search is the leg the planner keeps.
+ *
+ * Pass a `heuristic` and it is A* over a goal set; pass `null` and it is UCS
+ * over one, recording `h: null` so a blind step draws like the single-goal UCS
+ * beside it. A heuristic must be *consistent*: this loop never reopens a closed
+ * state, which is what keeps it identical to the backend's `multi_goal_search`.
+ *
+ * Equal-cost goals keep their input order, so the search continues past the
+ * first settled goal while another frontier state can still match its cost.
  */
-function nearestNeighborMultiGoalSearch(
+function multiGoalSearch(
   graph: Graph,
   start: string,
   goals: readonly string[],
   conditions: Conditions,
-  scale: number,
+  heuristic: ((nodeId: string) => number) | null,
   incoming: GraphEdge | null = null,
 ): SearchLegResult {
   const startedAt = performance.now()
   const memory = createSearchMemory(graph, start, conditions, incoming)
-  const uniqueGoals = [...new Set(goals)]
-  const goalRank = new Map(uniqueGoals.map((goal, rank) => [goal, rank]))
+  const goalRank = new Map([...new Set(goals)].map((goal, rank) => [goal, rank]))
   if (!goalRank.size) return completeLeg(memory, null, startedAt)
 
-  const heuristic = nearestNeighborMultiGoalHeuristic(graph, uniqueGoals, scale)
   const estimate = (key: string) => {
     const at = memory.nodeAt[key]
-    return at === undefined ? 0 : heuristic(at)
+    return at === undefined || heuristic === null ? 0 : heuristic(at)
   }
   const frontier = new Heap()
   frontier.push(memory.startKey, estimate(memory.startKey), 0)
@@ -594,7 +602,7 @@ function nearestNeighborMultiGoalSearch(
     const currentHeuristic = estimate(current)
     if (bestKey !== null && currentCost + currentHeuristic > bestCost) break
 
-    recordExpansion(memory, current, currentHeuristic)
+    recordExpansion(memory, current, heuristic === null ? null : currentHeuristic)
     const rank = goalRank.get(currentNode)
     if (rank !== undefined
       && (currentCost < bestCost || (currentCost === bestCost && rank < bestRank))) {
@@ -615,6 +623,35 @@ function nearestNeighborMultiGoalSearch(
   }
 
   return completeLeg(memory, bestKey, startedAt)
+}
+
+/** NN's greedy step: multi-goal A* guided by the nearest-candidate bound. */
+function nearestNeighborMultiGoalSearch(
+  graph: Graph,
+  start: string,
+  goals: readonly string[],
+  conditions: Conditions,
+  scale: number,
+  incoming: GraphEdge | null = null,
+): SearchLegResult {
+  const heuristic = nearestNeighborMultiGoalHeuristic(graph, [...new Set(goals)], scale)
+  return multiGoalSearch(graph, start, goals, conditions, heuristic, incoming)
+}
+
+/**
+ * UCS's greedy step: Dijkstra asked for a set of goals rather than one.
+ *
+ * The first settled goal is the nearest, so ordering the stops and routing the
+ * leg become the same search — the legs a UCS pane shows are still UCS legs.
+ */
+function uniformCostMultiGoalSearch(
+  graph: Graph,
+  start: string,
+  goals: readonly string[],
+  conditions: Conditions,
+  incoming: GraphEdge | null = null,
+): SearchLegResult {
+  return multiGoalSearch(graph, start, goals, conditions, null, incoming)
 }
 
 export function edgeBetween(graph: Graph, from: string, to: string): GraphEdge | undefined {
@@ -821,7 +858,6 @@ function routeFromLegs(
   legs: SearchLegResult[],
   found: boolean,
   problem: string | undefined,
-  runtimeMs?: number,
 ): RouteResult {
   const { graph, algo, stops, conditions } = input
   const trace: TraceStep[] = []
@@ -860,10 +896,11 @@ function routeFromLegs(
       minutes: Math.round(minutes),
       cost: +cost.toFixed(1),
       expanded: trace.length,
-      // For NN this is every multi-goal A* step. The backend uses the identical
-      // boundary; actual numbers can still differ because JavaScript and Python
-      // are different runtimes.
-      ms: +(runtimeMs ?? ms).toFixed(1),
+      // Summed over every leg the algorithm searched, which is every leg it ran:
+      // no planning path here searches a leg it then drops. The backend uses the
+      // identical boundary; actual numbers can still differ because JavaScript
+      // and Python are different runtimes.
+      ms: +ms.toFixed(1),
       turnsBlocked,
       optimal: found
         && ALGOS[algo].optimal
@@ -873,21 +910,23 @@ function routeFromLegs(
   }
 }
 
-type GreedyCandidateSearch = (
-  current: string, target: string, incoming: GraphEdge | null,
-) => SearchLegResult
-
-type GreedyMultiGoalSearch = (
+type GreedySearch = (
   current: string, goals: readonly string[], incoming: GraphEdge | null,
 ) => SearchLegResult
 
-type GreedySearchStrategy =
-  | { kind: 'candidate'; search: GreedyCandidateSearch }
-  | { kind: 'multi-goal'; search: GreedyMultiGoalSearch }
-
+/**
+ * Choose each next destination with one multi-goal search per greedy step.
+ *
+ * One search per step rather than one per candidate is what keeps a greedy pass
+ * linear in the number of destinations, and why `ms` and the effort counters are
+ * summed over the same work. The search runs live at each step rather than
+ * reading a precomputed matrix because the ordering decision has to see turn
+ * context: a matrix entry for `(A, B)` is the same however the trip arrived at
+ * A, so a banned turn out of A could not influence which stop is picked next.
+ */
 function planGreedyRoute(
   input: PlanInput,
-  strategy: GreedySearchStrategy,
+  search: GreedySearch,
 ): RouteResult {
   const { graph, start, goal, stops, returnToStart, conditions } = input
   const routeKind = returnToStart ? 'closed tour' : 'open route'
@@ -904,7 +943,6 @@ function planGreedyRoute(
       [],
       false,
       'The pickup and dropoff pin to the same intersection. Choose points farther apart.',
-      0,
     )
   }
 
@@ -912,59 +950,36 @@ function planGreedyRoute(
   const selectedLegs: SearchLegResult[] = []
   let current = start
   let incoming: GraphEdge | null = null
-  let runtimeMs = 0
 
   while (remaining.length) {
-    let bestIndex = -1
-    let bestCost = Infinity
-    let bestLeg: SearchLegResult | undefined
+    const leg = search(current, remaining, incoming)
+    const reached = leg.found ? leg.path[leg.path.length - 1] : undefined
+    const bestIndex = reached === undefined ? -1 : remaining.indexOf(reached)
 
-    if (strategy.kind === 'multi-goal') {
-      const leg = strategy.search(current, remaining, incoming)
-      runtimeMs += leg.ms
-      const reached = leg.path[leg.path.length - 1]
-      if (leg.found && reached !== undefined) {
-        bestIndex = remaining.indexOf(reached)
-        if (bestIndex >= 0) bestLeg = leg
-      }
-    }
-    else {
-      remaining.forEach((candidate, index) => {
-        const leg = strategy.search(current, candidate, incoming)
-        runtimeMs += leg.ms
-        if (!leg.found) return
-        const candidateCost = statsOf(leg.edges, conditions).cost
-        if (candidateCost < bestCost) {
-          bestIndex = index
-          bestCost = candidateCost
-          bestLeg = leg
-        }
-      })
-    }
-
-    if (bestIndex < 0 || !bestLeg) {
+    if (bestIndex < 0) {
+      // The one search above covered every remaining destination at once, so
+      // each is blocked for its own reason and none is more the cause than
+      // another. Naming the first keeps the message deterministic. The leg is
+      // kept: it expanded states and built a trace, and hiding that would make
+      // a failed run look cheaper than a successful one.
       const reason = whyBlocked(graph, current, remaining[0] ?? current, conditions)
       return routeFromLegs(
         input,
         order,
-        selectedLegs,
+        [...selectedLegs, leg],
         false,
         `No complete ${routeKind} exists. ${reason}`,
-        runtimeMs,
       )
     }
 
     current = remaining.splice(bestIndex, 1)[0] ?? current
-    selectedLegs.push(bestLeg)
+    selectedLegs.push(leg)
     order.push(current)
-    incoming = bestLeg.edges[bestLeg.edges.length - 1] ?? incoming
+    incoming = leg.edges[leg.edges.length - 1] ?? incoming
   }
 
   if (current !== forcedTail) {
-    const tailLeg = strategy.kind === 'multi-goal'
-      ? strategy.search(current, [forcedTail], incoming)
-      : strategy.search(current, forcedTail, incoming)
-    runtimeMs += tailLeg.ms
+    const tailLeg = search(current, [forcedTail], incoming)
     if (!tailLeg.found) {
       const reason = whyBlocked(graph, current, forcedTail, conditions)
       return routeFromLegs(
@@ -973,34 +988,26 @@ function planGreedyRoute(
         [...selectedLegs, tailLeg],
         false,
         `No complete ${routeKind} exists. ${reason}`,
-        runtimeMs,
       )
     }
     selectedLegs.push(tailLeg)
     order.push(forcedTail)
   }
 
-  return routeFromLegs(input, order, selectedLegs, true, undefined, runtimeMs)
+  return routeFromLegs(input, order, selectedLegs, true, undefined)
 }
 
 function planNearestNeighbor(input: PlanInput): RouteResult {
   const { graph, conditions } = input
   const scale = nearestNeighborHeuristicScale(graph, conditions)
-  return planGreedyRoute(input, {
-    kind: 'multi-goal',
-    search: (current, goals, incoming) => nearestNeighborMultiGoalSearch(
-      graph, current, goals, conditions, scale, incoming,
-    ),
-  })
+  return planGreedyRoute(input, (current, goals, incoming) =>
+    nearestNeighborMultiGoalSearch(graph, current, goals, conditions, scale, incoming))
 }
 
 function planOrderedUcs(input: PlanInput): RouteResult {
   const { graph, conditions } = input
-  return planGreedyRoute(input, {
-    kind: 'candidate',
-    search: (current, target, incoming) =>
-      uniformCostSearch(graph, current, target, conditions, incoming),
-  })
+  return planGreedyRoute(input, (current, goals, incoming) =>
+    uniformCostMultiGoalSearch(graph, current, goals, conditions, incoming))
 }
 
 /** Runs one selected algorithm across every leg of the requested trip. */
