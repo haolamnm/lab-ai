@@ -119,10 +119,10 @@ export interface Metrics {
   minutes: number
   cost: number
   expanded: number
-  /** Time inside the leg searches, summed. Both planners measure exactly this,
-   *  so it is the one runtime figure that means the same thing whether the trip
-   *  was planned in the browser or on the backend — and so the only one that
-   *  may be ranked across algorithms or compared between deployments. */
+  /** Time inside algorithm search calls, summed. NN includes one multi-goal A*
+   *  per greedy step; candidate-based ordering includes every candidate call.
+   *  Both planners use this same boundary, although JavaScript and Python will
+   *  not take equal wall time. */
   ms: number
   optimal: boolean
   /** Number of times the algorithm had to drop a direction because of a turn restriction. */
@@ -139,9 +139,7 @@ export interface Metrics {
   /** Wall-clock time for the backend's whole post-validation pipeline — the
    *  ordering search and its pairwise matrix as well as the legs, so it counts
    *  work the search-effort figures beside it deliberately leave out.
-   *  Optional: only the Python planner can measure it. The browser computes its
-   *  ordering behind a memo shared by every pane, so the same span here would
-   *  time which pane asked first rather than the work the algorithm did. */
+   *  Optional: only the Python planner publishes this wider measurement. */
   planningMs?: number
 }
 

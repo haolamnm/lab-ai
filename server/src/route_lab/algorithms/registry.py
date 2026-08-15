@@ -3,8 +3,8 @@
 To add an algorithm: write its module, then register it here. ``nearest`` and
 ``held_karp`` are deliberately absent from ``POINT_SEARCHES`` for the same
 reason — neither is a point-to-point search. Both are trip-level ordering
-strategies the planner layers on top of directed Pairwise A* routes, so they
-appear in ``ALGO_OPTIMAL`` and nowhere else here.
+strategies: NN performs multi-goal A* searches, while Held-Karp uses a
+directed Pairwise A* matrix. They appear in ``ALGO_OPTIMAL`` and nowhere else.
 """
 
 from typing import Literal

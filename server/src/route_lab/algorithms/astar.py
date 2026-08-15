@@ -24,7 +24,9 @@ from route_lab.shared.search import (
 def a_star_search(problem: SearchProblem) -> SearchLegResult:
     """Return a minimum-cost leg when ``problem.heuristic`` is admissible."""
     started_at = perf_counter()
-    memory = create_search_memory(problem.graph, problem.start, problem.conditions)
+    memory = create_search_memory(
+        problem.graph, problem.start, problem.conditions, problem.incoming
+    )
 
     # Heap entries retain both f (ordering) and g (freshness), so a superseded
     # entry can never expand using a newer g-score that did not create it.

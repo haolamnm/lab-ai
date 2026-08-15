@@ -15,10 +15,15 @@
  */
 
 import { expect, test } from 'bun:test'
-import { planRoute, type PlanInput } from './search'
+import {
+  nearestNeighborHeuristic,
+  nearestNeighborMultiGoalHeuristic,
+  planRoute,
+  type PlanInput,
+} from './search'
 import { buildSampleGraph } from './sampleGraph'
 import { CRITERIA } from './traffic'
-import type { AlgoKey } from './types'
+import type { AlgoKey, Graph } from './types'
 
 /** Mirrors `search.ts`'s own private alias, so adding a sixth algorithm makes
  *  the tables below incomplete rather than silently untested. */
@@ -182,4 +187,128 @@ test('nearest neighbor orders the trip whether or not the toggle is on', () => {
   // the pane would be labelled with an algorithm that is not running.
   const input = { ...base, algo: 'nearest' as const, stops: STOPS, returnToStart: false }
   expect(trip({ ...input, optimiseOrder: false })).toBe(trip({ ...input, optimiseOrder: true }))
+})
+
+test('nearest neighbor exposes a separate h(n) for its internal A* searches', () => {
+  const toJ = nearestNeighborHeuristic(graph, 'J', 2)
+  const toC = nearestNeighborHeuristic(graph, 'C', 2)
+  const toEither = nearestNeighborMultiGoalHeuristic(graph, ['J', 'C'], 2)
+  expect(toJ('J')).toBe(0)
+  expect(toJ('A')).toBeGreaterThan(0)
+  expect(toEither('A')).toBe(Math.min(toJ('A'), toC('A')))
+  expect(toEither('J')).toBe(0)
+  expect(toEither('C')).toBe(0)
+})
+
+test('nearest neighbor multi-goal A* keeps input order for exact cost ties', () => {
+  const edgeDefaults = {
+    roadClass: 'secondary' as const, congestion: 1, risk: 0, shape: [] as [number, number][],
+  }
+  const tiedGraph: Graph = {
+    nodes: {
+      W: { id: 'W', lat: 10, lng: 106 },
+      A: { id: 'A', lat: 10, lng: 106.001 },
+      B: { id: 'B', lat: 10, lng: 106.002 },
+    },
+    edges: [
+      // A enters the heap first. B must still win because it is first in the
+      // requested candidate order and both shortest-path costs equal one.
+      { from: 'W', to: 'A', km: 1, wayId: 1, ...edgeDefaults },
+      { from: 'W', to: 'B', km: 1, wayId: 2, ...edgeDefaults },
+      { from: 'A', to: 'B', km: 1, wayId: 3, ...edgeDefaults },
+      { from: 'B', to: 'A', km: 1, wayId: 4, ...edgeDefaults },
+      { from: 'A', to: 'W', km: 1, wayId: 5, ...edgeDefaults },
+      { from: 'B', to: 'W', km: 1, wayId: 6, ...edgeDefaults },
+    ],
+    adj: {},
+    bounds: [[10, 106], [10, 106.002]],
+    detail: 'fine',
+  }
+  for (const node of Object.keys(tiedGraph.nodes)) tiedGraph.adj[node] = []
+  for (const edge of tiedGraph.edges) tiedGraph.adj[edge.from]?.push(edge)
+
+  const result = planRoute({
+    graph: tiedGraph,
+    algo: 'nearest',
+    start: 'W',
+    stops: ['B'],
+    goal: 'A',
+    optimiseOrder: false,
+    returnToStart: true,
+    conditions: {
+      vehicle: 'van', period: 'peak',
+      weights: { distance: 1, time: 0, congestion: 0, risk: 0 },
+    },
+  })
+
+  expect(result.found).toBe(true)
+  expect(result.order).toEqual(['W', 'B', 'A', 'W'])
+  expect(result.metrics.expanded).toBe(result.trace.length)
+})
+
+test('UCS and nearest neighbor preserve turn context across stop boundaries', () => {
+  const edgeDefaults = {
+    roadClass: 'secondary' as const, congestion: 1, risk: 0, shape: [] as [number, number][],
+  }
+  const turnGraph: Graph = {
+    nodes: {
+      S: { id: 'S', lat: 10.000, lng: 106.000 },
+      A: { id: 'A', lat: 10.001, lng: 106.001 },
+      C: { id: 'C', lat: 10.002, lng: 106.002 },
+      B: { id: 'B', lat: 10.003, lng: 106.003 },
+      G: { id: 'G', lat: 10.004, lng: 106.004 },
+    },
+    edges: [
+      { from: 'S', to: 'A', km: 1, wayId: 1, ...edgeDefaults },
+      { from: 'A', to: 'B', km: 1, wayId: 2, ...edgeDefaults },
+      { from: 'A', to: 'C', km: 2, wayId: 3, ...edgeDefaults },
+      { from: 'C', to: 'B', km: 1, wayId: 4, ...edgeDefaults },
+      { from: 'B', to: 'G', km: 1, wayId: 5, ...edgeDefaults },
+    ],
+    adj: {},
+    bounds: [[10, 106], [10.003, 106.003]],
+    detail: 'fine',
+    turns: {
+      no: { 'A|1|2': [{ kind: 'no_left_turn', hours: [], except: [] }] },
+      only: {},
+    },
+  }
+  for (const node of Object.keys(turnGraph.nodes)) turnGraph.adj[node] = []
+  for (const edge of turnGraph.edges) turnGraph.adj[edge.from]?.push(edge)
+
+  for (const algo of ['ucs', 'nearest'] as const) {
+    const result = planRoute({
+      graph: turnGraph,
+      algo,
+      start: 'S',
+      stops: ['A'],
+      goal: 'B',
+      optimiseOrder: false,
+      returnToStart: false,
+      conditions: {
+        vehicle: 'van', period: 'peak',
+        weights: { distance: 1, time: 0, congestion: 0, risk: 0 },
+      },
+    })
+    expect(result.found, algo).toBe(true)
+    expect(result.path, algo).toEqual(['S', 'A', 'C', 'B'])
+    expect(result.metrics.turnsBlocked, algo).toBeGreaterThanOrEqual(1)
+  }
+
+  const orderedUcs = planRoute({
+    graph: turnGraph,
+    algo: 'ucs',
+    start: 'S',
+    stops: ['A', 'B', 'C'],
+    goal: 'G',
+    optimiseOrder: true,
+    returnToStart: false,
+    conditions: {
+      vehicle: 'van', period: 'peak',
+      weights: { distance: 1, time: 0, congestion: 0, risk: 0 },
+    },
+  })
+  expect(orderedUcs.found).toBe(true)
+  expect(orderedUcs.order).toEqual(['S', 'A', 'C', 'B', 'G'])
+  expect(orderedUcs.path).toEqual(['S', 'A', 'C', 'B', 'G'])
 })

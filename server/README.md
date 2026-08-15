@@ -121,7 +121,7 @@ server/
     │   ├── base.py      The Algorithm type and the AlgorithmNotImplemented exception.
     │   ├── registry.py  Maps an AlgoKey ('bfs', 'ucs', …) to its function.
     │   ├── ucs.py       Uniform Cost Search implementation.
-    │   ├── nearest_neighbor.py  Traffic-aware stop-ordering heuristic.
+    │   ├── nearest_neighbor.py  NN candidate selection and its explicit admissible h(n).
     │   ├── bfs.py       )
     │   ├── dfs.py       ) The other three point searches. Each differs from ucs.py only in its
     │   ├── astar.py     ) frontier and the priority it pushes with.
@@ -252,11 +252,12 @@ counts itself. The full set (`shared/search.py`, surfaced in the response `Metri
 | `turns_blocked` | directions dropped because a turn restriction forbade them |
 
 The planner adds the route-quality numbers (`km`, `minutes`, `cost`, `hops`, `optimal`), and two
-times. `ms` sums the leg searches the route is made of — `planRoute` in `web/src/lib/search.ts` sums
-the same legs, so one trip reports one figure whichever planner answered it, and that is the number
-the app ranks on. `planning_ms` is wall clock over the whole post-validation pipeline, the ordering
-search and its pairwise matrix included; only this planner can measure it, so it is optional on the
-wire and reads `—` in the app when the browser planned the trip. To add
+times. `ms` sums the algorithm's search calls. NN counts one multi-goal A* per greedy step;
+candidate-based ordering counts every candidate call. `planRoute` in `web/src/lib/search.ts`
+uses the same boundary.
+`planning_ms` is wall clock over the whole post-validation pipeline, including comparisons and
+assembly; only this planner can measure it, so it is optional on the wire and reads `—` in the app
+when the browser planned the trip. To add
 a new search-effort metric, add a field to `SearchStats` and to the response `Metrics` together, and
 count it in the harness — never inside a single algorithm.
 

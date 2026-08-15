@@ -4,13 +4,13 @@ This is the Python side of ``planRoute`` in web/src/lib/search.ts. It orders the
 stops (optionally), splits the trip into legs, dispatches each leg to the chosen
 algorithm through the registry, joins the results, and aggregates the metrics.
 Two keys are not point searches and are resolved here rather than in the
-registry: ``nearest`` and ``held_karp`` both consume directed Pairwise A* costs
-and cached legs, then apply their own trip-level ordering strategy.
+registry: ``nearest`` performs one multi-goal A* search at each greedy step,
+while ``held_karp`` consumes a complete directed Pairwise A* matrix.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from itertools import pairwise
 from time import perf_counter
 from typing import Literal
@@ -18,7 +18,12 @@ from typing import Literal
 from route_lab.algorithms.astar import a_star_search
 from route_lab.algorithms.base import AlgorithmNotImplemented
 from route_lab.algorithms.held_karp import held_karp
-from route_lab.algorithms.nearest_neighbor import nearest_neighbor_order
+from route_lab.algorithms.nearest_neighbor import (
+    nearest_neighbor_heuristic_scale,
+    nearest_neighbor_multi_goal_heuristic,
+    nearest_neighbor_multi_goal_search,
+    nearest_neighbor_order,
+)
 from route_lab.algorithms.registry import ALGO_OPTIMAL, POINT_SEARCHES
 from route_lab.contract.conditions import Conditions
 from route_lab.contract.graph import GraphEdge
@@ -27,7 +32,7 @@ from route_lab.contract.result import Metrics, Reveal, RouteResult, TraceStep
 from route_lab.diagnostics import why_blocked
 from route_lab.shared.graph import Graph, build_graph
 from route_lab.shared.pairwise import build_pairwise
-from route_lab.shared.problem import build_problem
+from route_lab.shared.problem import SearchProblem, build_problem
 from route_lab.shared.rounding import js_round
 from route_lab.shared.search import SearchLegResult, node_ids
 from route_lab.shared.traffic import cost_is_flat, edge_cost, edge_minutes
@@ -178,12 +183,13 @@ def _route_from_legs(
     *,
     found: bool,
     problem: str | None = None,
+    runtime_ms: float | None = None,
 ) -> RouteResult:
     """Join the legs into one route and sum every metric across them.
 
-    Both planning paths end here — the point searches, which run their legs, and
-    the trip-level algorithms, which pick theirs out of the Pairwise cache — so
-    every number in ``Metrics`` is assembled once and the two cannot drift apart.
+    Every planning path ends here with its selected route legs: point searches
+    run them directly, NN retains winning candidate legs, and Held-Karp picks
+    them from its Pairwise cache. Metrics are therefore assembled in one place.
 
     A final blocked leg still contributes its search effort: the expansions,
     trace, and frontier peak are work the algorithm really did, and hiding them
@@ -238,7 +244,7 @@ def _route_from_legs(
             generated=generated,
             reopened=reopened,
             max_frontier=max_frontier,
-            ms=js_round(leg_ms, 1),
+            ms=js_round(leg_ms if runtime_ms is None else runtime_ms, 1),
             optimal=_optimal(request, found=found),
             turns_blocked=turns_blocked,
         ),
@@ -276,39 +282,174 @@ def _assemble_cached_legs(
     return _route_from_legs(request, ids, order, selected_legs, found=True)
 
 
-def _plan_nearest(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteResult:
-    """Order every destination greedily by exact route cost, then route each leg."""
-    route_kind: RouteKind = "closed tour" if request.return_to_start else "open route"
-    # One list for both shapes. The dropoff is a destination like any other, and
-    # `return_to_start` decides both whether the trip comes home afterwards and
-    # whether the dropoff is free to be ordered — see `_greedy_order`.
-    destinations = [*request.stops, request.goal]
+CandidateSearch = Callable[[str, str, GraphEdge | None], SearchLegResult]
+MultiGoalSearch = Callable[[str, Sequence[str], GraphEdge | None], SearchLegResult]
 
-    matrix = build_pairwise(
-        graph=graph,
-        locations=_pairwise_locations(request.start, destinations),
-        conditions=request.conditions,
-        search=a_star_search,
+
+def _plan_greedy_route(
+    request: PlanRequest,
+    graph: Graph,
+    ids: list[str],
+    *,
+    candidate_search: CandidateSearch | None = None,
+    multi_goal_search: MultiGoalSearch | None = None,
+) -> RouteResult:
+    """Choose each next destination through the supplied greedy search strategy."""
+    if (candidate_search is None) == (multi_goal_search is None):
+        raise ValueError("provide exactly one greedy search strategy")
+    route_kind: RouteKind = "closed tour" if request.return_to_start else "open route"
+    destinations = [
+        location
+        for location in dict.fromkeys([*request.stops, request.goal])
+        if location != request.start
+    ]
+    remaining = (
+        list(destinations)
+        if request.return_to_start
+        else [location for location in destinations if location != request.goal]
     )
-    ordered = _greedy_order(request, destinations, matrix.costs)
-    raw_order = [request.start, *ordered]
-    if request.return_to_start:
-        raw_order.append(request.start)
-    order = _without_consecutive_duplicates(raw_order)
-    if len(order) < 2:
+    forced_tail = request.start if request.return_to_start else request.goal
+
+    if not remaining and forced_tail == request.start:
         return _stopped(
             request.algo,
             ids,
             "The pickup and dropoff pin to the same intersection. Choose points farther apart.",
         )
-    return _assemble_cached_legs(
+
+    order = [request.start]
+    selected_legs: list[SearchLegResult] = []
+    current = request.start
+    incoming: GraphEdge | None = None
+    runtime_ms = 0.0
+
+    while remaining:
+        best_index: int | None = None
+        best_cost = float("inf")
+        best_leg: SearchLegResult | None = None
+        failed_turns = 0
+
+        if multi_goal_search is not None:
+            leg = multi_goal_search(current, remaining, incoming)
+            runtime_ms += leg.ms
+            if not leg.found:
+                failed_turns += leg.stats.turns_blocked
+            elif leg.path and leg.path[-1] in remaining:
+                best_index = remaining.index(leg.path[-1])
+                best_leg = leg
+        elif candidate_search is not None:
+            for index, candidate in enumerate(remaining):
+                leg = candidate_search(current, candidate, incoming)
+                runtime_ms += leg.ms
+                if not leg.found:
+                    failed_turns += leg.stats.turns_blocked
+                    continue
+                candidate_cost = sum(edge_cost(edge, request.conditions) for edge in leg.edges)
+                if candidate_cost < best_cost:
+                    best_index = index
+                    best_cost = candidate_cost
+                    best_leg = leg
+
+        if best_index is None or best_leg is None:
+            target = remaining[0]
+            reason = why_blocked(graph, current, target, request.conditions, failed_turns)
+            return _route_from_legs(
+                request,
+                ids,
+                order,
+                selected_legs,
+                found=False,
+                problem=f"No complete {route_kind} exists. {reason}",
+                runtime_ms=runtime_ms,
+            )
+
+        current = remaining.pop(best_index)
+        selected_legs.append(best_leg)
+        order.append(current)
+        if best_leg.edges:
+            incoming = best_leg.edges[-1]
+
+    if current != forced_tail:
+        if multi_goal_search is not None:
+            tail_leg = multi_goal_search(current, [forced_tail], incoming)
+        elif candidate_search is not None:
+            tail_leg = candidate_search(current, forced_tail, incoming)
+        else:
+            raise AssertionError("the greedy search strategy was validated above")
+        runtime_ms += tail_leg.ms
+        if not tail_leg.found:
+            reason = why_blocked(
+                graph,
+                current,
+                forced_tail,
+                request.conditions,
+                tail_leg.stats.turns_blocked,
+            )
+            return _route_from_legs(
+                request,
+                ids,
+                order,
+                [*selected_legs, tail_leg],
+                found=False,
+                problem=f"No complete {route_kind} exists. {reason}",
+                runtime_ms=runtime_ms,
+            )
+        selected_legs.append(tail_leg)
+        order.append(forced_tail)
+
+    return _route_from_legs(
         request,
-        graph,
         ids,
         order,
-        matrix.paths,
-        route_kind=route_kind,
+        selected_legs,
+        found=True,
+        runtime_ms=runtime_ms,
     )
+
+
+def _plan_nearest(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteResult:
+    """Run canonical Nearest Neighbor with one multi-goal A* per greedy step."""
+    scale = nearest_neighbor_heuristic_scale(graph, request.conditions)
+
+    def search_goals(
+        current: str,
+        goals: Sequence[str],
+        incoming: GraphEdge | None,
+    ) -> SearchLegResult:
+        def cost(edge: GraphEdge) -> float:
+            return edge_cost(edge, request.conditions)
+
+        problem = SearchProblem(
+            graph=graph,
+            start=current,
+            # The NN search owns its goal set. SearchProblem keeps one member so
+            # its common point-search contract does not need to change.
+            goal=goals[0],
+            conditions=request.conditions,
+            cost=cost,
+            heuristic=nearest_neighbor_multi_goal_heuristic(graph, goals, scale),
+            incoming=incoming,
+        )
+        return nearest_neighbor_multi_goal_search(problem, goals)
+
+    return _plan_greedy_route(request, graph, ids, multi_goal_search=search_goals)
+
+
+def _plan_ordered_ucs(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteResult:
+    """Apply NN ordering with live UCS candidates, preserving turn context."""
+    search = POINT_SEARCHES["ucs"]
+
+    def candidate_search(current: str, target: str, incoming: GraphEdge | None) -> SearchLegResult:
+        problem = build_problem(
+            graph,
+            current,
+            target,
+            request.conditions,
+            incoming=incoming,
+        )
+        return search(problem)
+
+    return _plan_greedy_route(request, graph, ids, candidate_search=candidate_search)
 
 
 def _plan_held_karp(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteResult:
@@ -404,6 +545,8 @@ def _plan_measured(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteR
         return _plan_held_karp(request, graph, ids)
     if algo == "nearest":
         return _plan_nearest(request, graph, ids)
+    if algo == "ucs" and request.optimise_order:
+        return _plan_ordered_ucs(request, graph, ids)
 
     sequence = _leg_sequence(request, graph)
     if len(sequence) < 2:
@@ -418,9 +561,16 @@ def _plan_measured(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteR
     found = True
     problem: str | None = None
     reached = 1
+    incoming: GraphEdge | None = None
 
     for index in range(len(sequence) - 1):
-        leg_problem = build_problem(graph, sequence[index], sequence[index + 1], conditions)
+        leg_problem = build_problem(
+            graph,
+            sequence[index],
+            sequence[index + 1],
+            conditions,
+            incoming=incoming,
+        )
         try:
             leg = search(leg_problem)
         except AlgorithmNotImplemented as exc:
@@ -436,6 +586,8 @@ def _plan_measured(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteR
                 problem = f"Leg {index + 1}/{len(sequence) - 1} is blocked. {problem}"
             break
         reached = index + 2
+        if leg.edges:
+            incoming = leg.edges[-1]
 
     return _route_from_legs(request, ids, sequence[:reached], legs, found=found, problem=problem)
 
@@ -465,8 +617,8 @@ def plan_route(request: PlanRequest) -> RouteResult:
     # request preparation, so the clock starts only after both have succeeded;
     # everything algorithm-specific—including Pairwise searches and ordering—is
     # inside the boundary, and the single exit below is why that stays true as
-    # the planner grows. `ms` keeps the leg-search sum the browser also reports,
-    # so one trip answers with one number whichever planner ran it.
+    # the planner grows. `ms` keeps the narrower algorithm-search sum the browser
+    # also reports (multi-goal steps for NN; all candidate calls for greedy UCS).
     started_at = perf_counter()
     result = _plan_measured(request, graph, ids)
     planning_ms = js_round((perf_counter() - started_at) * 1000, 1)

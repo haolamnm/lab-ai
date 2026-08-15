@@ -30,7 +30,9 @@ from route_lab.shared.search import (
 def depth_first_search(problem: SearchProblem) -> SearchLegResult:
     """Expand the most recently discovered state; backtrack only when it dead-ends."""
     started_at = perf_counter()
-    memory = create_search_memory(problem.graph, problem.start, problem.conditions)
+    memory = create_search_memory(
+        problem.graph, problem.start, problem.conditions, problem.incoming
+    )
 
     frontier = Stack()
     frontier.push(memory.start_key)

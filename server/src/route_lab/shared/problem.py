@@ -46,6 +46,10 @@ class SearchProblem:
     conditions: Conditions
     cost: CostFn
     heuristic: Heuristic
+    # The edge used to arrive at the first node of a later trip leg.  It is not
+    # part of this leg's reconstructed path, but turn restrictions at the first
+    # intersection must still see it.
+    incoming: GraphEdge | None = None
 
 
 # Solving one leg: a problem in, a leg result out. The alias lives here rather
@@ -63,6 +67,7 @@ def build_problem(
     conditions: Conditions,
     *,
     heuristic_name: HeuristicName = DEFAULT_HEURISTIC,
+    incoming: GraphEdge | None = None,
 ) -> SearchProblem:
     """Assemble the default problem for a leg.
 
@@ -88,4 +93,5 @@ def build_problem(
         conditions=conditions,
         cost=cost,
         heuristic=heuristic,
+        incoming=incoming,
     )

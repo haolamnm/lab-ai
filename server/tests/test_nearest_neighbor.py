@@ -1,6 +1,21 @@
-"""Pure Nearest Neighbor ordering over deterministic directed costs."""
+"""Nearest Neighbor ordering and its private A* heuristic."""
 
-from route_lab.algorithms.nearest_neighbor import nearest_neighbor_order
+from dataclasses import replace
+
+import pytest
+
+from route_lab.algorithms.nearest_neighbor import (
+    nearest_neighbor_heuristic,
+    nearest_neighbor_heuristic_scale,
+    nearest_neighbor_multi_goal_heuristic,
+    nearest_neighbor_multi_goal_search,
+    nearest_neighbor_order,
+)
+from route_lab.shared.graph import build_graph
+from route_lab.shared.problem import build_problem
+from route_lab.shared.traffic import edge_cost
+
+from .fixtures import trip_request
 
 
 def test_empty_stops() -> None:
@@ -100,3 +115,58 @@ def test_costs_are_not_mutated() -> None:
     nearest_neighbor_order("W", ["A", "B"], costs)
 
     assert costs == original
+
+
+def test_nn_heuristic_is_explicit_positive_and_admissible_on_a_rounded_edge() -> None:
+    request = trip_request(
+        "nearest",
+        start="W",
+        goal="A",
+        stops=[],
+        edges=[("W", "A", 0.0001)],
+    )
+    graph = build_graph(request.graph)
+    scale = nearest_neighbor_heuristic_scale(graph, request.conditions)
+    h = nearest_neighbor_heuristic(graph, "A", scale)
+
+    direct_cost = edge_cost(graph.edges[0], request.conditions)
+    assert h("W") > 0
+    assert h("W") == pytest.approx(direct_cost)
+    assert h("A") == 0
+
+
+def test_multi_goal_heuristic_is_the_nearest_candidate_lower_bound() -> None:
+    request = trip_request("nearest", stops=["A"], goal="B")
+    graph = build_graph(request.graph)
+    scale = nearest_neighbor_heuristic_scale(graph, request.conditions)
+    to_a = nearest_neighbor_heuristic(graph, "A", scale)
+    to_b = nearest_neighbor_heuristic(graph, "B", scale)
+    to_either = nearest_neighbor_multi_goal_heuristic(graph, ["A", "B"], scale)
+
+    assert to_either("W") == min(to_a("W"), to_b("W"))
+    assert to_either("A") == 0
+    assert to_either("B") == 0
+
+
+def test_multi_goal_astar_keeps_input_order_when_equal_cost_goals_settle_out_of_order() -> None:
+    request = trip_request(
+        "nearest",
+        stops=["B"],
+        goal="A",
+        edges=[("W", "A", 1.0), ("W", "B", 1.0)],
+    )
+    graph = build_graph(request.graph)
+    goals = ["B", "A"]
+    scale = nearest_neighbor_heuristic_scale(graph, request.conditions)
+    problem = replace(
+        build_problem(graph, "W", "A", request.conditions),
+        heuristic=nearest_neighbor_multi_goal_heuristic(graph, goals, scale),
+    )
+
+    result = nearest_neighbor_multi_goal_search(problem, goals)
+
+    # A is inserted first into the frontier, but B is first in the requested
+    # candidate order. The search must finish the equal-f tie before deciding.
+    assert result.found is True
+    assert result.path == ["W", "B"]
+    assert result.stats.expanded == len(result.trace)

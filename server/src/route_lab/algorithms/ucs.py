@@ -43,7 +43,9 @@ from route_lab.shared.search import (
 def uniform_cost_search(problem: SearchProblem) -> SearchLegResult:
     """Return the cheapest reachable path from ``problem.start`` to its goal."""
     started_at = perf_counter()
-    memory = create_search_memory(problem.graph, problem.start, problem.conditions)
+    memory = create_search_memory(
+        problem.graph, problem.start, problem.conditions, problem.incoming
+    )
     frontier = Heap()
     frontier.push(memory.start_key, priority=0.0, cost=0.0)
 

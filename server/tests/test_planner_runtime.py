@@ -1,8 +1,8 @@
 """The planner reports two times, and they answer two different questions.
 
-``ms`` is the summed leg-search time. ``planRoute`` in web/src/lib/search.ts sums
-exactly the same thing, so it is the figure a pane may show and rank without
-knowing which planner answered — one trip, one number, either way.
+``ms`` is the summed algorithm-search time. For a point search these calls are
+the route legs; for NN they are one multi-goal A* call per greedy step.
+``planRoute`` in web/src/lib/search.ts uses exactly the same boundary.
 
 ``planning_ms`` is wall clock over the whole post-validation pipeline, ordering
 search included. Only this planner can measure it: the browser computes its
