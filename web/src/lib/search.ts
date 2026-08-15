@@ -55,10 +55,9 @@ export const ALGOS: Record<AlgoKey, AlgorithmInfo> = {
  * Whether the run chose a visit order before routing anything.
  *
  * The two trip-level algorithms always do; a point search does it only when the
- * user asks, and then pays for the same directed pairwise matrix they do. What
- * makes this worth naming is that the ordering search sits inside the backend's
- * runtime and outside its search-effort counts, so it is the dividing line for
- * both what a runtime figure means and whether two of them can be compared.
+ * user asks. NN and optional-order UCS each use one multi-goal search per greedy
+ * step, while Held–Karp and the remaining point searches use a pairwise matrix.
+ * This predicate is used to explain what the wider backend planning timer covered.
  */
 export function ordersTheTrip(algo: AlgoKey, optimiseOrder: boolean): boolean {
   return algo === 'held_karp' || algo === 'nearest' || optimiseOrder
@@ -70,12 +69,13 @@ export function ordersTheTrip(algo: AlgoKey, optimiseOrder: boolean): boolean {
  * This used to depend on which planner answered. The backend timed its whole
  * pipeline while the browser summed its legs, so the same trip reported two
  * different numbers depending on how the app was deployed, and no label could
- * make that comparable. Both now sum the legs of the route they built, and the
- * backend reports its wider figure as `planningMs` instead of in place of this
- * one. Nothing was lost, and the number a pane ranks on means one thing.
+ * make that comparable. Both now sum the leg searches: one per leg for a
+ * fixed-order point search, one per greedy step for an ordering pass, and never
+ * a search whose leg was dropped. The backend reports its wider wall-clock
+ * figure as `planningMs`.
  */
 export const RUNTIME_NOTE =
-  'Time inside the leg searches — the same measurement in the browser and on the backend'
+  'Time inside the leg searches, and both planners measure it the same way'
 
 /**
  * What `metrics.planningMs` measured, for the run that produced it.
@@ -92,7 +92,11 @@ export function planningNote(algo: AlgoKey, optimiseOrder: boolean): string {
   }
   return algo === 'held_karp'
     ? 'Complete backend planning time — the pairwise A* matrix, the bitmask DP, and the chosen legs'
-    : 'Complete backend planning time — the pairwise ordering search and the chosen legs'
+    : algo === 'nearest'
+      ? 'Complete backend planning time — all multi-goal A* steps, greedy updates, and route assembly'
+      : algo === 'ucs'
+        ? 'Complete backend planning time — all multi-goal UCS steps, greedy updates, and route assembly'
+        : 'Complete backend planning time — the pairwise ordering search and the chosen legs'
 }
 
 /**
@@ -225,7 +229,7 @@ interface SearchMemory {
 }
 
 function createSearchMemory(
-  graph: Graph, start: string, conditions: Conditions,
+  graph: Graph, start: string, conditions: Conditions, incoming: GraphEdge | null = null,
 ): SearchMemory {
   // A turn rule constrains the outgoing road based on the incoming road. The
   // state therefore includes both values whenever this graph carries rules.
@@ -233,7 +237,7 @@ function createSearchMemory(
     && (Object.keys(graph.turns.no).length > 0 || Object.keys(graph.turns.only).length > 0)
   const keyOf = (node: string, incoming: GraphEdge | null) =>
     turnsActive ? `${node}|${incoming?.wayId ?? ''}` : node
-  const startKey = keyOf(start, null)
+  const startKey = keyOf(start, incoming)
 
   return {
     graph,
@@ -243,7 +247,7 @@ function createSearchMemory(
     startKey,
     nodeAt: { [startKey]: start },
     parent: { [startKey]: null },
-    via: { [startKey]: null },
+    via: { [startKey]: incoming },
     cost: { [startKey]: 0 },
     closed: new Set(),
     open: new Set([startKey]),
@@ -340,6 +344,9 @@ function completeLeg(
     const at = memory.nodeAt[current]
     if (at === undefined) break
     path.unshift(at)
+    // The start state's `via` is only turn context inherited from the previous
+    // trip leg. It is not an edge travelled by this leg.
+    if (memory.parent[current] == null) break
     const edge = memory.via[current]
     if (edge) edges.unshift(edge)
   }
@@ -357,9 +364,10 @@ function completeLeg(
 /** Breadth-First Search: a FIFO queue produces the fewest-hop path. */
 function breadthFirstSearch(
   graph: Graph, start: string, goal: string, conditions: Conditions,
+  incoming: GraphEdge | null = null,
 ): SearchLegResult {
   const startedAt = performance.now()
-  const memory = createSearchMemory(graph, start, conditions)
+  const memory = createSearchMemory(graph, start, conditions, incoming)
   const queue = [memory.startKey]
   let head = 0
 
@@ -381,9 +389,10 @@ function breadthFirstSearch(
 /** Depth-First Search: a LIFO stack explores the newest branch first. */
 function depthFirstSearch(
   graph: Graph, start: string, goal: string, conditions: Conditions,
+  incoming: GraphEdge | null = null,
 ): SearchLegResult {
   const startedAt = performance.now()
-  const memory = createSearchMemory(graph, start, conditions)
+  const memory = createSearchMemory(graph, start, conditions, incoming)
   const stack = [memory.startKey]
 
   while (stack.length) {
@@ -404,9 +413,10 @@ function depthFirstSearch(
 /** Uniform Cost Search: Dijkstra priority `g(n)` returns a minimum-cost path. */
 function uniformCostSearch(
   graph: Graph, start: string, goal: string, conditions: Conditions,
+  incoming: GraphEdge | null = null,
 ): SearchLegResult {
   const startedAt = performance.now()
-  const memory = createSearchMemory(graph, start, conditions)
+  const memory = createSearchMemory(graph, start, conditions, incoming)
   const frontier = new Heap()
   frontier.push(memory.startKey, 0, 0)
 
@@ -435,9 +445,11 @@ function aStarSearch(
   goal: string,
   conditions: Conditions,
   heuristicScale = minCostPerKm(graph, conditions),
+  incoming: GraphEdge | null = null,
+  heuristicOverride?: (nodeId: string) => number,
 ): SearchLegResult {
   const startedAt = performance.now()
-  const memory = createSearchMemory(graph, start, conditions)
+  const memory = createSearchMemory(graph, start, conditions, incoming)
   const target = graph.nodes[goal]
   const estimate = (key: string) => {
     const at = memory.nodeAt[key]
@@ -445,6 +457,7 @@ function aStarSearch(
     // Zero for a node this graph does not hold. A zero heuristic is admissible,
     // so an unknown node degrades A* to UCS for that state rather than making
     // it unsound — the one fallback here that is safe in the direction it errs.
+    if (at !== undefined && heuristicOverride) return heuristicOverride(at)
     return node && target ? heuristicScale * haversine(node, target) : 0
   }
   const frontier = new Heap()
@@ -472,7 +485,7 @@ function aStarSearch(
  * The algorithms that route a single leg.
  *
  * Two keys are excluded because neither is a point-to-point search: `nearest`
- * only chooses a stop order and leaves the routing to UCS, and `held_karp` only
+ * chooses stops through internal multi-goal A*, and `held_karp` only
  * chooses the visit order and leaves the routing to A*. Keeping them out of the
  * type is what makes the `switch` below exhaustive without a `default`, so
  * adding a trip-level algorithm to `AlgoKey` and forgetting it here is a
@@ -488,13 +501,157 @@ function runPointSearch(
   goal: string,
   conditions: Conditions,
   heuristicScale: number,
+  incoming: GraphEdge | null = null,
 ): SearchLegResult {
   switch (algorithm) {
-    case 'bfs': return breadthFirstSearch(graph, start, goal, conditions)
-    case 'dfs': return depthFirstSearch(graph, start, goal, conditions)
-    case 'ucs': return uniformCostSearch(graph, start, goal, conditions)
-    case 'astar': return aStarSearch(graph, start, goal, conditions, heuristicScale)
+    case 'bfs': return breadthFirstSearch(graph, start, goal, conditions, incoming)
+    case 'dfs': return depthFirstSearch(graph, start, goal, conditions, incoming)
+    case 'ucs': return uniformCostSearch(graph, start, goal, conditions, incoming)
+    case 'astar': return aStarSearch(graph, start, goal, conditions, heuristicScale, incoming)
   }
+}
+
+/** Safe cost scale used only by Nearest Neighbor's internal A* searches. */
+function nearestNeighborHeuristicScale(graph: Graph, conditions: Conditions): number {
+  let scale = Infinity
+  for (const edge of graph.edges) {
+    if (!passable(edge, conditions.vehicle, conditions.period)) continue
+    const source = graph.nodes[edge.from]
+    const target = graph.nodes[edge.to]
+    // Without both endpoints no straight-line lower-bound proof is possible.
+    if (!source || !target) return 0
+    const straightKm = haversine(source, target)
+    if (straightKm > 0)
+      scale = Math.min(scale, edgeCost(edge, conditions) / straightKm)
+  }
+  return Number.isFinite(scale) ? scale : 0
+}
+
+/** NN's explicit h(n): an admissible lower bound to one candidate target. */
+export function nearestNeighborHeuristic(
+  graph: Graph, goal: string, scale: number,
+): (nodeId: string) => number {
+  const target = graph.nodes[goal]
+  return (nodeId: string) => {
+    const node = graph.nodes[nodeId]
+    return node && target ? scale * haversine(node, target) : 0
+  }
+}
+
+/** NN's admissible lower bound from one node to the nearest remaining goal. */
+export function nearestNeighborMultiGoalHeuristic(
+  graph: Graph, goals: readonly string[], scale: number,
+): (nodeId: string) => number {
+  const targets = [...new Set(goals)].flatMap(goal => {
+    const target = graph.nodes[goal]
+    return target ? [target] : []
+  })
+  return (nodeId: string) => {
+    const node = graph.nodes[nodeId]
+    if (!node || !targets.length) return 0
+    let nearest = Infinity
+    for (const target of targets) nearest = Math.min(nearest, haversine(node, target))
+    return scale * nearest
+  }
+}
+
+/**
+ * One search that answers for a whole set of goals at once.
+ *
+ * A greedy step asks which remaining destination is nearest. Answering it with
+ * a search per candidate repeats the work around the origin once per candidate
+ * and discards every losing trace; one shared frontier costs one search per
+ * step instead, and the step's only search is the leg the planner keeps.
+ *
+ * Pass a `heuristic` and it is A* over a goal set; pass `null` and it is UCS
+ * over one, recording `h: null` so a blind step draws like the single-goal UCS
+ * beside it. A heuristic must be *consistent*: this loop never reopens a closed
+ * state, which is what keeps it identical to the backend's `multi_goal_search`.
+ *
+ * Equal-cost goals keep their input order, so the search continues past the
+ * first settled goal while another frontier state can still match its cost.
+ */
+function multiGoalSearch(
+  graph: Graph,
+  start: string,
+  goals: readonly string[],
+  conditions: Conditions,
+  heuristic: ((nodeId: string) => number) | null,
+  incoming: GraphEdge | null = null,
+): SearchLegResult {
+  const startedAt = performance.now()
+  const memory = createSearchMemory(graph, start, conditions, incoming)
+  const goalRank = new Map([...new Set(goals)].map((goal, rank) => [goal, rank]))
+  if (!goalRank.size) return completeLeg(memory, null, startedAt)
+
+  const estimate = (key: string) => {
+    const at = memory.nodeAt[key]
+    return at === undefined || heuristic === null ? 0 : heuristic(at)
+  }
+  const frontier = new Heap()
+  frontier.push(memory.startKey, estimate(memory.startKey), 0)
+  let bestKey: string | null = null
+  let bestCost = Infinity
+  let bestRank = goalRank.size
+
+  for (let current = popFresh(frontier, memory); current !== undefined;
+    current = popFresh(frontier, memory)) {
+    const currentNode = memory.nodeAt[current]
+    const currentCost = memory.cost[current]
+    if (currentNode === undefined || currentCost === undefined) continue
+    const currentHeuristic = estimate(current)
+    if (bestKey !== null && currentCost + currentHeuristic > bestCost) break
+
+    recordExpansion(memory, current, heuristic === null ? null : currentHeuristic)
+    const rank = goalRank.get(currentNode)
+    if (rank !== undefined
+      && (currentCost < bestCost || (currentCost === bestCost && rank < bestRank))) {
+      bestKey = current
+      bestCost = currentCost
+      bestRank = rank
+    }
+
+    // Goal states still expand because zero-cost edges may connect two tied
+    // goals; the f-bound above stops as soon as tie resolution is complete.
+    for (const { edge, key } of nextStates(memory, current)) {
+      const candidateCost = currentCost + edgeCost(edge, conditions)
+      const known = memory.cost[key]
+      if (known !== undefined && candidateCost >= known) continue
+      remember(memory, key, current, edge, candidateCost)
+      frontier.push(key, candidateCost + estimate(key), candidateCost)
+    }
+  }
+
+  return completeLeg(memory, bestKey, startedAt)
+}
+
+/** NN's greedy step: multi-goal A* guided by the nearest-candidate bound. */
+function nearestNeighborMultiGoalSearch(
+  graph: Graph,
+  start: string,
+  goals: readonly string[],
+  conditions: Conditions,
+  scale: number,
+  incoming: GraphEdge | null = null,
+): SearchLegResult {
+  const heuristic = nearestNeighborMultiGoalHeuristic(graph, [...new Set(goals)], scale)
+  return multiGoalSearch(graph, start, goals, conditions, heuristic, incoming)
+}
+
+/**
+ * UCS's greedy step: Dijkstra asked for a set of goals rather than one.
+ *
+ * The first settled goal is the nearest, so ordering the stops and routing the
+ * leg become the same search — the legs a UCS pane shows are still UCS legs.
+ */
+function uniformCostMultiGoalSearch(
+  graph: Graph,
+  start: string,
+  goals: readonly string[],
+  conditions: Conditions,
+  incoming: GraphEdge | null = null,
+): SearchLegResult {
+  return multiGoalSearch(graph, start, goals, conditions, null, incoming)
 }
 
 export function edgeBetween(graph: Graph, from: string, to: string): GraphEdge | undefined {
@@ -695,6 +852,164 @@ export interface PlanInput {
   conditions: Conditions
 }
 
+function routeFromLegs(
+  input: PlanInput,
+  order: string[],
+  legs: SearchLegResult[],
+  found: boolean,
+  problem: string | undefined,
+): RouteResult {
+  const { graph, algo, stops, conditions } = input
+  const trace: TraceStep[] = []
+  const reveal: { upto: number; path: string[] }[] = []
+  const path: string[] = []
+  let km = 0
+  let minutes = 0
+  let cost = 0
+  let ms = 0
+  let turnsBlocked = 0
+
+  for (const leg of legs) {
+    ms += leg.ms
+    turnsBlocked += leg.turnsBlocked
+    trace.push(...leg.trace)
+    if (!leg.found) continue
+    const stats = statsOf(leg.edges, conditions)
+    km += stats.km
+    minutes += stats.minutes
+    cost += stats.cost
+    path.push(...(path.length ? leg.path.slice(1) : leg.path))
+    reveal.push({ upto: trace.length, path: [...path] })
+  }
+
+  return {
+    algo,
+    order,
+    path,
+    trace,
+    reveal,
+    found,
+    problem,
+    nodeIds: indexer(graph).ids,
+    metrics: {
+      km: +km.toFixed(2),
+      minutes: Math.round(minutes),
+      cost: +cost.toFixed(1),
+      expanded: trace.length,
+      // Summed over every leg the algorithm searched, which is every leg it ran:
+      // no planning path here searches a leg it then drops. The backend uses the
+      // identical boundary; actual numbers can still differ because JavaScript
+      // and Python are different runtimes.
+      ms: +ms.toFixed(1),
+      turnsBlocked,
+      optimal: found
+        && ALGOS[algo].optimal
+        && stops.length === 0
+        && !costIsFlat(conditions.weights),
+    },
+  }
+}
+
+type GreedySearch = (
+  current: string, goals: readonly string[], incoming: GraphEdge | null,
+) => SearchLegResult
+
+/**
+ * Choose each next destination with one multi-goal search per greedy step.
+ *
+ * One search per step rather than one per candidate is what keeps a greedy pass
+ * linear in the number of destinations, and why `ms` and the effort counters are
+ * summed over the same work. The search runs live at each step rather than
+ * reading a precomputed matrix because the ordering decision has to see turn
+ * context: a matrix entry for `(A, B)` is the same however the trip arrived at
+ * A, so a banned turn out of A could not influence which stop is picked next.
+ */
+function planGreedyRoute(
+  input: PlanInput,
+  search: GreedySearch,
+): RouteResult {
+  const { graph, start, goal, stops, returnToStart, conditions } = input
+  const routeKind = returnToStart ? 'closed tour' : 'open route'
+  const destinations = [...new Set([...stops, goal])].filter(node => node !== start)
+  const remaining = returnToStart
+    ? [...destinations]
+    : destinations.filter(node => node !== goal)
+  const forcedTail = returnToStart ? start : goal
+
+  if (!remaining.length && forcedTail === start) {
+    return routeFromLegs(
+      input,
+      [],
+      [],
+      false,
+      'The pickup and dropoff pin to the same intersection. Choose points farther apart.',
+    )
+  }
+
+  const order = [start]
+  const selectedLegs: SearchLegResult[] = []
+  let current = start
+  let incoming: GraphEdge | null = null
+
+  while (remaining.length) {
+    const leg = search(current, remaining, incoming)
+    const reached = leg.found ? leg.path[leg.path.length - 1] : undefined
+    const bestIndex = reached === undefined ? -1 : remaining.indexOf(reached)
+
+    if (bestIndex < 0) {
+      // The one search above covered every remaining destination at once, so
+      // each is blocked for its own reason and none is more the cause than
+      // another. Naming the first keeps the message deterministic. The leg is
+      // kept: it expanded states and built a trace, and hiding that would make
+      // a failed run look cheaper than a successful one.
+      const reason = whyBlocked(graph, current, remaining[0] ?? current, conditions)
+      return routeFromLegs(
+        input,
+        order,
+        [...selectedLegs, leg],
+        false,
+        `No complete ${routeKind} exists. ${reason}`,
+      )
+    }
+
+    current = remaining.splice(bestIndex, 1)[0] ?? current
+    selectedLegs.push(leg)
+    order.push(current)
+    incoming = leg.edges[leg.edges.length - 1] ?? incoming
+  }
+
+  if (current !== forcedTail) {
+    const tailLeg = search(current, [forcedTail], incoming)
+    if (!tailLeg.found) {
+      const reason = whyBlocked(graph, current, forcedTail, conditions)
+      return routeFromLegs(
+        input,
+        order,
+        [...selectedLegs, tailLeg],
+        false,
+        `No complete ${routeKind} exists. ${reason}`,
+      )
+    }
+    selectedLegs.push(tailLeg)
+    order.push(forcedTail)
+  }
+
+  return routeFromLegs(input, order, selectedLegs, true, undefined)
+}
+
+function planNearestNeighbor(input: PlanInput): RouteResult {
+  const { graph, conditions } = input
+  const scale = nearestNeighborHeuristicScale(graph, conditions)
+  return planGreedyRoute(input, (current, goals, incoming) =>
+    nearestNeighborMultiGoalSearch(graph, current, goals, conditions, scale, incoming))
+}
+
+function planOrderedUcs(input: PlanInput): RouteResult {
+  const { graph, conditions } = input
+  return planGreedyRoute(input, (current, goals, incoming) =>
+    uniformCostMultiGoalSearch(graph, current, goals, conditions, incoming))
+}
+
 /** Runs one selected algorithm across every leg of the requested trip. */
 export function planRoute(input: PlanInput): RouteResult {
   const { graph, algo, start, goal, stops, optimiseOrder, returnToStart, conditions } = input
@@ -721,15 +1036,13 @@ export function planRoute(input: PlanInput): RouteResult {
     }
   }
 
+  if (algo === 'nearest') return planNearestNeighbor(input)
+  if (algo === 'ucs' && optimiseOrder) return planOrderedUcs(input)
+
   const conditionsKey = conditionKey(conditions)
-  // Nearest Neighbor chooses the trip order; the legs between its chosen stops
-  // are a plain point search, and A* is the one to use. The Python backend
-  // routes them with Pairwise A*, so picking anything else here would make the
-  // "nodes expanded" figure move when VITE_API_URL is set — the same trip, the
-  // same route, the same cost, but a different headline number depending on
-  // which planner answered. A* and UCS return the identical route because both
-  // are exact; A* just reaches it having opened fewer nodes.
-  const pointAlgorithm: PointSearchKey = algo === 'nearest' ? 'astar' : algo
+  // Nearest Neighbor returned above through its own multi-goal A* planner.
+  // From here onward only the four point-search algorithms remain.
+  const pointAlgorithm: PointSearchKey = algo
   const heuristicScale = pointAlgorithm === 'astar'
     ? shared(graph, `heuristic:${conditionsKey}`, () => minCostPerKm(graph, conditions))
     : 0
@@ -737,8 +1050,7 @@ export function planRoute(input: PlanInput): RouteResult {
   // the backend's planner.py. The dropoff is a destination like any other, and on
   // a round trip the ordering may put it before another stop.
   const destinations = [...stops, goal]
-  const shouldOrderDestinations = (algo === 'nearest' || optimiseOrder)
-    && destinations.length > 1
+  const shouldOrderDestinations = optimiseOrder && destinations.length > 1
   // A closed tour has no last stop, so the dropoff is ordered with everything
   // else. An open route is required to finish at it, so it is held out of the
   // greedy pool and appended — `_greedy_order` in planner.py is the same rule,
@@ -796,6 +1108,7 @@ export function planRoute(input: PlanInput): RouteResult {
   let found = true
   let problem: string | undefined
   let reached = 1
+  let incoming: GraphEdge | null = null
 
   for (let index = 0; index + 1 < sequence.length; index++) {
     const legFrom = sequence[index]
@@ -808,6 +1121,7 @@ export function planRoute(input: PlanInput): RouteResult {
       legTo,
       conditions,
       heuristicScale,
+      incoming,
     )
     ms += leg.ms
     turnsBlocked += leg.turnsBlocked
@@ -829,6 +1143,7 @@ export function planRoute(input: PlanInput): RouteResult {
     path.push(...(path.length ? leg.path.slice(1) : leg.path))
     reveal.push({ upto: trace.length, path: [...path] })
     reached = index + 2
+    incoming = leg.edges[leg.edges.length - 1] ?? incoming
   }
 
   return {

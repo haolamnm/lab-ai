@@ -29,7 +29,9 @@ from route_lab.shared.search import (
 def breadth_first_search(problem: SearchProblem) -> SearchLegResult:
     """Expand in discovery order; the first route to the goal has the fewest hops."""
     started_at = perf_counter()
-    memory = create_search_memory(problem.graph, problem.start, problem.conditions)
+    memory = create_search_memory(
+        problem.graph, problem.start, problem.conditions, problem.incoming
+    )
 
     frontier = Queue()
     frontier.push(memory.start_key)

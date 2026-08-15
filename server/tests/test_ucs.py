@@ -34,7 +34,7 @@ def test_ucs_reports_a_complete_metric_set() -> None:
 
 def test_ucs_is_optimal_but_nearest_is_not() -> None:
     assert plan_route(diamond_request("ucs")).metrics.optimal is True
-    # Nearest uses optimal Pairwise A* legs but its greedy trip order is approximate.
+    # Nearest uses optimal multi-goal A* legs but its greedy trip order is approximate.
     nearest = plan_route(diamond_request("nearest"))
     assert nearest.found is True
     assert nearest.path == ["A", "B", "D"]

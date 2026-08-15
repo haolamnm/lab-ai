@@ -115,10 +115,15 @@ def _key_of(node: str, incoming: GraphEdge | None, *, turns_active: bool) -> str
     return f"{node}|{'' if way is None else way}"
 
 
-def create_search_memory(graph: Graph, start: str, conditions: Conditions) -> SearchMemory:
+def create_search_memory(
+    graph: Graph,
+    start: str,
+    conditions: Conditions,
+    incoming: GraphEdge | None = None,
+) -> SearchMemory:
     """A fresh :class:`SearchMemory` seeded with the start state."""
     turns_active = graph.turns_active
-    start_key = _key_of(start, None, turns_active=turns_active)
+    start_key = _key_of(start, incoming, turns_active=turns_active)
     memory = SearchMemory(
         graph=graph,
         conditions=conditions,
@@ -134,7 +139,7 @@ def create_search_memory(graph: Graph, start: str, conditions: Conditions) -> Se
     )
     memory.node_at[start_key] = start
     memory.parent[start_key] = None
-    memory.via[start_key] = None
+    memory.via[start_key] = incoming
     memory.cost[start_key] = 0.0
     memory.open[start_key] = None
     memory.stats.max_frontier = 1
@@ -214,10 +219,15 @@ def complete_leg(memory: SearchMemory, goal_key: str | None, started_at: float) 
     current = goal_key
     while current is not None:
         path.insert(0, memory.node_at[current])
+        parent = memory.parent[current]
+        # ``via`` on the start state is only the incoming turn context from the
+        # previous trip leg; it must not be duplicated into this leg's route.
+        if parent is None:
+            break
         edge = memory.via[current]
         if edge is not None:
             edges.insert(0, edge)
-        current = memory.parent[current]
+        current = parent
 
     return SearchLegResult(
         path=path,

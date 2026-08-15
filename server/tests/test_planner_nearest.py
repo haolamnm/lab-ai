@@ -1,21 +1,18 @@
-"""Nearest Neighbor planner integration through directed Pairwise A*."""
+"""Nearest Neighbor planner integration through one multi-goal A* per step."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
+from dataclasses import replace
 
 import pytest
 
 import route_lab.planner as planner
-from route_lab.algorithms.astar import a_star_search
 from route_lab.algorithms.registry import POINT_SEARCHES
-from route_lab.contract.conditions import Conditions
 from route_lab.contract.request import PlanRequest
-from route_lab.contract.result import TraceStep
-from route_lab.shared.graph import Graph, build_graph
 from route_lab.shared.pairwise import PairwiseResult
-from route_lab.shared.problem import PointSearch, SearchProblem
-from route_lab.shared.search import SearchLegResult, SearchStats
+from route_lab.shared.problem import SearchProblem
+from route_lab.shared.search import SearchLegResult
 
 from .fixtures import trip_request
 
@@ -38,185 +35,131 @@ def _request(
     )
 
 
-def _leg(graph: Graph, source: str, target: str, value: int) -> SearchLegResult:
-    edge = next(edge for edge in graph.adj[source] if edge.to == target)
-    return SearchLegResult(
-        path=[source, target],
-        edges=[edge],
-        trace=[TraceStep(expanded=value, frontier=[], g=float(value), h=0.0, parent=None)],
-        found=True,
-        ms=float(value),
-        stats=SearchStats(
-            expanded=value,
-            generated=value + 1,
-            reopened=max(0, value - 1),
-            max_frontier=value + 2,
-            turns_blocked=max(0, value - 1),
-        ),
-    )
-
-
-def _stub_pairwise(
-    monkeypatch: pytest.MonkeyPatch,
-    costs: Mapping[tuple[str, str], float],
-    paths: Mapping[tuple[str, str], SearchLegResult],
-) -> None:
-    """Hand the planner a matrix instead of letting Pairwise A* compute one.
-
-    What is under test in these cases is which pairs the planner selects and what
-    it does with them, so the matrix is written by hand — a real search over the
-    fixture graph could only produce matrices that agree with the fixture.
-    """
-    monkeypatch.setattr(
-        planner,
-        "build_pairwise",
-        lambda **_kwargs: PairwiseResult(costs=costs, paths=paths),
-    )
-
-
-def _capture_pairwise(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Record the locations Pairwise is asked for, while still running it."""
-    captured: list[str] = []
-    original = planner.build_pairwise
-
-    def pairwise(
-        graph: Graph,
-        locations: Sequence[str],
-        conditions: Conditions,
-        search: PointSearch,
-    ) -> PairwiseResult:
-        captured.extend(locations)
-        return original(graph, locations, conditions, search)
-
-    monkeypatch.setattr(planner, "build_pairwise", pairwise)
-    return captured
-
-
 @pytest.mark.parametrize("optimise_order", [False, True])
-def test_nearest_uses_pairwise_astar_without_rerunning_selected_legs(
+def test_nearest_uses_one_multi_goal_astar_per_step_without_rerunning_legs(
     monkeypatch: pytest.MonkeyPatch,
     optimise_order: bool,
 ) -> None:
-    calls = 0
+    calls: list[tuple[str, tuple[str, ...]]] = []
+    real_search = planner.nearest_neighbor_multi_goal_search
 
-    def search(problem: SearchProblem) -> SearchLegResult:
-        nonlocal calls
-        calls += 1
-        return a_star_search(problem)
+    def search(problem: SearchProblem, goals: Sequence[str]) -> SearchLegResult:
+        calls.append((problem.start, tuple(goals)))
+        return real_search(problem, goals)
 
-    monkeypatch.setattr(planner, "a_star_search", search)
-    result = planner.plan_route(_request(optimise_order=optimise_order))
+    monkeypatch.setattr(planner, "nearest_neighbor_multi_goal_search", search)
+    result = planner.plan_route(_request(optimise_order=optimise_order, return_to_start=True))
 
     assert result.found is True
-    assert result.order == ["W", "A", "B"]
-    assert result.path == ["W", "A", "B"]
+    assert result.order == ["W", "A", "B", "W"]
+    assert result.path == ["W", "A", "B", "W"]
     assert result.metrics.optimal is False
-    # Three locations means six directed pairs, and the two selected legs are
-    # taken from that cache rather than searched a second time.
-    assert calls == 6
+    # One search chooses among both first-step candidates, one chooses the only
+    # remaining candidate, and one closes the tour. No winning leg is rerun.
+    assert calls == [("W", ("A", "B")), ("A", ("B",)), ("B", ("W",))]
     assert "nearest" not in POINT_SEARCHES
 
 
-def test_nearest_respects_directed_pairwise_costs(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A closed tour, because that is the shape where the ordering has a free hand
-    # over every destination. On an open route the dropoff is pinned last, so a
-    # one-stop trip has no ordering decision left for the matrix to influence.
-    request = _request(stops=["A"], goal="B", return_to_start=True)
-    graph = build_graph(request.graph)
-    _stub_pairwise(
-        monkeypatch,
-        costs={
-            ("W", "W"): 0.0,
-            ("A", "A"): 0.0,
-            ("B", "B"): 0.0,
-            ("W", "A"): 5.0,
-            ("W", "B"): 1.0,
-            ("A", "B"): 0.1,
-            ("B", "A"): 2.0,
-            ("A", "W"): 3.0,
-            ("B", "W"): 4.0,
-        },
-        paths={
-            ("W", "B"): _leg(graph, "W", "B", 1),
-            ("B", "A"): _leg(graph, "B", "A", 2),
-            ("A", "W"): _leg(graph, "A", "W", 3),
-        },
+def test_nearest_respects_directed_astar_route_costs() -> None:
+    request = _request(
+        stops=["A"],
+        goal="B",
+        return_to_start=True,
+        edges=[
+            ("W", "A", 5.0),
+            ("W", "B", 1.0),
+            ("B", "A", 2.0),
+            ("A", "W", 3.0),
+        ],
     )
 
     result = planner.plan_route(request)
 
     assert result.found is True
-    # B before A: reading the pair (A, B) = 0.1 as if it were (B, A) would put A
-    # first, so the order proves the matrix is consulted in the right direction.
+    # B is the cheapest reachable route from W; directed reverse costs are not
+    # substituted for the directed multi-goal A* route costs.
     assert result.order == ["W", "B", "A", "W"]
     assert result.path == ["W", "B", "A", "W"]
 
 
-def test_nearest_preserves_input_order_for_pairwise_cost_ties(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    request = _request(stops=["B"], goal="A")
-    graph = build_graph(request.graph)
-    _stub_pairwise(
-        monkeypatch,
-        costs={
-            ("W", "W"): 0.0,
-            ("A", "A"): 0.0,
-            ("B", "B"): 0.0,
-            ("W", "A"): 1.0,
-            ("W", "B"): 1.0,
-            ("B", "A"): 1.0,
-        },
-        paths={
-            ("W", "B"): _leg(graph, "W", "B", 1),
-            ("B", "A"): _leg(graph, "B", "A", 2),
-        },
+def test_nearest_preserves_input_order_for_astar_cost_ties() -> None:
+    request = _request(
+        stops=["B"],
+        goal="A",
+        return_to_start=True,
+        edges=[
+            ("W", "B", 1.0),
+            ("W", "A", 1.0),
+            ("B", "A", 1.0),
+            ("A", "B", 1.0),
+            ("A", "W", 1.0),
+            ("B", "W", 1.0),
+        ],
     )
 
     result = planner.plan_route(request)
 
-    assert result.order == ["W", "B", "A"]
+    assert result.order == ["W", "B", "A", "W"]
 
 
-def test_nearest_search_effort_includes_only_selected_cached_legs(
+def test_nearest_runtime_sums_one_multi_goal_search_per_step(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     clock = iter((10.0, 10.00456))
     monkeypatch.setattr(planner, "perf_counter", lambda: next(clock))
-    request = _request()
-    graph = build_graph(request.graph)
-    unused = _leg(graph, "W", "B", 99)
-    _stub_pairwise(
-        monkeypatch,
-        costs={
-            ("W", "W"): 0.0,
-            ("A", "A"): 0.0,
-            ("B", "B"): 0.0,
-            ("W", "A"): 1.0,
-            ("W", "B"): 2.0,
-            ("A", "B"): 1.0,
-        },
-        paths={
-            ("W", "A"): _leg(graph, "W", "A", 1),
-            ("A", "B"): _leg(graph, "A", "B", 2),
-            ("W", "B"): unused,
-        },
+    request = _request(
+        stops=["A"],
+        goal="B",
+        return_to_start=True,
+        edges=[
+            ("W", "A", 1.0),
+            ("W", "B", 2.0),
+            ("A", "B", 1.0),
+            ("B", "A", 1.0),
+            ("B", "W", 1.0),
+        ],
     )
+    real_search = planner.nearest_neighbor_multi_goal_search
+    durations: dict[tuple[str, tuple[str, ...]], float] = {
+        ("W", ("A", "B")): 1.0,
+        ("A", ("B",)): 2.0,
+        ("B", ("W",)): 3.0,
+    }
+
+    def timed_search(problem: SearchProblem, goals: Sequence[str]) -> SearchLegResult:
+        result = real_search(problem, goals)
+        return replace(result, ms=durations[(problem.start, tuple(goals))])
+
+    monkeypatch.setattr(planner, "nearest_neighbor_multi_goal_search", timed_search)
 
     result = planner.plan_route(request)
 
-    assert result.path == ["W", "A", "B"]
-    # The unused W -> B leg cost 99 ms and contributes none of it: `ms` sums the
-    # legs the route is made of, exactly as the search-effort counts below do.
-    # `planning_ms` is the other question — it covers the whole pipeline, the
-    # pairwise searches this route did not select included.
-    assert result.metrics.ms == 3.0
+    assert result.path == ["W", "A", "B", "W"]
+    assert result.metrics.ms == 6.0
     assert result.metrics.planning_ms == 4.6
-    assert result.metrics.expanded == 3
-    assert result.metrics.generated == 5
-    assert result.metrics.reopened == 1
-    assert result.metrics.max_frontier == 4
-    assert result.metrics.turns_blocked == 1
+    # Route-effort counters still describe only the selected, replayable legs.
+    assert result.metrics.expanded == len(result.trace)
+
+
+def test_a_blocked_greedy_step_still_reports_the_search_it_ran() -> None:
+    # Nothing leaves the warehouse, so the very first step fails with two
+    # destinations still outstanding. That step really did expand W and build a
+    # trace for it; dropping the leg because it arrived nowhere would report a
+    # failed run as having done no work at all, and `ms` would then be counting
+    # a search that no effort column admitted to.
+    result = planner.plan_route(
+        _request(
+            stops=["A", "B"],
+            goal="B",
+            return_to_start=True,
+            edges=[("A", "B", 1.0), ("B", "A", 1.0)],
+        )
+    )
+
+    assert result.found is False
+    assert result.metrics.expanded >= 1
+    assert result.metrics.expanded == len(result.trace)
+    assert result.path == []
 
 
 def test_nearest_explains_an_unreachable_leg_instead_of_naming_the_cache() -> None:
@@ -227,7 +170,7 @@ def test_nearest_explains_an_unreachable_leg_instead_of_naming_the_cache() -> No
 
     assert result.found is False
     assert result.problem is not None and "one-way" in result.problem
-    assert result.metrics.cost == 0.0
+    assert result.metrics.cost == 1.0
 
 
 def test_open_nearest_finishes_at_the_goal() -> None:
@@ -322,29 +265,29 @@ def test_nearest_refuses_a_trip_with_nowhere_to_go(return_to_start: bool) -> Non
 
 
 @pytest.mark.parametrize(
-    ("return_to_start", "expected_order"),
-    [(False, ["W", "A"]), (True, ["W", "A", "W"])],
+    ("return_to_start", "expected_order", "expected_calls"),
+    [(False, ["W", "A"], 1), (True, ["W", "A", "W"], 2)],
 )
-def test_nearest_reuses_pairwise_astar_legs(
+def test_nearest_does_not_rerun_a_selected_astar_leg(
     monkeypatch: pytest.MonkeyPatch,
     return_to_start: bool,
     expected_order: list[str],
+    expected_calls: int,
 ) -> None:
     calls = 0
+    real_search = planner.nearest_neighbor_multi_goal_search
 
-    def search(problem: SearchProblem) -> SearchLegResult:
+    def search(problem: SearchProblem, goals: Sequence[str]) -> SearchLegResult:
         nonlocal calls
         calls += 1
-        return a_star_search(problem)
+        return real_search(problem, goals)
 
-    monkeypatch.setattr(planner, "a_star_search", search)
+    monkeypatch.setattr(planner, "nearest_neighbor_multi_goal_search", search)
     result = planner.plan_route(_request(stops=[], goal="A", return_to_start=return_to_start))
 
     assert result.found is True
     assert result.order == expected_order
-    # Two locations, two directed pairs, and the return leg is taken from the
-    # same cache rather than searched again.
-    assert calls == 2
+    assert calls == expected_calls
 
 
 def test_open_nearest_succeeds_without_a_return_leg() -> None:
@@ -391,42 +334,48 @@ def test_open_nearest_orders_the_goal_among_the_stops() -> None:
 
 
 @pytest.mark.parametrize(
-    ("stops", "goal", "expected_order", "expected_locations"),
+    ("stops", "goal", "expected_order"),
     [
         # A dropoff already at the pickup makes the trip a loop however the toggle
         # is set, so this one comes home. Nearest Neighbor used to be alone in
         # answering ["W", "A"] here: greedy took the zero-cost (W, W) pair first
         # and the leg home was then dropped as a consecutive duplicate. The other
         # five algorithms all closed it, and now so does this one.
-        (["A"], "W", ["W", "A", "W"], ["W", "A"]),
-        (["A", "B"], "B", ["W", "A", "B"], ["W", "A", "B"]),
+        (["A"], "W", ["W", "A", "W"]),
+        (["A", "B"], "B", ["W", "A", "B"]),
     ],
 )
-def test_nearest_uses_stable_unique_pairwise_locations_without_dropping_destinations(
+def test_nearest_uses_stable_unique_destinations_without_mutating_the_request(
     monkeypatch: pytest.MonkeyPatch,
     stops: list[str],
     goal: str,
     expected_order: list[str],
-    expected_locations: list[str],
 ) -> None:
-    captured = _capture_pairwise(monkeypatch)
+    def pairwise_must_not_run(**_kwargs: object) -> PairwiseResult:
+        raise AssertionError("Nearest Neighbor must not build an all-pairs matrix")
+
+    monkeypatch.setattr(planner, "build_pairwise", pairwise_must_not_run)
     request = _request(stops=stops, goal=goal)
     original_stops = list(request.stops)
 
     result = planner.plan_route(request)
 
-    assert captured == expected_locations
     assert result.order == expected_order
     assert request.stops == original_stops
 
 
-def test_nearest_trivial_duplicate_legs_need_no_diagonal_cached_path(
+def test_nearest_trivial_duplicate_legs_run_no_astar(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured = _capture_pairwise(monkeypatch)
+    def search_must_not_run(
+        _problem: SearchProblem,
+        _goals: Sequence[str],
+    ) -> SearchLegResult:
+        raise AssertionError("a degenerate trip must run no A* search")
+
+    monkeypatch.setattr(planner, "nearest_neighbor_multi_goal_search", search_must_not_run)
     result = planner.plan_route(_request(stops=["W"], goal="W"))
 
-    assert captured == ["W"]
     assert result.found is False
     assert result.order == []
     assert result.problem is not None and "same intersection" in result.problem

@@ -229,11 +229,13 @@ export function CompareAlgos() {
             <b>Reopened</b>, <b>Peak frontier</b> and <b>Planning</b> are measured by the
             Python backend only — they read “—” when the app is planning in the browser.
             {' '}<b>Runtime</b> is the leg searches, and both planners measure it the same
-            way, so it is ranked like the columns before it. <b>Planning</b> is the whole
-            backend pipeline — including the pairwise search that Held–Karp and Nearest
-            Neighbor run over every pair of trip points and a plain point search does not
-            — so the rows are not always answering the same question and no best is
-            marked; hover a value for what it counted.
+            way, so it is ranked like the columns before it — an ordering pass searches one
+            leg per greedy step and never a leg it drops, so it is not charged for work the
+            other columns do not show. <b>Planning</b> is the whole backend pipeline —
+            including the pairwise search that Held–Karp and the ordered point searches run
+            over every pair of trip points and a plain point search does not — so the rows
+            are not always answering the same question and no best is marked; hover a value
+            for what it counted.
           </p>
         </div>
       )}

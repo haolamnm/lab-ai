@@ -157,8 +157,10 @@ Custom. Set all four to zero and every route costs the same — the app detects 
 
 ## The six algorithms
 
-The first four are point-to-point searches, run once per leg. The last two are trip-level: they
-choose the *visit order* over the stops and leave the per-leg routing to a point search.
+The first four are point-to-point searches, run once per route leg. With `optimiseOrder`, UCS
+orders the stops with UCS itself — one multi-goal search per greedy step, which both picks the
+next stop and routes the leg. The last two are trip-level strategies that choose the visit order
+over the stops.
 
 | Algorithm | Priority | Optimal? | Character |
 |---|---|---|---|
@@ -166,7 +168,7 @@ choose the *visit order* over the stops and leave the per-leg routing to a point
 | **DFS** | stack order | no | Plunges down one branch, usually a bad route |
 | **UCS** | `g(n)` | **yes** | Expands evenly in every direction |
 | **A\*** | `g(n) + h(n)` | **yes** | Same route as UCS, far fewer nodes expanded |
-| **Nearest Neighbor** | cheapest unvisited stop | no | Orders stops greedily by real route cost; each leg is UCS |
+| **Nearest Neighbor** | cheapest unvisited stop | no | Runs one multi-goal A* over all remaining candidates, keeps the cheapest reached route, and repeats |
 | **Held–Karp DP** | bitmask dynamic programming | **yes** | The exact cheapest visit order, from Pairwise A\* costs. Backend only |
 
 Held–Karp is exponential in the number of stops, which is why it is exact and why it is not the

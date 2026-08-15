@@ -8,7 +8,7 @@ from route_lab.contract.conditions import Conditions
 from route_lab.contract.graph import Contract, GraphPayload
 
 # `nearest` and `held_karp` are trip-ordering strategies, not point searches;
-# the planner gives each a dedicated Pairwise A* branch.
+# the planner gives NN a multi-goal A* branch and Held-Karp a Pairwise branch.
 AlgoKey = Literal["bfs", "dfs", "ucs", "astar", "nearest", "held_karp"]
 
 

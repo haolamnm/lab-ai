@@ -120,8 +120,9 @@ server/
     ├── algorithms/      One file per algorithm, uniform signature. The playground.
     │   ├── base.py      The Algorithm type and the AlgorithmNotImplemented exception.
     │   ├── registry.py  Maps an AlgoKey ('bfs', 'ucs', …) to its function.
-    │   ├── ucs.py       Uniform Cost Search implementation.
-    │   ├── nearest_neighbor.py  Traffic-aware stop-ordering heuristic.
+    │   ├── ucs.py       Uniform Cost Search, for one goal and for a set of them.
+    │   ├── multi_goal.py  The one search loop a greedy ordering step runs, guided or blind.
+    │   ├── nearest_neighbor.py  NN candidate selection and its explicit admissible h(n).
     │   ├── bfs.py       )
     │   ├── dfs.py       ) The other three point searches. Each differs from ucs.py only in its
     │   ├── astar.py     ) frontier and the priority it pushes with.
@@ -252,11 +253,14 @@ counts itself. The full set (`shared/search.py`, surfaced in the response `Metri
 | `turns_blocked` | directions dropped because a turn restriction forbade them |
 
 The planner adds the route-quality numbers (`km`, `minutes`, `cost`, `hops`, `optimal`), and two
-times. `ms` sums the leg searches the route is made of — `planRoute` in `web/src/lib/search.ts` sums
-the same legs, so one trip reports one figure whichever planner answered it, and that is the number
-the app ranks on. `planning_ms` is wall clock over the whole post-validation pipeline, the ordering
-search and its pairwise matrix included; only this planner can measure it, so it is optional on the
-wire and reads `—` in the app when the browser planned the trip. To add
+times. `ms` sums the leg searches the route is made of — one per leg for a fixed-order point
+search, one per greedy step for an ordering pass, and never a search whose leg was dropped, so the
+figure covers exactly the work the effort counters beside it report. `planRoute` in
+`web/src/lib/search.ts` sums the same legs, so one trip reports one figure whichever planner
+answered it, and that is the number the app ranks on. `planning_ms` is wall clock over the whole
+post-validation pipeline, the ordering search and its pairwise matrix included; only this planner
+can measure it, so it is optional on the wire and reads `—` in the app when the browser planned the
+trip. To add
 a new search-effort metric, add a field to `SearchStats` and to the response `Metrics` together, and
 count it in the harness — never inside a single algorithm.
 
@@ -315,7 +319,7 @@ Request body — one planning request, matching `PlanInput` in `web/src/lib/sear
 | `start` | `string` | Node id of the pickup point. |
 | `goal` | `string` | Node id of the dropoff point. |
 | `stops` | `string[]` | Node ids of intermediate stops, in the entered order when `optimiseOrder` is false. |
-| `optimiseOrder` | `boolean` | Whether to reorder all destinations (intermediate stops plus dropoff). Point searches use Nearest Neighbor; Held-Karp runs its exact optimizer. The `nearest` algorithm always reorders even when false. |
+| `optimiseOrder` | `boolean` | Whether to reorder all destinations (intermediate stops plus dropoff). BFS, DFS and A\* order by Nearest Neighbor over a pairwise matrix; UCS orders with its own multi-goal search; Held-Karp runs its exact optimizer. The `nearest` algorithm always reorders even when false. |
 | `returnToStart` | `boolean` | The shape of the trip, read by **every** algorithm. False is an open tour running `start -> stops -> goal`. True is a closed tour: `goal` becomes an ordinary stop whose position is chosen like any other, and the route comes home to `start`. |
 | `conditions` | `Conditions` | Vehicle, time period, and the four cost weights. |
 

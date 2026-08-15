@@ -46,6 +46,10 @@ class SearchProblem:
     conditions: Conditions
     cost: CostFn
     heuristic: Heuristic
+    # The edge used to arrive at the first node of a later trip leg.  It is not
+    # part of this leg's reconstructed path, but turn restrictions at the first
+    # intersection must still see it.
+    incoming: GraphEdge | None = None
 
 
 # Solving one leg: a problem in, a leg result out. The alias lives here rather
@@ -63,6 +67,8 @@ def build_problem(
     conditions: Conditions,
     *,
     heuristic_name: HeuristicName = DEFAULT_HEURISTIC,
+    heuristic: Heuristic | None = None,
+    incoming: GraphEdge | None = None,
 ) -> SearchProblem:
     """Assemble the default problem for a leg.
 
@@ -73,13 +79,18 @@ def build_problem(
     UCS never call ``problem.heuristic``, so building it for them costs one
     ``min_cost_per_km`` scan and removes the standing risk of a per-algorithm
     "is this one guided?" table drifting away from the algorithms themselves.
+
+    Pass ``heuristic`` when the caller already owns a better-suited bound — the
+    multi-goal searches do — and the default scan is skipped rather than run to
+    build an estimate that is then thrown away.
     """
 
     def cost(edge: GraphEdge) -> float:
         return edge_cost(edge, conditions)
 
-    scale = min_cost_per_km(graph.edges, conditions)
-    heuristic = HEURISTICS[heuristic_name](graph, goal, scale)
+    if heuristic is None:
+        scale = min_cost_per_km(graph.edges, conditions)
+        heuristic = HEURISTICS[heuristic_name](graph, goal, scale)
 
     return SearchProblem(
         graph=graph,
@@ -88,4 +99,5 @@ def build_problem(
         conditions=conditions,
         cost=cost,
         heuristic=heuristic,
+        incoming=incoming,
     )

@@ -51,7 +51,8 @@ class Metrics(Contract):
     # is the one figure a pane may rank across algorithms and the app may show
     # without knowing which planner answered. Widening it here is what made a
     # local and a remote run of one trip disagree; `planning_ms` is where the
-    # wider number belongs.
+    # wider number belongs. An ordering pass searches one leg per greedy step
+    # and never a leg it drops, so it needs no exception to that rule.
     ms: float
     # Wall-clock time for the whole post-validation pipeline — the ordering
     # search and the pairwise matrix as well as the legs. Optional because only

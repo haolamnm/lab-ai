@@ -25,8 +25,10 @@ between the algorithms.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from time import perf_counter
 
+from route_lab.algorithms.multi_goal import multi_goal_search
 from route_lab.shared.heap import Heap
 from route_lab.shared.problem import SearchProblem
 from route_lab.shared.search import (
@@ -43,7 +45,9 @@ from route_lab.shared.search import (
 def uniform_cost_search(problem: SearchProblem) -> SearchLegResult:
     """Return the cheapest reachable path from ``problem.start`` to its goal."""
     started_at = perf_counter()
-    memory = create_search_memory(problem.graph, problem.start, problem.conditions)
+    memory = create_search_memory(
+        problem.graph, problem.start, problem.conditions, problem.incoming
+    )
     frontier = Heap()
     frontier.push(memory.start_key, priority=0.0, cost=0.0)
 
@@ -62,3 +66,18 @@ def uniform_cost_search(problem: SearchProblem) -> SearchLegResult:
             frontier.push(successor, priority=candidate_cost, cost=candidate_cost)
 
     return complete_leg(memory, None, started_at)
+
+
+def uniform_cost_multi_goal_search(
+    problem: SearchProblem,
+    goals: Sequence[str],
+) -> SearchLegResult:
+    """Return the cheapest reachable member of ``goals`` in one blind search.
+
+    Dijkstra does not care how many goals it is asked for: the first settled one
+    is the nearest. That is what lets the planner order stops greedily with UCS
+    at one search per step instead of one per candidate, and it is the only
+    difference from :func:`uniform_cost_search` above — same frontier, same
+    priority, same trace shape. The shared loop lives in ``multi_goal.py``.
+    """
+    return multi_goal_search(problem, goals, guided=False)
