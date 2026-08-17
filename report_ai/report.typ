@@ -116,7 +116,7 @@
   [Lâm Chí Hào], [Team coordination, system architecture, backend integration, and data processing], [`fix/isolate-` #linebreak() `optimise-order`], [100%], [100%],
   [Bùi Thị Bích Loan], [BFS, DFS, and algorithm testing], [`feat/bfs-dfs-` #linebreak() `search`], [100%], [100%],
   [Cao Tiến Thiên], [UCS and Nearest Neighbor], [`refactor/nearest-` #linebreak() `pairwise-astar`], [100%], [100%],
-  [Nguyễn Khánh Linh], [A\* and Held–Karp Dynamic Programming], [`feat/astar` #linebreak() `feat/held-karp` #linebreak() `fix/held-karp-` #linebreak() `closed-tour-notice`], [100%], [100%],
+  [Nguyễn Khánh Linh], [A\* and Held-Karp Dynamic Programming], [`feat/astar` #linebreak() `feat/held-karp` #linebreak() `fix/held-karp-` #linebreak() `closed-tour-notice`], [100%], [100%],
   [Lê Nguyễn Anh Trí], [GUI and frontend visualization], [`feat/ui-overhaul`], [100%], [100%],
   )
 }
@@ -141,7 +141,7 @@
   [8], [DFS], [Implemented and visualized], [Completed],
   [9], [UCS], [Implemented and visualized], [Completed],
   [10], [A\*], [Implemented with an admissible heuristic], [Completed],
-  [11], [Additional algorithms], [Greedy Best-First + Nearest Neighbor], [Completed],
+  [11], [Additional algorithms], [Held-Karp Dynamic Programming and Nearest Neighbor], [Completed],
   [12], [GUI], [Interactive map, algorithm panes, and shared timeline], [Completed],
   [13], [Step-by-step visualization], [Expanded nodes, frontier, and final route], [Completed],
   [14], [Route explanation], [Explains route quality, traffic conditions, and alternatives], [Completed],
