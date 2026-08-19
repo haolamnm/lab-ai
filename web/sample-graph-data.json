@@ -1,0 +1,25 @@
+{
+  "roadNetwork": {
+    "nodes": [
+      { "id": "A", "lat": 10.7725, "lng": 106.6980, "label": "A", "name": "Chợ Bến Thành" },
+      { "id": "B", "lat": 10.7797, "lng": 106.6990, "label": "B", "name": "Nhà thờ Đức Bà" },
+      { "id": "C", "lat": 10.7772, "lng": 106.6957, "label": "C", "name": "Dinh Độc Lập" },
+      { "id": "D", "lat": 10.7745, "lng": 106.7060, "label": "D", "name": "Bến Bạch Đằng" },
+      { "id": "E", "lat": 10.7880, "lng": 106.7050, "label": "E", "name": "Thảo Cầm Viên" }
+    ],
+    "edges": [
+      { "from": "A", "to": "C", "km": 0.7, "roadClass": "secondary", "congestion": 4, "risk": 0.10, "name": "A–C" },
+      { "from": "C", "to": "A", "km": 0.7, "roadClass": "secondary", "congestion": 4, "risk": 0.10, "name": "A–C" },
+      { "from": "A", "to": "D", "km": 1.0, "roadClass": "primary", "congestion": 3, "risk": 0.10, "name": "A–D" },
+      { "from": "D", "to": "A", "km": 1.0, "roadClass": "primary", "congestion": 3, "risk": 0.10, "name": "A–D" },
+      { "from": "B", "to": "C", "km": 0.5, "roadClass": "tertiary", "congestion": 2, "risk": 0.05, "name": "B–C" },
+      { "from": "C", "to": "B", "km": 0.5, "roadClass": "tertiary", "congestion": 2, "risk": 0.05, "name": "B–C" },
+      { "from": "B", "to": "D", "km": 1.0, "roadClass": "tertiary", "congestion": 2, "risk": 0.05, "name": "B–D" },
+      { "from": "D", "to": "B", "km": 1.0, "roadClass": "tertiary", "congestion": 2, "risk": 0.05, "name": "B–D" },
+      { "from": "B", "to": "E", "km": 1.2, "roadClass": "secondary", "congestion": 3, "risk": 0.10, "name": "B–E" },
+      { "from": "E", "to": "B", "km": 1.2, "roadClass": "secondary", "congestion": 3, "risk": 0.10, "name": "B–E" },
+      { "from": "D", "to": "E", "km": 1.6, "roadClass": "primary", "congestion": 2, "risk": 0.10, "name": "D–E" },
+      { "from": "E", "to": "D", "km": 1.6, "roadClass": "primary", "congestion": 2, "risk": 0.10, "name": "D–E" }
+    ]
+  }
+}
