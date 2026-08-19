@@ -10,8 +10,63 @@ import {
 } from './lib/traffic'
 import type {
   AlgoKey, CriterionKey, Detail, Graph, PeriodKey, Place, RoadClass, RouteResult, VehicleKey,
-  Weights,
+  TurnRule, TurnTable, Weights,
 } from './lib/types'
+
+function importedTurnRule(value: unknown, table: 'no' | 'only'): TurnRule {
+  if (!isRecord(value)) throw new Error(`a ${table}-turn rule is not an object`)
+  const kind = value.kind
+  if (typeof kind !== 'string' || !kind.startsWith(`${table}_`))
+    throw new Error(`a ${table}-turn rule has an invalid kind`)
+
+  const hours: [number, number][] = []
+  if (value.hours !== undefined) {
+    if (!Array.isArray(value.hours)) throw new Error('turn-rule hours must be a list')
+    for (const window of value.hours) {
+      if (!Array.isArray(window) || window.length !== 2
+        || !Number.isInteger(window[0]) || !Number.isInteger(window[1]))
+        throw new Error('each turn-rule hour window must contain two integer minutes')
+      hours.push([window[0], window[1]])
+    }
+  }
+
+  let except: string[] = []
+  if (value.except !== undefined) {
+    if (!Array.isArray(value.except) || !value.except.every(item => typeof item === 'string'))
+      throw new Error('turn-rule exemptions must be a list of strings')
+    except = [...value.except]
+  }
+
+  let onlyTo: number | undefined
+  if (value.onlyTo !== undefined && value.onlyTo !== null) {
+    if (typeof value.onlyTo !== 'number' || !Number.isSafeInteger(value.onlyTo))
+      throw new Error('turn-rule onlyTo must be an integer way id')
+    onlyTo = value.onlyTo
+  }
+
+  return {
+    kind: kind as TurnRule['kind'], hours, except,
+    ...(onlyTo === undefined ? {} : { onlyTo }),
+  }
+}
+
+function importedTurnMap(value: unknown, table: 'no' | 'only'): Record<string, TurnRule[]> {
+  if (value === undefined) return {}
+  if (!isRecord(value)) throw new Error(`${table}-turn table is not an object`)
+  return Object.fromEntries(Object.entries(value).map(([key, rules]) => {
+    if (!Array.isArray(rules)) throw new Error(`${table}-turn entry ${key} is not a list`)
+    return [key, rules.map(rule => importedTurnRule(rule, table))]
+  }))
+}
+
+function importedTurns(value: unknown): TurnTable | undefined {
+  if (value === undefined || value === null) return undefined
+  if (!isRecord(value)) throw new Error('turn table is not an object')
+  return {
+    no: importedTurnMap(value.no, 'no'),
+    only: importedTurnMap(value.only, 'only'),
+  }
+}
 
 /**
  * Pin a coordinate to the intersection that the given vehicle can actually
@@ -287,12 +342,20 @@ export const useStore = create<State>((set, get) => ({
         if (!isRecord(e)) continue
         const from = text(e.from), to = text(e.to)
         const km = Number(e.km)
+        if (!Number.isFinite(km) || km <= 0)
+          throw new Error(`edge ${from ?? '?'} -> ${to ?? '?'} must have a finite km greater than 0`)
         const head = from ? nodes[from] : undefined
         const tail = to ? nodes[to] : undefined
         // An edge naming an undefined node has nowhere to start, nowhere to end,
         // and no shape to be drawn along. Dropping it is the only reading of it.
-        if (!from || !to || !head || !tail || !Number.isFinite(km)) continue
+        if (!from || !to || !head || !tail) continue
         const roadClass = text(e.roadClass)
+        let wayId: number | undefined
+        if (e.wayId !== undefined && e.wayId !== null) {
+          if (typeof e.wayId !== 'number' || !Number.isSafeInteger(e.wayId))
+            throw new Error(`edge ${from} -> ${to} has an invalid wayId`)
+          wayId = e.wayId
+        }
         // A shape that is not a list of coordinate pairs would reach Leaflet and
         // take the whole grid down, so an unusable one falls back to the straight
         // line between the two intersections, exactly as a missing one does.
@@ -305,6 +368,7 @@ export const useStore = create<State>((set, get) => ({
           risk: clampRisk(num(e.risk, 0.2)),
           name: text(e.name),
           shape: shape.length > 1 ? shape : [[head.lat, head.lng], [tail.lat, tail.lng]],
+          ...(wayId === undefined ? {} : { wayId }),
         })
       }
       if (!Object.keys(nodes).length || !edges.length) throw new Error('no nodes or edges')
@@ -312,8 +376,10 @@ export const useStore = create<State>((set, get) => ({
       const adj: Graph['adj'] = {}
       for (const id of Object.keys(nodes)) adj[id] = []
       for (const e of edges) adj[e.from]?.push(e)
+      const turns = importedTurns(src.turns)
       const graph: Graph = {
         nodes, edges, adj, detail: 'coarse', bounds: boundsOf(Object.values(nodes)),
+        ...(turns === undefined ? {} : { turns }),
       }
 
       // Re-pin every trip point onto the new graph, exactly as build() and loadSample() do.

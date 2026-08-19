@@ -27,9 +27,15 @@ from dataclasses import dataclass
 from route_lab.contract.conditions import Conditions
 from route_lab.contract.graph import GraphEdge
 from route_lab.shared.graph import Graph
-from route_lab.shared.heuristics import DEFAULT_HEURISTIC, HEURISTICS, Heuristic, HeuristicName
+from route_lab.shared.heuristics import (
+    DEFAULT_HEURISTIC,
+    HEURISTICS,
+    Heuristic,
+    HeuristicName,
+    geometric_cost_scale,
+)
 from route_lab.shared.search import SearchLegResult
-from route_lab.shared.traffic import edge_cost, min_cost_per_km
+from route_lab.shared.traffic import edge_cost
 
 # The cost of traversing one edge, already bound to the run conditions, so an
 # algorithm calls it as `problem.cost(edge)` with nothing else to thread through.
@@ -77,7 +83,7 @@ def build_problem(
     :data:`route_lab.shared.heuristics.HEURISTICS`) scaled to be an admissible
     lower bound. Every leg gets one, including the blind searches: BFS, DFS and
     UCS never call ``problem.heuristic``, so building it for them costs one
-    ``min_cost_per_km`` scan and removes the standing risk of a per-algorithm
+    geometric-scale scan and removes the standing risk of a per-algorithm
     "is this one guided?" table drifting away from the algorithms themselves.
 
     Pass ``heuristic`` when the caller already owns a better-suited bound — the
@@ -89,7 +95,7 @@ def build_problem(
         return edge_cost(edge, conditions)
 
     if heuristic is None:
-        scale = min_cost_per_km(graph.edges, conditions)
+        scale = geometric_cost_scale(graph, conditions)
         heuristic = HEURISTICS[heuristic_name](graph, goal, scale)
 
     return SearchProblem(

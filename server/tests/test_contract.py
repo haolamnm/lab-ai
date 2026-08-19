@@ -140,6 +140,26 @@ def test_out_of_range_edge_values_are_rejected(field: str, value: float) -> None
     assert client.post("/plan", json=payload).status_code == 422
 
 
+@pytest.mark.parametrize("endpoint", ["from", "to"])
+def test_dangling_edge_endpoint_is_rejected_by_graph_contract(endpoint: str) -> None:
+    payload = diamond_json("astar")
+    payload["graph"]["edges"][0][endpoint] = "MISSING"
+
+    with pytest.raises(ValidationError, match="edge endpoints must exist in nodes"):
+        GraphPayload.model_validate(payload["graph"])
+
+
+@pytest.mark.parametrize("endpoint", ["from", "to"])
+def test_dangling_edge_endpoint_returns_http_422_instead_of_500(endpoint: str) -> None:
+    payload = diamond_json("astar")
+    payload["graph"]["edges"][0][endpoint] = "MISSING"
+
+    response = client.post("/plan", json=payload)
+
+    assert response.status_code == 422
+    assert "edge endpoints must exist in nodes" in response.text
+
+
 @pytest.mark.parametrize(("field", "value"), [("lat", 91.0), ("lng", -181.0)])
 def test_out_of_range_coordinates_are_rejected(field: str, value: float) -> None:
     # The heuristics take a cosine of the latitude, so a nonsense coordinate

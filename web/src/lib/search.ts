@@ -193,13 +193,21 @@ class Heap {
   }
 }
 
-function minCostPerKm(graph: Graph, conditions: Conditions): number {
-  let cheapest = Infinity
+/** Safe cost per straight-line kilometre shared by ordinary and multi-goal A*. */
+function geometricHeuristicScale(graph: Graph, conditions: Conditions): number {
+  let scale = Infinity
   for (const edge of graph.edges) {
-    if (!passable(edge, conditions.vehicle, conditions.period) || edge.km <= 0) continue
-    cheapest = Math.min(cheapest, edgeCost(edge, conditions) / edge.km)
+    if (!passable(edge, conditions.vehicle, conditions.period)) continue
+    const source = graph.nodes[edge.from]
+    const target = graph.nodes[edge.to]
+    // Imported graphs are validated too, but zero is the safe fallback for a
+    // directly constructed malformed graph: it degrades A* to UCS.
+    if (!source || !target) return 0
+    const straightKm = haversine(source, target)
+    if (straightKm > 0)
+      scale = Math.min(scale, edgeCost(edge, conditions) / straightKm)
   }
-  return Number.isFinite(cheapest) ? cheapest : 0
+  return Number.isFinite(scale) ? Math.max(0, scale) : 0
 }
 
 interface SearchLegResult {
@@ -444,7 +452,7 @@ function aStarSearch(
   start: string,
   goal: string,
   conditions: Conditions,
-  heuristicScale = minCostPerKm(graph, conditions),
+  heuristicScale = geometricHeuristicScale(graph, conditions),
   incoming: GraphEdge | null = null,
   heuristicOverride?: (nodeId: string) => number,
 ): SearchLegResult {
@@ -509,22 +517,6 @@ function runPointSearch(
     case 'ucs': return uniformCostSearch(graph, start, goal, conditions, incoming)
     case 'astar': return aStarSearch(graph, start, goal, conditions, heuristicScale, incoming)
   }
-}
-
-/** Safe cost scale used only by Nearest Neighbor's internal A* searches. */
-function nearestNeighborHeuristicScale(graph: Graph, conditions: Conditions): number {
-  let scale = Infinity
-  for (const edge of graph.edges) {
-    if (!passable(edge, conditions.vehicle, conditions.period)) continue
-    const source = graph.nodes[edge.from]
-    const target = graph.nodes[edge.to]
-    // Without both endpoints no straight-line lower-bound proof is possible.
-    if (!source || !target) return 0
-    const straightKm = haversine(source, target)
-    if (straightKm > 0)
-      scale = Math.min(scale, edgeCost(edge, conditions) / straightKm)
-  }
-  return Number.isFinite(scale) ? scale : 0
 }
 
 /** NN's explicit h(n): an admissible lower bound to one candidate target. */
@@ -999,7 +991,7 @@ function planGreedyRoute(
 
 function planNearestNeighbor(input: PlanInput): RouteResult {
   const { graph, conditions } = input
-  const scale = nearestNeighborHeuristicScale(graph, conditions)
+  const scale = geometricHeuristicScale(graph, conditions)
   return planGreedyRoute(input, (current, goals, incoming) =>
     nearestNeighborMultiGoalSearch(graph, current, goals, conditions, scale, incoming))
 }
@@ -1044,7 +1036,7 @@ export function planRoute(input: PlanInput): RouteResult {
   // From here onward only the four point-search algorithms remain.
   const pointAlgorithm: PointSearchKey = algo
   const heuristicScale = pointAlgorithm === 'astar'
-    ? shared(graph, `heuristic:${conditionsKey}`, () => minCostPerKm(graph, conditions))
+    ? shared(graph, `heuristic:${conditionsKey}`, () => geometricHeuristicScale(graph, conditions))
     : 0
   // One list for both shapes, mirroring `_leg_sequence` and `_plan_nearest` in
   // the backend's planner.py. The dropoff is a destination like any other, and on

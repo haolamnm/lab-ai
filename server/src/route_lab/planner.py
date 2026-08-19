@@ -18,6 +18,8 @@ from typing import Literal
 
 from route_lab.algorithms.astar import a_star_search
 from route_lab.algorithms.base import AlgorithmNotImplemented
+from route_lab.algorithms.context_held_karp import context_held_karp
+from route_lab.algorithms.destination_labels import ContextTransitionProvider
 from route_lab.algorithms.held_karp import held_karp
 from route_lab.algorithms.nearest_neighbor import (
     nearest_neighbor_heuristic_scale,
@@ -419,7 +421,14 @@ def _plan_ordered_ucs(request: PlanRequest, graph: Graph, ids: list[str]) -> Rou
 
 
 def _plan_held_karp(request: PlanRequest, graph: Graph, ids: list[str]) -> RouteResult:
-    """Plan an exact open or closed tour from Pairwise A* costs and Held-Karp."""
+    """Plan an exact open or closed tour with the smallest sufficient DP state.
+
+    A graph without turn restrictions is context-independent and keeps the
+    original directed Pairwise A* matrix plus standard ``DP[mask,last]`` path.
+    When restrictions are present, the incoming way at a stop can change which
+    first edge of the next leg is legal, so a separate optimiser retains that
+    way in its state and obtains contextual transitions lazily.
+    """
     warehouse = request.start
     # A trip whose dropoff is already the pickup is a loop however the toggle is
     # set, and every other algorithm plans it as one -- `_leg_sequence` closes it
@@ -463,34 +472,60 @@ def _plan_held_karp(request: PlanRequest, graph: Graph, ids: list[str]) -> Route
             "The pickup and dropoff pin to the same intersection. Choose points farther apart.",
         )
 
-    matrix = build_pairwise(
-        graph=graph,
-        locations=[warehouse, *destinations],
-        conditions=request.conditions,
-        search=a_star_search,
-    )
-    tour = held_karp(
+    if not graph.turns_active:
+        matrix = build_pairwise(
+            graph=graph,
+            locations=[warehouse, *destinations],
+            conditions=request.conditions,
+            search=a_star_search,
+        )
+        tour = held_karp(
+            warehouse=warehouse,
+            stops=destinations,
+            costs=matrix.costs,
+            return_to_start=closed,
+            end=None if closed else request.goal,
+        )
+
+        if not tour.found:
+            return _stopped(
+                request.algo,
+                ids,
+                f"No complete {route_kind} exists for all Held-Karp stops.",
+            )
+
+        return _assemble_cached_legs(
+            request,
+            graph,
+            ids,
+            list(tour.order),
+            matrix.paths,
+            route_kind=route_kind,
+        )
+
+    provider = ContextTransitionProvider(graph, request.conditions)
+    contextual_tour = context_held_karp(
         warehouse=warehouse,
         stops=destinations,
-        costs=matrix.costs,
+        transitions=provider,
         return_to_start=closed,
         end=None if closed else request.goal,
     )
-
-    if not tour.found:
+    if not contextual_tour.found:
         return _stopped(
             request.algo,
             ids,
-            f"No complete {route_kind} exists for all Held-Karp stops.",
+            f"No complete {route_kind} exists for all Held-Karp stops under the active "
+            "turn restrictions.",
         )
 
-    return _assemble_cached_legs(
+    selected_legs = [provider.leg(key) for key in contextual_tour.route_keys]
+    return _route_from_legs(
         request,
-        graph,
         ids,
-        list(tour.order),
-        matrix.paths,
-        route_kind=route_kind,
+        list(contextual_tour.order),
+        selected_legs,
+        found=True,
     )
 
 
