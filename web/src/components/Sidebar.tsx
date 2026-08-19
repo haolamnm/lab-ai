@@ -109,15 +109,13 @@ export function Sidebar() {
               loop; the ordering ones choose where the dropoff falls in it.
             </p>
           )}
-          {s.stops.length > 0 && (
-            <label className="field-row">
-              <span>Optimise visit order</span>
-              <input
-                type="checkbox" checked={s.optimiseOrder}
-                onChange={e => s.setOptimiseOrder(e.target.checked)}
-              />
-            </label>
-          )}
+          <label className="field-row">
+            <span>Optimise visit order</span>
+            <input
+              type="checkbox" checked={s.optimiseOrder}
+              onChange={e => s.setOptimiseOrder(e.target.checked)}
+            />
+          </label>
           <HeldKarpNotice />
         </section>
 
