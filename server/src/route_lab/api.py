@@ -20,7 +20,9 @@ from route_lab.contract.request import PlanRequest
 from route_lab.contract.result import RouteResult
 from route_lab.planner import plan_route
 
-_DEFAULT_ORIGINS = "http://localhost:5174,http://127.0.0.1:5174,http://localhost:5173,http://127.0.0.1:5173"
+_DEFAULT_ORIGINS = (
+    "http://localhost:5174,http://127.0.0.1:5174,http://localhost:5173,http://127.0.0.1:5173"
+)
 
 
 def cors_origins() -> list[str]:
