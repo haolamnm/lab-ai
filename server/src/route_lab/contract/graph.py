@@ -1,8 +1,8 @@
 """The road-graph half of the contract — mirrors the graph types in types.ts."""
 
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 RoadClass = Literal["motorway", "trunk", "primary", "secondary", "tertiary", "residential", "alley"]
@@ -121,5 +121,20 @@ class GraphPayload(Contract):
     # without making a caller invent values the planner will not use.
     bounds: tuple[tuple[float, float], tuple[float, float]] | None = None
     detail: Detail | None = None
-    # The sample graph and imported JSON graphs carry no turn restrictions.
+    # Optional for graphs without turn data; complete frontend exports preserve it.
     turns: TurnTable | None = None
+
+    @model_validator(mode="after")
+    def _edge_endpoints_exist(self) -> Self:
+        """Reject malformed topology before it can reach heuristic/search lookup."""
+        missing = sorted(
+            {
+                endpoint
+                for edge in self.edges
+                for endpoint in (edge.from_, edge.to)
+                if endpoint not in self.nodes
+            }
+        )
+        if missing:
+            raise ValueError(f"edge endpoints must exist in nodes; missing: {', '.join(missing)}")
+        return self

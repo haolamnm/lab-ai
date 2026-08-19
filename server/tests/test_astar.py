@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -13,10 +14,11 @@ from route_lab.algorithms.registry import ALGO_OPTIMAL, POINT_SEARCHES
 from route_lab.algorithms.ucs import uniform_cost_search
 from route_lab.api import app
 from route_lab.contract.graph import GraphPayload
-from route_lab.contract.request import PlanRequest
+from route_lab.contract.request import AlgoKey, PlanRequest
 from route_lab.planner import plan_route
 from route_lab.shared.graph import build_graph
-from route_lab.shared.problem import SearchProblem
+from route_lab.shared.heuristics import geometric_cost_scale
+from route_lab.shared.problem import SearchProblem, build_problem
 
 from .fixtures import diamond_json, diamond_problem, diamond_request
 
@@ -71,6 +73,58 @@ def _problem(
     )
 
 
+def _adversarial_geometry_request(
+    algo: AlgoKey = "astar",
+    *,
+    weights: dict[str, float] | None = None,
+) -> PlanRequest:
+    return PlanRequest.model_validate(
+        {
+            "graph": {
+                "nodes": {
+                    "S": {"id": "S", "lat": 0, "lng": 0},
+                    "A": {"id": "A", "lat": 0, "lng": -10},
+                    "G": {"id": "G", "lat": 0, "lng": 10},
+                },
+                "edges": [
+                    {
+                        "from": "S",
+                        "to": "G",
+                        "km": 10,
+                        "roadClass": "secondary",
+                        "congestion": 2,
+                        "risk": 0.5,
+                    },
+                    {
+                        "from": "S",
+                        "to": "A",
+                        "km": 1,
+                        "roadClass": "secondary",
+                        "congestion": 2,
+                        "risk": 0.5,
+                    },
+                    {
+                        "from": "A",
+                        "to": "G",
+                        "km": 1,
+                        "roadClass": "secondary",
+                        "congestion": 2,
+                        "risk": 0.5,
+                    },
+                ],
+            },
+            "algo": algo,
+            "start": "S",
+            "goal": "G",
+            "conditions": {
+                "vehicle": "car",
+                "period": "offpeak",
+                "weights": weights or {"distance": 1, "time": 0, "congestion": 0, "risk": 0},
+            },
+        }
+    )
+
+
 def test_astar_finds_path() -> None:
     result = a_star_search(diamond_problem())
 
@@ -83,6 +137,79 @@ def test_astar_matches_ucs_minimum_cost() -> None:
     ucs = uniform_cost_search(diamond_problem())
 
     assert sum(edge.km for edge in astar.edges) == pytest.approx(sum(edge.km for edge in ucs.edges))
+
+
+def test_astar_matches_ucs_when_stored_km_is_geometrically_impossible() -> None:
+    request = _adversarial_geometry_request()
+    problem = build_problem(build_graph(request.graph), "S", "G", request.conditions)
+
+    astar = a_star_search(problem)
+    ucs = uniform_cost_search(problem)
+
+    assert astar.path == ["S", "A", "G"]
+    assert astar.trace[-1].g == pytest.approx(2.0)
+    assert astar.trace[-1].g == pytest.approx(ucs.trace[-1].g)
+
+
+def test_planner_astar_optimal_flag_is_backed_by_the_ucs_optimum() -> None:
+    astar = plan_route(_adversarial_geometry_request("astar"))
+    ucs = plan_route(_adversarial_geometry_request("ucs"))
+
+    assert astar.found is True
+    assert astar.path == ["S", "A", "G"]
+    assert astar.metrics.cost == pytest.approx(ucs.metrics.cost)
+    assert astar.metrics.optimal is True
+
+
+def test_geometric_scale_is_zero_when_all_endpoint_distances_are_zero() -> None:
+    payload = GraphPayload.model_validate(
+        {
+            "nodes": {
+                "S": {"id": "S", "lat": 10, "lng": 106},
+                "G": {"id": "G", "lat": 10, "lng": 106},
+            },
+            "edges": [
+                {
+                    "from": "S",
+                    "to": "G",
+                    "km": 1,
+                    "roadClass": "secondary",
+                    "congestion": 1,
+                    "risk": 0,
+                }
+            ],
+        }
+    )
+    request = _adversarial_geometry_request()
+    graph = build_graph(payload)
+    problem = build_problem(graph, "S", "G", request.conditions)
+
+    assert geometric_cost_scale(graph, request.conditions) == 0.0
+    assert math.isfinite(problem.heuristic("S"))
+    assert problem.heuristic("S") == 0.0
+    assert a_star_search(problem).path == ["S", "G"]
+
+
+@pytest.mark.parametrize(
+    "weights",
+    [
+        {"distance": 0, "time": 1, "congestion": 0, "risk": 0},
+        {"distance": 0, "time": 0, "congestion": 1, "risk": 0},
+        {"distance": 0, "time": 0, "congestion": 0, "risk": 1},
+        {"distance": 0, "time": 1, "congestion": 1, "risk": 1},
+    ],
+)
+def test_astar_geometric_scale_is_safe_across_weight_components(
+    weights: dict[str, float],
+) -> None:
+    request = _adversarial_geometry_request(weights=weights)
+    problem = build_problem(build_graph(request.graph), "S", "G", request.conditions)
+
+    astar = a_star_search(problem)
+    ucs = uniform_cost_search(problem)
+
+    assert astar.found is True
+    assert astar.trace[-1].g == pytest.approx(ucs.trace[-1].g)
 
 
 def test_astar_total_cost_is_sum_of_edge_costs() -> None:

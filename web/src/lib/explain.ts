@@ -1,6 +1,6 @@
 import { ALGOS, edgeBetween, planningNote, RUNTIME_NOTE } from './search'
 import { costIsFlat, edgeCost, edgeMinutes, type Conditions } from './traffic'
-import type { Graph, GraphEdge, RouteResult } from './types'
+import type { Graph, GraphEdge, RouteResult, TurnRule, TurnTable } from './types'
 
 /**
  * Generates the explanation for the chosen route.
@@ -274,6 +274,20 @@ export function explain(
   }
 }
 
+function copiedTurnTable(turns: TurnTable | undefined): TurnTable | undefined {
+  if (!turns) return undefined
+  const copiedRule = (rule: TurnRule): TurnRule => ({
+    kind: rule.kind,
+    hours: rule.hours.map(([from, to]) => [from, to]),
+    except: [...rule.except],
+    ...(rule.onlyTo === undefined ? {} : { onlyTo: rule.onlyTo }),
+  })
+  const copiedMap = (table: Record<string, TurnRule[]>) => Object.fromEntries(
+    Object.entries(table).map(([key, rules]) => [key, rules.map(copiedRule)]),
+  )
+  return { no: copiedMap(turns.no), only: copiedMap(turns.only) }
+}
+
 /** The complete data for one run, for exporting to the submission file and writing up the report. */
 export function toExportable(
   graph: Graph,
@@ -281,18 +295,21 @@ export function toExportable(
   conditions: Conditions,
   optimiseOrder: boolean,
 ) {
+  const turns = copiedTurnTable(graph.turns)
   return {
     conditions,
     roadNetwork: {
       nodeCount: Object.keys(graph.nodes).length,
       edgeCount: graph.edges.length,
       detail: graph.detail,
+      ...(turns === undefined ? {} : { turns }),
       // The place names inside stay exactly as OpenStreetMap and the sample graph
       // give them: `Bến Thành` is data, and translating data makes it wrong.
       nodes: Object.values(graph.nodes),
       edges: graph.edges.map(e => ({
         from: e.from, to: e.to, km: e.km, roadClass: e.roadClass,
         congestion: e.congestion, risk: e.risk, name: e.name ?? null,
+        ...(e.wayId === undefined ? {} : { wayId: e.wayId }),
         minutes: +edgeMinutes(e, conditions).toFixed(2),
         cost: +edgeCost(e, conditions).toFixed(3),
       })),

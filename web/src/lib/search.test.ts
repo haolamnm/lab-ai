@@ -69,6 +69,51 @@ test('a point-to-point trip runs on all five browser algorithms', () => {
   expect(planRoute({ ...point, algo: 'held_karp' }).found).toBe(false)
 })
 
+test('browser A* matches UCS when stored km is shorter than endpoint geometry', () => {
+  const edgeDefaults = {
+    roadClass: 'secondary' as const, congestion: 1, risk: 0,
+    shape: [] as [number, number][],
+  }
+  const adversarial: Graph = {
+    nodes: {
+      S: { id: 'S', lat: 0, lng: 0 },
+      A: { id: 'A', lat: 0, lng: -10 },
+      G: { id: 'G', lat: 0, lng: 10 },
+    },
+    edges: [
+      { from: 'S', to: 'G', km: 10, ...edgeDefaults },
+      { from: 'S', to: 'A', km: 1, ...edgeDefaults },
+      { from: 'A', to: 'G', km: 1, ...edgeDefaults },
+    ],
+    adj: {},
+    bounds: [[0, -10], [0, 10]],
+    detail: 'coarse',
+  }
+  for (const id of Object.keys(adversarial.nodes)) adversarial.adj[id] = []
+  for (const edge of adversarial.edges) adversarial.adj[edge.from]?.push(edge)
+  const input = {
+    graph: adversarial,
+    start: 'S',
+    goal: 'G',
+    stops: [],
+    optimiseOrder: false,
+    returnToStart: false,
+    conditions: {
+      vehicle: 'car' as const,
+      period: 'offpeak' as const,
+      weights: { distance: 1, time: 0, congestion: 0, risk: 0 },
+    },
+  }
+
+  const astar = planRoute({ ...input, algo: 'astar' })
+  const ucs = planRoute({ ...input, algo: 'ucs' })
+
+  expect(astar.path).toEqual(['S', 'A', 'G'])
+  expect(astar.metrics.cost).toBe(2)
+  expect(astar.metrics.cost).toBe(ucs.metrics.cost)
+  expect(astar.metrics.optimal).toBe(true)
+})
+
 test('an open tour finishes at the dropoff', () => {
   // The dropoff is a destination, not a hint. Setting the flag used to discard it
   // outright, so this trip ended at whichever stop the ordering left last.

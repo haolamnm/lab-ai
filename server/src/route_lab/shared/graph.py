@@ -47,10 +47,9 @@ def build_graph(payload: GraphPayload) -> Graph:
     """Turn a wire payload into a searchable :class:`Graph`."""
     adj: dict[str, list[GraphEdge]] = {node_id: [] for node_id in payload.nodes}
     for edge in payload.edges:
-        # An edge whose endpoint is not among the nodes is dropped, matching the
-        # frontend's `adj[e.from]?.push(e)` — the optional chain is a silent skip.
-        if edge.from_ in adj:
-            adj[edge.from_].append(edge)
+        # GraphPayload has already validated both endpoints, so no malformed
+        # topology is silently dropped while rebuilding adjacency.
+        adj[edge.from_].append(edge)
 
     return Graph(
         nodes=payload.nodes,
